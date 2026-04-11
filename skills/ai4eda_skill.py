@@ -185,16 +185,19 @@ AI4EDA_SKILL = SkillDefinition(
 )
 
 
-def register():
+async def register():
     """注册 AI4EDA Skill"""
-    register_skill(AI4EDA_SKILL)
+    await register_skill(AI4EDA_SKILL)
     return AI4EDA_SKILL
 
 
 if __name__ == "__main__":
     # 测试 Skill 注册
-    skill = register()
-    print(f"✓ AI4EDA Skill registered: {skill.name}")
-    print(f"  Display Name: {skill.display_name}")
-    print(f"  Description: {skill.description}")
-    print(f"  Aliases: {skill.aliases}")
+    async def test():
+        skill = await register()
+        print(f"✓ AI4EDA Skill registered: {skill.name}")
+        print(f"  Display Name: {skill.display_name}")
+        print(f"  Description: {skill.description}")
+        print(f"  Aliases: {skill.aliases}")
+
+    asyncio.run(test())
