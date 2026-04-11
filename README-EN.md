@@ -18,35 +18,39 @@
 
 ---
 
+<div align="center">
+
 ## 📋 Table of Contents
 
-<table>
-<tr>
-<td width="33%" valign="top">
+</div>
 
-**Getting Started**
+<table align="center">
+<tr>
+<td width="33%" align="center" valign="top">
+
+### 🚀 Getting Started
 - [Overview](#-overview)
 - [Key Features](#-key-features)
 - [Quick Start](#-quick-start)
 - [User Guide](#-user-guide)
 
 </td>
-<td width="33%" valign="top">
+<td width="33%" align="center" valign="top">
 
-**Core Systems**
+### 🏗️ Core Systems
 - [Architecture](#️-architecture)
 - [Commands](#-commands)
 - [Use Cases](#-use-cases)
 - [Configuration](#️-configuration)
 
 </td>
-<td width="33%" valign="top">
+<td width="33%" align="center" valign="top">
 
-**Advanced**
+### 🔧 Advanced
 - [Adding EDA Skills](#-adding-eda-skills)
 - [API Reference](#-api-reference)
-- [Testing](#-testing)
-- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [Citation](#-citation)
 
 </td>
 </tr>
@@ -640,52 +644,6 @@ register_pre_compact_hook(MyCustomHook())
 
 ---
 
-## 🧪 Testing
-
-### Run Tests
-
-```bash
-# Core functionality tests
-python test_harness_complete.py
-
-# Integration verification
-python verify_integration.py
-
-# Next steps tests
-python test_next_steps.py
-```
-
-### Test Coverage
-
-- ✅ Core functionality: 6/6 passed
-- ✅ Integration tests: 6/6 passed
-- ✅ Next steps: 4/4 passed
-- **Total: 16/16 passed (100%)**
-
-### Writing Custom Tests
-
-```python
-# test_my_feature.py
-import asyncio
-from cktmem import ContextManager, Storage, CompactConfig
-
-async def test_my_feature():
-    storage = Storage("test.db")
-    config = CompactConfig()
-    manager = ContextManager(storage, "system prompt", config)
-
-    # Test your feature
-    result = await manager.build_context("session_id", "test input")
-    assert len(result) > 0
-
-    print("✅ Test passed")
-
-if __name__ == "__main__":
-    asyncio.run(test_my_feature())
-```
-
----
-
 ## 📚 API Reference
 
 ### CktMem API
@@ -744,67 +702,9 @@ result = await execute_pre_compact_hooks(hook_input)
 
 ---
 
-## 🔍 Troubleshooting
-
-### Issue: Module not found
-
-```bash
-conda activate aig_verilog
-pip install prompt_toolkit rich torch transformers
-```
-
-### Issue: GPU out of memory
-
-- Switch to DeepSeek engine (cloud-based)
-- Reduce AI4EDA batch size
-- Check other GPU processes with `nvidia-smi`
-
-### Issue: ABC/Yosys not found
-
-```bash
-export ABC_PATH=/path/to/abc
-export YOSYS_PATH=/path/to/yosys
-# Or add to ~/.bashrc for persistence
-```
-
-### Issue: Compression not triggering
-
-- Check token count exceeds 150K
-- Verify `auto_compact=True` in config
-- Check logs for errors
-
-### Issue: Rate limit too strict
-
-Edit `handlers/chat_handler_v2.py`:
-```python
-config = RateLimitConfig(
-    max_requests_per_minute=120,      # Increase to 120
-    max_tokens_per_minute=200_000,    # Increase to 200K
-)
-```
-
----
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
-
-### Development Setup
-
-```bash
-git clone git@github.com:959AI994/cktclaw.git
-cd cktclaw
-conda create -n cktclaw-dev python=3.10
-conda activate cktclaw-dev
-pip install -r requirements-dev.txt
-```
-
-### Code Style
-
-- Follow PEP 8
-- Use type hints
-- Add docstrings for public APIs
-- Write tests for new features
 
 ---
 
@@ -835,7 +735,6 @@ If you use CktClaw in your research, please cite:
 - **Author**: AlexWang
 - **Institution**: Shanghai Jiao Tong University
 - **Lab**: ACE Lab
-- **Email**: jingxin.wang@sjtu.edu.cn
 - **GitHub**: [@959AI994](https://github.com/959AI994)
 
 ---

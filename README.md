@@ -18,35 +18,39 @@
 
 ---
 
+<div align="center">
+
 ## 📋 目录
 
-<table>
-<tr>
-<td width="33%" valign="top">
+</div>
 
-**快速入门**
+<table align="center">
+<tr>
+<td width="33%" align="center" valign="top">
+
+### 🚀 快速入门
 - [核心能力](#-核心能力--key-capabilities)
 - [功能特性](#-功能特性--features)
 - [快速开始](#-快速开始--quick-start)
 - [用户指南](#-用户指南--user-guide)
 
 </td>
-<td width="33%" valign="top">
+<td width="33%" align="center" valign="top">
 
-**核心系统**
+### 🏗️ 核心系统
 - [架构设计](#-架构设计--architecture)
 - [命令参考](#-命令参考--commands)
 - [使用案例](#-使用案例--use-cases)
 - [配置说明](#-配置说明--configuration)
 
 </td>
-<td width="33%" valign="top">
+<td width="33%" align="center" valign="top">
 
-**进阶开发**
+### 🔧 进阶开发
 - [添加 EDA 技能](#-添加-eda-技能)
 - [API 参考](#-api-参考)
-- [测试](#-测试--testing)
-- [故障排除](#-故障排除--troubleshooting)
+- [贡献指南](#-贡献--contributing)
+- [引用](#-引用--citation)
 
 </td>
 </tr>
@@ -759,83 +763,6 @@ abc> print_stats
 
 ---
 
-## 🔍 故障排除 · Troubleshooting
-
-### 问题 1: 模块未找到
-```bash
-conda activate aig_verilog
-pip install prompt_toolkit rich torch transformers
-```
-
-### 问题 2: GPU 内存不足
-- 切换到 DeepSeek 引擎（云端）
-- 减少 AI4EDA 批处理大小
-- 检查其他 GPU 进程
-
-### 问题 3: ABC/Yosys 未找到
-```bash
-export ABC_PATH=/path/to/abc
-export YOSYS_PATH=/path/to/yosys
-```
-
-### 问题 4: 压缩未触发
-- 检查 Token 数是否超过 150K
-- 确认 `auto_compact=True`
-- 查看日志是否有错误
-
-### 问题 5: 速率限制过严
-编辑 `handlers/chat_handler_v2.py` 增加限制：
-```python
-config = RateLimitConfig(
-    max_requests_per_minute=120,      # 增加到 120
-    max_tokens_per_minute=200_000,    # 增加到 200K
-)
-```
-
----
-
-## 🧪 测试 · Testing
-
-### 运行测试 · Run Tests
-
-```bash
-# 核心功能测试
-python test_harness_complete.py
-
-# 集成验证
-python verify_integration.py
-
-# 下一步行动测试
-python test_next_steps.py
-```
-
-### 测试覆盖 · Test Coverage
-
-- ✅ 核心功能测试: 6/6 通过
-- ✅ 集成验证: 6/6 通过
-- ✅ 下一步行动: 4/4 通过
-- **总计**: 16/16 通过 (100%)
-
-### 编写自定义测试
-
-```python
-# test_my_feature.py
-import asyncio
-from cktmem import ContextManager, Storage, CompactConfig
-
-async def test_my_feature():
-    storage = Storage("test.db")
-    config = CompactConfig()
-    manager = ContextManager(storage, "system prompt", config)
-
-    result = await manager.build_context("session_id", "test input")
-    assert len(result) > 0
-    print("✅ 测试通过")
-
-if __name__ == "__main__":
-    asyncio.run(test_my_feature())
-```
-
 ---
 
 ## 📚 API 参考
@@ -886,6 +813,7 @@ class MyHook(PreCompactHook):
         )
 register_pre_compact_hook(MyHook())
 ```
+
 ---
 
 ## 🤝 贡献 · Contributing
