@@ -95,19 +95,23 @@ async def yosys_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, A
             success=not result.error,
         )
 
-        # 更新任务状态
-        if yosys_output.success:
-            await task_manager.update_task_status(task_handle.task_id, TaskStatus.COMPLETED)
-            await task_manager.append_output(
-                task_handle.task_id,
-                f"✅ Yosys 执行成功\n{cleaned or '(无输出)'}"
-            )
-        else:
-            await task_manager.update_task_status(task_handle.task_id, TaskStatus.FAILED)
-            await task_manager.append_output(
-                task_handle.task_id,
-                f"❌ Yosys 执行失败: {yosys_output.error}"
-            )
+        # 更新任务状态（先检查是否已经是终止状态）
+        try:
+            if yosys_output.success:
+                await task_manager.update_task_status(task_handle.task_id, TaskStatus.COMPLETED)
+                await task_manager.append_output(
+                    task_handle.task_id,
+                    f"✅ Yosys 执行成功\n{cleaned or '(无输出)'}"
+                )
+            else:
+                await task_manager.update_task_status(task_handle.task_id, TaskStatus.FAILED)
+                await task_manager.append_output(
+                    task_handle.task_id,
+                    f"❌ Yosys 执行失败: {yosys_output.error}"
+                )
+        except Exception as task_error:
+            # 忽略任务状态更新错误（可能已经是终止状态）
+            pass
 
         # 返回结果
         if yosys_output.success:

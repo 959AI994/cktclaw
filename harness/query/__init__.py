@@ -1,7 +1,7 @@
 """Query 模块 - 中枢循环"""
 
 from .query_types import (
-    QueryState,
+    QueryStateEnum,
     QueryConfig,
     QueryResult,
     TransitionType,
@@ -15,7 +15,7 @@ from .query_loop import (
 )
 
 __all__ = [
-    "QueryState",
+    "QueryStateEnum",
     "QueryConfig",
     "QueryResult",
     "TransitionType",

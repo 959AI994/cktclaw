@@ -27,14 +27,13 @@ from ..ui import (
 )
 
 from ..harness import (
-    QueryLoop,
     QueryConfig,
-    QueryState,
+    QueryStateEnum,
     get_skill_registry,
 )
 
 try:
-    from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
+    from cktclaw.models import LLMVerilogAnalyzer
 except ImportError as e:
     raise ImportError(f"Failed to import LLMVerilogAnalyzer: {e}")
 
@@ -87,11 +86,16 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     # ━━━━━━━━━━ 3. Create QueryLoop ━━━━━━━━━━
     start_time = time.time()
 
+    # Get system prompt from context manager
+    system_prompt = cli_state.context_manager.system_prompt
+
     # Configure QueryLoop
     config = QueryConfig(
-        max_iterations=5,
-        enable_self_healing=True,
-        enable_tool_result_validation=True,
+        system_prompt=system_prompt,
+        max_turns=5,
+        auto_compact_enabled=True,
+        auto_compact_threshold=150_000,
+        target_tokens=40_000,
     )
 
     # Create LLM wrapper function
@@ -103,6 +107,19 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
             messages,
             cli_state.current_engine,
         )
+
+        # Debug: print LLM response
+        if cli_state.console:
+            cli_state.console.print(f"[dim]🔍 LLM Response Type: {type(llm_resp)}[/dim]")
+            if isinstance(llm_resp, str):
+                cli_state.console.print(f"[dim]🔍 LLM Response (first 100 chars): {llm_resp[:100]}...[/dim]")
+
+        # Handle None response
+        if llm_resp is None:
+            return {
+                "role": "assistant",
+                "content": "抱歉，LLM 未返回有效响应。",
+            }
 
         # Convert response to standard format
         if isinstance(llm_resp, str):
@@ -129,7 +146,7 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
         else:
             return {
                 "role": "assistant",
-                "content": str(llm_resp),
+                "content": str(llm_resp) if llm_resp else "无响应",
             }
 
     # Create tool executor function
@@ -174,7 +191,8 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
         return f"Unknown tool: {tool_name}"
 
     # Create QueryLoop
-    query_loop = QueryLoop(
+    from ..harness.query.query_loop import create_query_loop
+    query_loop = create_query_loop(
         llm_func=llm_wrapper,
         tool_executor=tool_executor,
         config=config,
@@ -192,11 +210,11 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
                 result = partial_result
 
                 # Show progress
-                if result.state == QueryState.TOOL_EXECUTING:
+                if result.state == QueryStateEnum.TOOL_EXECUTING:
                     console.print(
                         f"[dim]🔧 Executing tool: {result.current_tool_name}[/dim]"
                     )
-                elif result.state == QueryState.SELF_HEALING:
+                elif result.state == QueryStateEnum.SELF_HEALING:
                     console.print(
                         f"[dim]🔄 Self-healing: {result.error_message}[/dim]"
                     )
@@ -205,10 +223,14 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
                 raise ValueError("QueryLoop returned no result")
 
             # Extract final response
-            if result.state == QueryState.TERMINAL:
-                response = result.final_response
+            if result.state == QueryStateEnum.TERMINAL:
+                response = result.final_response or "无响应"
             else:
                 response = f"Query loop stopped in state: {result.state.value}"
+
+            # Ensure response is not None or empty
+            if not response or response.strip() == "":
+                response = "抱歉，未能生成有效响应。"
 
             elapsed = time.time() - start_time
 
@@ -249,8 +271,8 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     render_assistant_message(console, response)
     render_completion_summary(
         console,
-        elapsed_time=elapsed,
-        engine=cli_state.current_engine,
+        timing_dict={"total": elapsed},
+        title=f"Completed with {cli_state.current_engine}",
     )
 
 
@@ -278,12 +300,16 @@ def _extract_skill_name(command: str) -> Optional[str]:
 
 def _chat_with_messages(analyzer, messages, engine):
     """Call LLM with messages (synchronous wrapper)"""
+    # Map engine to model_choice
     if engine == "logicrt":
-        return analyzer.chat_logicrt(messages)
+        model_choice = "local"
     elif engine == "deepseek":
-        return analyzer.chat_deepseek(messages)
+        model_choice = "deepseek"
     else:
-        return analyzer.chat_local(messages)
+        model_choice = "local"
+
+    # Call the actual method
+    return analyzer.chat_with_context(messages, model_choice)
 
 
 # Import legacy functions for fallback

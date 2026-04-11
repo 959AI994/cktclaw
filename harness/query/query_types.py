@@ -129,10 +129,33 @@ class QueryConfig(BaseModel):
     query_source: str = "unknown"
 
 
+class QueryStateEnum(str, Enum):
+    """查询状态枚举"""
+    IDLE = "idle"
+    LLM_CALLING = "llm_calling"
+    TOOL_EXECUTING = "tool_executing"
+    COMPACTING = "compacting"
+    SELF_HEALING = "self_healing"
+    CONTINUING = "continuing"
+    TERMINAL = "terminal"
+
+
 class QueryResult(BaseModel):
     """查询结果"""
-    # 终止原因
-    terminal_reason: TerminalReason
+    # 当前状态
+    state: QueryStateEnum = QueryStateEnum.IDLE
+
+    # 终止原因（仅在 state=TERMINAL 时有效）
+    terminal_reason: Optional[TerminalReason] = None
+
+    # 最终响应文本
+    final_response: Optional[str] = None
+
+    # 当前工具名称（仅在 state=TOOL_EXECUTING 时有效）
+    current_tool_name: Optional[str] = None
+
+    # 错误信息
+    error_message: Optional[str] = None
 
     # 最终消息列表
     messages: List[Dict[str, Any]] = Field(default_factory=list)
@@ -151,9 +174,6 @@ class QueryResult(BaseModel):
 
     # 压缩次数
     compactions: int = 0
-
-    # 错误信息
-    error: Optional[str] = None
 
     # 创建时间
     created_at: datetime = Field(default_factory=datetime.now)

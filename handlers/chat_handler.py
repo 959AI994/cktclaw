@@ -32,7 +32,7 @@ from ..ui import (
 )
 
 try:
-    from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
+    from cktclaw.models import LLMVerilogAnalyzer
 except ImportError as e:
     raise ImportError(f"Failed to import LLMVerilogAnalyzer: {e}")
 

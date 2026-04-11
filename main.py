@@ -113,7 +113,7 @@ except ImportError:
 # Import type stubs for annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
+    from cktclaw.models import LLMVerilogAnalyzer
     from webapp.backend.models.logicrt_inferencer import LogicRTInferencer
 
 
@@ -220,7 +220,7 @@ class CLIState:
 
         if self.context_manager is None:
             # Import here to avoid loading models at startup
-            from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
+            from cktclaw.models import LLMVerilogAnalyzer
             system_prompt = LLMVerilogAnalyzer.LOGICRT_SYSTEM_PROMPT
 
             # Configure compression settings
@@ -516,9 +516,9 @@ class LogicRTCLI:
             self._run_async_handler(process_reverse(args, self.state))
 
         elif cmd_type == "chat":
-            from .handlers.chat_handler import process_chat
+            from .handlers.chat_handler_v2 import process_chat_v2
             # Run async handler - create new event loop if needed
-            self._run_async_handler(process_chat(user_input, self.state))
+            self._run_async_handler(process_chat_v2(user_input, self.state))
 
         elif cmd_type == "model":
             from .handlers.model_handler import select_model_interactive

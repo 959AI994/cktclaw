@@ -96,6 +96,7 @@ async def opensta_executor(args: str, context: Dict[str, Any]) -> List[Dict[str,
         )
 
         # 更新任务状态
+        try:
         if opensta_output.success:
             await task_manager.update_task_status(task_handle.task_id, TaskStatus.COMPLETED)
             await task_manager.append_output(
@@ -108,6 +109,9 @@ async def opensta_executor(args: str, context: Dict[str, Any]) -> List[Dict[str,
                 task_handle.task_id,
                 f"❌ OpenSTA 执行失败: {opensta_output.error}"
             )
+        except Exception as task_error:
+            # 忽略任务状态更新错误（可能已经是终止状态）
+            pass
 
         # 返回结果
         if opensta_output.success:

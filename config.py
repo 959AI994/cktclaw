@@ -37,18 +37,15 @@ LOGICRT_CHECKPOINT = "output/full_training_norm/dpo_batch_20260319_103708/checkp
 LOGICRT_GPU_ID = 0  # Logical GPU ID for LogicRT inference (maps to physical GPU 2)
 LOGICRT_AIG_ENCODER = "mgvga_improved"
 
-# DeepSeek API configuration (from webapp config if available)
-try:
-    from webapp.backend.config import DEEPSEEK_CONFIG
-except ImportError:
-    DEEPSEEK_CONFIG = {
-        "api_key": os.environ.get("DEEPSEEK_API_KEY", "sk-af52153ce10d4453abf859151ea6ef05"),
-        "base_url": "https://api.deepseek.com",
-        "default_model": "deepseek-chat",
-        "timeout": 120,
-        "temperature": 0.3,
-        "max_tokens": 2000,
-    }
+# DeepSeek API configuration
+DEEPSEEK_CONFIG = {
+    "api_key": "sk-af52153ce10d4453abf859151ea6ef05",
+    "base_url": "https://api.deepseek.com",
+    "default_model": "deepseek-chat",
+    "timeout": 120,
+    "temperature": 0.3,
+    "max_tokens": 2000,
+}
 
 # ━━━━━━━━━━ UI/Display Configuration ━━━━━━━━━━
 SYNTAX_HIGHLIGHT_THEME = "monokai"  # Code syntax highlighting theme

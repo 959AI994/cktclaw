@@ -58,7 +58,7 @@ from .coordinator import (
 
 # Query
 from .query import (
-    QueryState,
+    QueryStateEnum,
     QueryConfig,
     QueryResult,
     ContinueReason,
@@ -104,7 +104,7 @@ __all__ = [
     "get_coordinator_system_prompt",
 
     # Query
-    "QueryState",
+    "QueryStateEnum",
     "QueryConfig",
     "QueryResult",
     "ContinueReason",

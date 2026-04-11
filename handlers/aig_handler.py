@@ -43,7 +43,7 @@ from ..ui import (
 try:
     from webapp.backend.utils.aig_converter import convert_aig_to_pt
     from webapp.backend.utils.verilog_validator import VerilogValidator
-    from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
+    from cktclaw.models import LLMVerilogAnalyzer
     from webapp.backend.models.logicrt_inferencer import LogicRTInferencer
 except ImportError as e:
     raise ImportError(f"Failed to import webapp utils: {e}")
