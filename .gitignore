@@ -49,3 +49,10 @@ test_deepseek.py
 test_integration.py
 HARNESS_INTEGRATION_REPORT.md
 test_integration_full.py
+HARNESS_COMPLETION_REPORT.md
+HARNESS_COMPLETION_SUMMARY.md
+HARNESS_IMPROVEMENT_ANALYSIS.md
+HARNESS_INTEGRATION_GUIDE.md
+test_harness_complete.py
+test_harness_services.py
+verify_integration.py

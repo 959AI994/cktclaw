@@ -32,10 +32,33 @@ from ..harness import (
     get_skill_registry,
 )
 
+from ..harness.services.api import (
+    RateLimiter,
+    RateLimitConfig,
+)
+
 try:
     from cktclaw.models import LLMVerilogAnalyzer
 except ImportError as e:
     raise ImportError(f"Failed to import LLMVerilogAnalyzer: {e}")
+
+
+# 全局速率限制器（单例模式）
+_global_rate_limiter: Optional[RateLimiter] = None
+
+
+def get_rate_limiter() -> RateLimiter:
+    """获取全局速率限制器"""
+    global _global_rate_limiter
+
+    if _global_rate_limiter is None:
+        config = RateLimitConfig(
+            max_requests_per_minute=60,  # 每分钟最多 60 个请求
+            max_tokens_per_minute=100_000,  # 每分钟最多 100K tokens
+        )
+        _global_rate_limiter = RateLimiter(config)
+
+    return _global_rate_limiter
 
 
 async def process_chat_v2(user_message: str, cli_state) -> None:
@@ -100,7 +123,38 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
 
     # Create LLM wrapper function
     async def llm_wrapper(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Wrapper for LLM calls"""
+        """Wrapper for LLM calls with rate limiting"""
+        # 获取速率限制器
+        limiter = get_rate_limiter()
+
+        # 估算 Token 数
+        estimated_tokens = sum(
+            len(str(msg.get("content", ""))) // 4
+            for msg in messages
+        )
+
+        # 速率限制检查
+        can_proceed = await limiter.acquire(estimated_tokens=estimated_tokens)
+
+        if not can_proceed:
+            # 获取等待时间
+            wait_time = limiter.get_wait_time()
+
+            if cli_state.console:
+                cli_state.console.print(
+                    f"[yellow]⏳ Rate limit reached. Waiting {wait_time:.1f}s...[/yellow]"
+                )
+
+            # 等待
+            await asyncio.sleep(wait_time)
+
+            # 重试
+            can_proceed = await limiter.acquire(estimated_tokens=estimated_tokens)
+
+            if not can_proceed:
+                raise Exception("Rate limit exceeded after retry")
+
+        # 调用 LLM
         llm_resp = await asyncio.to_thread(
             _chat_with_messages,
             cli_state.llm_analyzer,
@@ -118,6 +172,8 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
         if llm_resp is None:
             return {
                 "role": "assistant",
+                "content": "抱歉，LLM 未返回有效响应。",
+            }
                 "content": "抱歉，LLM 未返回有效响应。",
             }
 
