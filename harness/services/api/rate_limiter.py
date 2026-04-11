@@ -161,6 +161,17 @@ class RateLimiter:
             "time_since_reset": time.time() - self.state.last_reset_time,
         }
 
+    def get_wait_time(self) -> float:
+        """
+        获取需要等待的时间
+
+        Returns:
+            等待时间（秒）
+        """
+        time_since_reset = time.time() - self.state.last_reset_time
+        time_to_wait = max(0, 60 - time_since_reset)
+        return time_to_wait
+
 
 # 全局速率限制器实例
 _global_rate_limiter: Optional[RateLimiter] = None

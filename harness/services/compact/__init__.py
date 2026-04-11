@@ -32,6 +32,17 @@ from .micro_compact import (
     TIME_BASED_MC_CLEARED_MESSAGE,
 )
 
+from .attachments import (
+    FileAttachment,
+    AttachmentResult,
+    create_post_compact_file_attachments,
+    format_file_attachment_message,
+    create_and_format_file_attachments,
+    POST_COMPACT_MAX_FILES_TO_RESTORE,
+    POST_COMPACT_TOKEN_BUDGET,
+    POST_COMPACT_MAX_TOKENS_PER_FILE,
+)
+
 __all__ = [
     # Auto Compact
     "AutoCompactTrackingState",
@@ -58,4 +69,14 @@ __all__ = [
     "strip_reinjected_attachments",
     "COMPACTABLE_TOOLS",
     "TIME_BASED_MC_CLEARED_MESSAGE",
+
+    # Attachments
+    "FileAttachment",
+    "AttachmentResult",
+    "create_post_compact_file_attachments",
+    "format_file_attachment_message",
+    "create_and_format_file_attachments",
+    "POST_COMPACT_MAX_FILES_TO_RESTORE",
+    "POST_COMPACT_TOKEN_BUDGET",
+    "POST_COMPACT_MAX_TOKENS_PER_FILE",
 ]
