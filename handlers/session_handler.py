@@ -6,6 +6,8 @@ Provides session creation, metadata display, and session listing.
 """
 
 import uuid
+import asyncio
+import os
 from datetime import datetime
 
 from ..ui import (
@@ -35,10 +37,14 @@ def create_new_session(cli_state) -> None:
         # Generate new session ID
         new_session_id = uuid.uuid4().hex[:16]
 
-        # Create in database
-        new_session_id = cli_state.memory_manager.create_session(
-            aig_filename="",
-            model_choice=cli_state.current_engine,
+        # Create in database using cktmem
+        asyncio.run(
+            cli_state.storage.create_session(
+                session_id=new_session_id,
+                project_name=os.path.basename(os.getcwd()),
+                working_dir=os.getcwd(),
+                model_choice=cli_state.current_engine,
+            )
         )
 
         cli_state.session_id = new_session_id
@@ -48,16 +54,7 @@ def create_new_session(cli_state) -> None:
         cli_state.aig_count = 0
         cli_state.chat_turns = 0
 
-        # Rebuild context builder for new session
-        from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
-        from webapp.memory.context_builder import ContextBuilder
-
-        system_prompt = LLMVerilogAnalyzer.LOGICRT_SYSTEM_PROMPT
-        cli_state.context_builder = ContextBuilder(
-            cli_state.memory_manager,
-            system_prompt,
-            max_rounds=cli_state.max_memory_rounds,
-        )
+        # Context manager is already initialized, no need to rebuild
 
     except Exception as e:
         render_error(
@@ -170,7 +167,10 @@ def _display_session_info(cli_state) -> None:
     console = cli_state.console
 
     try:
-        session_data = cli_state.memory_manager.get_session(cli_state.session_id)
+        # Get session data using cktmem
+        session_data = asyncio.run(
+            cli_state.storage.get_session(cli_state.session_id)
+        )
 
         if not session_data:
             render_error(
@@ -180,16 +180,20 @@ def _display_session_info(cli_state) -> None:
             )
             return
 
-        # Count messages
-        message_count = cli_state.memory_manager.count_messages(cli_state.session_id)
+        # Get context stats
+        stats = asyncio.run(
+            cli_state.context_manager.get_context_stats(cli_state.session_id)
+        )
 
         # Prepare display data
         display_data = {
             "session_id": cli_state.session_id,
             "created_at": session_data.get("created_at", "N/A"),
-            "aig_filename": session_data.get("aig_filename") or "(none)",
+            "project_name": session_data.get("project_name") or "(none)",
             "model_choice": session_data.get("model_choice", "unknown"),
-            "messages": message_count,
+            "messages": stats.get("total_messages", 0),
+            "tokens": stats.get("total_tokens", 0),
+            "compactions": stats.get("total_compactions", 0),
             "aig_count": cli_state.aig_count,
             "chat_turns": cli_state.chat_turns,
         }
@@ -211,16 +215,18 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
     console = cli_state.console
 
     try:
-        conn = cli_state.memory_manager._get_conn()
+        conn = cli_state.storage._get_connection()
 
         # Query recent sessions
         rows = conn.execute(
-            """SELECT session_id, created_at, aig_filename, model_choice
+            """SELECT session_id, created_at, project_name, model_choice
                FROM sessions
                ORDER BY created_at DESC
                LIMIT ?""",
             (limit,),
         ).fetchall()
+
+        conn.close()
 
         if not rows:
             console.print("[dim]No sessions found[/dim]")
@@ -231,10 +237,10 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
         render_divider(console)
 
         for i, row in enumerate(rows, 1):
-            session_id = row["session_id"]
-            created_at = row["created_at"]
-            aig_filename = row["aig_filename"] or "(none)"
-            model_choice = row["model_choice"]
+            session_id = row[0]
+            created_at = row[1]
+            project_name = row[2] or "(none)"
+            model_choice = row[3]
 
             # Highlight current session
             if session_id == cli_state.session_id:
@@ -245,7 +251,7 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
             console.print(
                 f"{prefix} [{i}] {session_id[:8]} | "
                 f"[cyan]{created_at[:10]}[/cyan] | "
-                f"[yellow]{aig_filename}[/yellow] | "
+                f"[yellow]{project_name}[/yellow] | "
                 f"[magenta]{model_choice}[/magenta]"
             )
 
@@ -267,19 +273,35 @@ def _export_session(cli_state) -> None:
         import json
         from pathlib import Path
 
-        # Get all messages
-        messages = cli_state.memory_manager.get_all_messages(cli_state.session_id)
+        # Get all messages using cktmem
+        messages = asyncio.run(
+            cli_state.storage.get_messages(cli_state.session_id)
+        )
 
         # Get session metadata
-        session_data = cli_state.memory_manager.get_session(cli_state.session_id)
+        session_data = asyncio.run(
+            cli_state.storage.get_session(cli_state.session_id)
+        )
+
+        # Convert messages to dict format
+        messages_dict = [
+            {
+                "role": msg.role.value if hasattr(msg.role, 'value') else msg.role,
+                "content": msg.content,
+                "msg_type": msg.msg_type.value if hasattr(msg.msg_type, 'value') else msg.msg_type,
+                "layer": msg.layer.value if hasattr(msg.layer, 'value') else msg.layer,
+                "created_at": msg.created_at.isoformat(),
+            }
+            for msg in messages
+        ]
 
         # Prepare export data
         export_data = {
             "session_id": cli_state.session_id,
             "created_at": session_data.get("created_at"),
-            "aig_filename": session_data.get("aig_filename"),
+            "project_name": session_data.get("project_name"),
             "model_choice": session_data.get("model_choice"),
-            "messages": messages,
+            "messages": messages_dict,
         }
 
         # Write to file

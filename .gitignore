@@ -36,3 +36,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+INTEGRATION_PROGRESS.md
+cktclaw/TODO/
+cktmem/SUMMARY.md
+cktmem/INTEGRATION.md

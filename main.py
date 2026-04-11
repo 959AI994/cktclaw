@@ -82,9 +82,24 @@ from .ui import (
 )
 from .handlers.ai4eda_handler import handle_ai4eda
 
-# Import webapp modules for reuse (lazy-loaded where possible)
-from webapp.memory.db_manager import MemoryManager
-from webapp.memory.context_builder import ContextBuilder
+# Import cktmem modules for context management
+from .cktmem import (
+    ContextManager,
+    Storage,
+    CompactConfig,
+    MessageRole,
+    MessageType,
+    ContextLayer,
+)
+
+# Keep old imports for backward compatibility (optional fallback)
+try:
+    from webapp.memory.db_manager import MemoryManager
+    from webapp.memory.context_builder import ContextBuilder
+    LEGACY_MEMORY_AVAILABLE = True
+except ImportError:
+    LEGACY_MEMORY_AVAILABLE = False
+
 # Note: LLMVerilogAnalyzer and LogicRTInferencer are imported lazily in handlers
 # Import type stubs for annotations
 from typing import TYPE_CHECKING
@@ -107,9 +122,15 @@ class CLIState:
     # Engine configuration
     current_engine: str = field(default=config.DEFAULT_ENGINE)
 
-    # Managers and models (lazy-loaded)
-    memory_manager: Optional[MemoryManager] = None
-    context_builder: Optional[ContextBuilder] = None
+    # CktMem managers (new architecture)
+    storage: Optional[Storage] = None
+    context_manager: Optional[ContextManager] = None
+
+    # Legacy managers (for backward compatibility)
+    memory_manager: Optional[Any] = None  # MemoryManager (deprecated)
+    context_builder: Optional[Any] = None  # ContextBuilder (deprecated)
+
+    # Models (lazy-loaded)
     llm_analyzer: Optional[Any] = None  # LLMVerilogAnalyzer (lazy-loaded)
     logicrt_inferencer: Optional[Any] = None  # LogicRTInferencer (lazy-loaded)
 
@@ -135,22 +156,55 @@ class CLIState:
         if self.console is None:
             self.console = create_console()
 
-        if self.memory_manager is None:
-            self.memory_manager = MemoryManager(config.CLI_DATABASE_PATH)
-            # Create session in database
-            self.session_id = self.memory_manager.create_session(
-                aig_filename="",
-                model_choice=self.current_engine,
-            )
+        # Initialize CktMem storage and context manager
+        if self.storage is None:
+            self.storage = Storage(config.CLI_DATABASE_PATH)
 
-        if self.context_builder is None:
+        if self.context_manager is None:
             # Import here to avoid loading models at startup
             from webapp.backend.models.llm_analyzer import LLMVerilogAnalyzer
             system_prompt = LLMVerilogAnalyzer.LOGICRT_SYSTEM_PROMPT
-            self.context_builder = ContextBuilder(
-                self.memory_manager,
-                system_prompt,
-                max_rounds=self.max_memory_rounds,
+
+            # Configure compression settings
+            compact_config = CompactConfig(
+                auto_compact_threshold=150_000,  # 150K tokens
+                target_tokens=40_000,
+                buffer_tokens=13_000,
+            )
+
+            self.context_manager = ContextManager(
+                storage=self.storage,
+                system_prompt=system_prompt,
+                config=compact_config,
+            )
+
+        # Create session in database (async operation, run synchronously)
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            # If there's a running loop, we need to handle this differently
+            # For now, we'll use the synchronous approach
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self.storage.create_session(
+                        session_id=self.session_id,
+                        project_name=os.path.basename(os.getcwd()),
+                        working_dir=os.getcwd(),
+                        model_choice=self.current_engine,
+                    )
+                )
+                future.result()
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run()
+            asyncio.run(
+                self.storage.create_session(
+                    session_id=self.session_id,
+                    project_name=os.path.basename(os.getcwd()),
+                    working_dir=os.getcwd(),
+                    model_choice=self.current_engine,
+                )
             )
 
         if self.session_manager is None:

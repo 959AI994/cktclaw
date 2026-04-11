@@ -58,12 +58,23 @@ async def process_chat(user_message: str, cli_state) -> None:
     # Now chat is allowed without prior /reverse step. The model will
     # leverage session memory (including EDA tool outputs) as context.
 
-    # ━━━━━━━━━━ 2. Assemble context ━━━━━━━━━━
+    # ━━━━━━━━━━ 2. Assemble context (using cktmem) ━━━━━━━━━━
     try:
-        messages = cli_state.context_builder.build_context(
-            cli_state.session_id,
-            user_message,
+        # Use cktmem ContextManager to build context with auto-compression
+        messages = await cli_state.context_manager.build_context(
+            session_id=cli_state.session_id,
+            user_message=user_message,
+            auto_compact=True,  # Enable automatic compression
         )
+
+        # Convert cktmem Message objects to dict format for LLM
+        messages = [
+            {
+                "role": msg.role.value if hasattr(msg.role, 'value') else msg.role,
+                "content": msg.content,
+            }
+            for msg in messages
+        ]
     except Exception as e:
         render_error(
             console,
@@ -257,20 +268,17 @@ async def process_chat(user_message: str, cli_state) -> None:
             )
             return
 
-    # ━━━━━━━━━━ 4. Store in memory ━━━━━━━━━━
+    # ━━━━━━━━━━ 4. Store in memory (using cktmem) ━━━━━━━━━━
     try:
         user_content = _to_memory_text(user_message)
         assistant_content = _to_memory_text(response)
-        cli_state.memory_manager.add_message(
-            cli_state.session_id,
-            "user",
-            user_content,
+
+        # User message already added in build_context, only add assistant response
+        await cli_state.context_manager.add_assistant_message(
+            session_id=cli_state.session_id,
+            content=assistant_content,
         )
-        cli_state.memory_manager.add_message(
-            cli_state.session_id,
-            "assistant",
-            assistant_content,
-        )
+
         cli_state.chat_turns += 1
     except Exception as e:
         render_error(

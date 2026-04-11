@@ -231,13 +231,26 @@ async def process_aig(aig_path: str, cli_state) -> None:
             render_error(console, f"分析错误: {e}", error_type="error")
             return
 
-    # ━━━━━━━━━━ 6. Store in Long Memory ━━━━━━━━━━
+    # ━━━━━━━━━━ 6. Store in Memory (using cktmem) ━━━━━━━━━━
     try:
-        cli_state.memory_manager.store_long_memory(
-            cli_state.session_id,
-            verilog_code,
-            analysis_report,
-        )
+        # Check if this is the first circuit analysis (Anchor Memory)
+        anchor = await cli_state.storage.get_anchor_memory(cli_state.session_id)
+
+        if anchor is None:
+            # First analysis - store as Anchor Memory
+            await cli_state.storage.store_anchor_memory(
+                session_id=cli_state.session_id,
+                verilog_code=verilog_code,
+                analysis_report=analysis_report,
+            )
+        else:
+            # Subsequent analysis - store as Core Context
+            await cli_state.storage.add_core_context(
+                session_id=cli_state.session_id,
+                aig_filename=aig_filename,
+                verilog_code=verilog_code,
+                analysis_report=analysis_report,
+            )
     except Exception as e:
         render_error(console, f"保存失败: {e}", error_type="error")
         return
