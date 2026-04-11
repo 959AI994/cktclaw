@@ -22,31 +22,31 @@
 
 <table>
 <tr>
-<td width="33%">
+<td width="33%" valign="top">
 
-### Getting Started
-- [🎯 Overview](#-overview)
-- [✨ Key Features](#-key-features)
-- [🚀 Quick Start](#-quick-start)
-- [📖 User Guide](#-user-guide)
-
-</td>
-<td width="33%">
-
-### Core Systems
-- [🧠 CktMem System](#-cktmem-memory-system)
-- [🔧 Harness Services](#-harness-services)
-- [🛠️ EDA Integration](#️-eda-tools-integration)
-- [🏗️ Architecture](#️-architecture)
+**Getting Started**
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Quick Start](#-quick-start)
+- [User Guide](#-user-guide)
 
 </td>
-<td width="33%">
+<td width="33%" valign="top">
 
-### Advanced
-- [⚙️ Configuration](#️-configuration)
-- [🔌 Adding EDA Skills](#-adding-eda-skills)
-- [🧪 Testing](#-testing)
-- [📚 API Reference](#-api-reference)
+**Core Systems**
+- [Architecture](#️-architecture)
+- [Commands](#-commands)
+- [Use Cases](#-use-cases)
+- [Configuration](#️-configuration)
+
+</td>
+<td width="33%" valign="top">
+
+**Advanced**
+- [Adding EDA Skills](#-adding-eda-skills)
+- [API Reference](#-api-reference)
+- [Testing](#-testing)
+- [Troubleshooting](#-troubleshooting)
 
 </td>
 </tr>
@@ -102,7 +102,7 @@ Transform gate-level AIG files into readable, structured Verilog RTL code with A
 - Multi-strategy: Session Memory → Micro → Full → Simple Suffix
 - Preserves core decisions and context
 
-### 🔧 Harness Services (95% Complete)
+### 🔧 Harness Services
 
 | Service | Description | Status |
 |---------|-------------|--------|

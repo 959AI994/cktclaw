@@ -18,35 +18,35 @@
 
 ---
 
-## 📋 目录 · Table of Contents
+## 📋 目录
 
 <table>
 <tr>
-<td width="33%">
+<td width="33%" valign="top">
 
-### 快速入门
-- [🎯 核心能力](#-核心能力--key-capabilities)
-- [✨ 功能特性](#-功能特性--features)
-- [🚀 快速开始](#-快速开始--quick-start)
-- [📖 用户指南](#-用户指南--user-guide)
-
-</td>
-<td width="33%">
-
-### 核心系统
-- [🧠 CktMem 系统](#-功能特性--features)
-- [🔧 Harness 服务](#-功能特性--features)
-- [🛠️ EDA 集成](#-功能特性--features)
-- [🏗️ 架构设计](#-架构设计--architecture)
+**快速入门**
+- [核心能力](#-核心能力--key-capabilities)
+- [功能特性](#-功能特性--features)
+- [快速开始](#-快速开始--quick-start)
+- [用户指南](#-用户指南--user-guide)
 
 </td>
-<td width="33%">
+<td width="33%" valign="top">
 
-### 进阶使用
-- [⚙️ 配置说明](#-配置说明--configuration)
-- [🔌 添加 EDA 技能](#-添加-eda-技能)
-- [🧪 测试](#-测试--testing)
-- [📚 API 参考](#-api-参考)
+**核心系统**
+- [架构设计](#-架构设计--architecture)
+- [命令参考](#-命令参考--commands)
+- [使用案例](#-使用案例--use-cases)
+- [配置说明](#-配置说明--configuration)
+
+</td>
+<td width="33%" valign="top">
+
+**进阶开发**
+- [添加 EDA 技能](#-添加-eda-技能)
+- [API 参考](#-api-参考)
+- [测试](#-测试--testing)
+- [故障排除](#-故障排除--troubleshooting)
 
 </td>
 </tr>
@@ -111,7 +111,7 @@
   Tokens saved: 108000
   ```
 
-### 🔧 Harness Services (95% 完整度)
+### 🔧 Harness Services
 
 #### 1. Auto Compact - 自动压缩
 - **Session Memory Compact**: 保留后缀消息，最轻量
