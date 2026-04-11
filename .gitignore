@@ -38,6 +38,12 @@ Thumbs.db
 *.log
 
 INTEGRATION_PROGRESS.md
-cktclaw/TODO/
+TODO/
 cktmem/SUMMARY.md
 cktmem/INTEGRATION.md
+QUICK_REFERENCE.txt
+cktclaw_sessions.db.backup
+
+test_compression.py
+test_deepseek.py
+test_integration.py

@@ -5,7 +5,9 @@ Bootstrap State 测试
 """
 
 import asyncio
-import pytest
+import sys
+sys.path.insert(0, '/home/wjx/pythonproject/cktclaw')
+
 from harness.bootstrap import (
     get_state_manager,
     get_session_id,
