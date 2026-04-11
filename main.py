@@ -41,11 +41,21 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "2,3,4,5")
 
 # Configure external EDA tool paths early (before handlers import)
 _DEFAULT_ABC = "/home/wjx/abc/abc"
+_DEFAULT_OPENSTA = "/home/wjx/OpenSTA/build/sta"
+
 if "ABC_PATH" not in os.environ:
     try:
         from os import path, access, X_OK
         if path.exists(_DEFAULT_ABC) and access(_DEFAULT_ABC, X_OK):
             os.environ["ABC_PATH"] = _DEFAULT_ABC
+    except Exception:
+        pass
+
+if "OPENSTA_PATH" not in os.environ:
+    try:
+        from os import path, access, X_OK
+        if path.exists(_DEFAULT_OPENSTA) and access(_DEFAULT_OPENSTA, X_OK):
+            os.environ["OPENSTA_PATH"] = _DEFAULT_OPENSTA
     except Exception:
         pass
 
@@ -166,6 +176,7 @@ class CLIState:
                 "/reverse": "🚀 核心流：将 AIG 逆向工程为 Verilog",
                 "/yosys": "🛠️ 进入 Yosys 逻辑综合与优化交互模式",
                 "/abc": "🛠️ 进入 ABC 逻辑综合与验证交互模式",
+                "/opensta": "⏱️ 进入 OpenSTA 静态时序分析交互模式",
                 "/ai4eda": "🧰 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）",
                 # "/cktclaw": "🧰 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
@@ -234,6 +245,7 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "engine": "engine",
             "abc": "abc",      # EDA tool: ABC
             "yosys": "yosys",  # EDA tool: Yosys
+            "opensta": "opensta",  # EDA tool: OpenSTA
             "ai4eda": "ai4eda",  # CktClaw Toolkit
             "cktclaw": "ai4eda",
             "about": "about",
@@ -383,6 +395,10 @@ class LogicRTCLI:
         elif cmd_type == "yosys":
             from .handlers.yosys_handler import handle_yosys
             handle_yosys(args, self.state)
+
+        elif cmd_type == "opensta":
+            from .handlers.opensta_handler import handle_opensta
+            handle_opensta(args, self.state)
 
         elif cmd_type == "clear":
             from .handlers.session_handler import create_new_session

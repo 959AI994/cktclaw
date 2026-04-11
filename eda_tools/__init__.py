@@ -1,7 +1,7 @@
 """
 EDA Tools Adapter Layer
 
-Provides subprocess-based runners for external EDA tools (ABC, Yosys, etc.).
+Provides subprocess-based runners for external EDA tools (ABC, Yosys, OpenSTA, etc.).
 Each tool inherits from BaseRunner, which encapsulates:
 - subprocess invocation with timeout
 - stdout / stderr capture
@@ -11,10 +11,12 @@ Each tool inherits from BaseRunner, which encapsulates:
 from .base_runner import BaseRunner, RunResult
 from .abc_runner import ABCRunner
 from .yosys_runner import YosysRunner
+from .opensta_runner import OpenSTARunner
 
 __all__ = [
     "BaseRunner",
     "RunResult",
     "ABCRunner",
     "YosysRunner",
+    "OpenSTARunner",
 ]

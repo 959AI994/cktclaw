@@ -54,7 +54,8 @@
 ### 3. Integrated EDA Tools
 - **ABC**: Advanced logic synthesis and optimization
 - **Yosys**: Open-source synthesis framework
-- Interactive terminals for both tools
+- **OpenSTA**: Static timing analysis tool
+- Interactive terminals for all tools
 
 ### 4. AI4EDA Toolkit
 - AIG/AIGER format conversion
@@ -130,6 +131,7 @@ CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 ```bash
 /abc               # Launch interactive ABC terminal
 /yosys             # Launch interactive Yosys terminal
+/opensta           # Launch interactive OpenSTA terminal
 ```
 
 ### AI4EDA Toolkit

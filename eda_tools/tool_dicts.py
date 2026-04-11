@@ -116,13 +116,14 @@ def _parse_abc_help(out: str) -> Dict[str, str]:
 	return cmds
 
 
-def build_command_dicts() -> Tuple[Dict[str, str], Dict[str, str], int, int]:
+def build_command_dicts() -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], int, int, int]:
 	"""
-	Build (ABC_COMMANDS, YOSYS_COMMANDS, abc_count, yosys_count).
+	Build (ABC_COMMANDS, YOSYS_COMMANDS, OPENSTA_COMMANDS, abc_count, yosys_count, opensta_count).
 	Runs local tools when available; otherwise returns partial dicts.
 	"""
 	abc_cmds: Dict[str, str] = {}
 	yosys_cmds: Dict[str, str] = {}
+	opensta_cmds: Dict[str, str] = {}
 
 	# Yosys
 	if shutil.which("yosys"):
@@ -138,6 +139,30 @@ def build_command_dicts() -> Tuple[Dict[str, str], Dict[str, str], int, int]:
 		if rc == 0 and out:
 			abc_cmds = _parse_abc_help(out)
 
+	# OpenSTA
+	# Prefer OPENSTA_PATH from env if present
+	opensta_exe = os.environ.get("OPENSTA_PATH", "sta")
+	if shutil.which(opensta_exe):
+		# OpenSTA doesn't have a simple help command, so we provide static commands
+		opensta_cmds = {
+			"read_liberty": "📥 读取 Liberty 时序库文件 (.lib)",
+			"read_verilog": "📥 读取 Verilog 网表文件 (.v)",
+			"read_sdc": "📥 读取 SDC 约束文件 (.sdc)",
+			"link_design": "🔗 链接设计顶层模块",
+			"create_clock": "🕐 创建时钟约束",
+			"set_input_delay": "⏱️ 设置输入延迟约束",
+			"set_output_delay": "⏱️ 设置输出延迟约束",
+			"set_load": "⚡ 设置负载电容",
+			"report_checks": "📊 报告时序路径检查",
+			"report_worst_slack": "⚠️ 报告最差时序裕量",
+			"report_tns": "📉 报告总负时序裕量 (TNS)",
+			"report_wns": "📉 报告最差负时序裕量 (WNS)",
+			"report_power": "🔋 报告功耗分析",
+			"report_clock_skew": "🕐 报告时钟偏斜",
+			"write_sdf": "📤 导出 SDF 延迟文件",
+			"write_spef": "📤 导出 SPEF 寄生参数文件",
+		}
+
 	# Always append system-level helper commands
 	abc_cmds["run"] = "🚀 立即执行已拼装的完整命令串"
 	abc_cmds["cancel"] = "❌ 清空当前输入并退出构建器"
@@ -145,11 +170,14 @@ def build_command_dicts() -> Tuple[Dict[str, str], Dict[str, str], int, int]:
 	yosys_cmds["run"] = "🚀 立即执行已拼装的完整命令串"
 	yosys_cmds["cancel"] = "❌ 清空当前输入并退出构建器"
 
-	return abc_cmds, yosys_cmds, len(abc_cmds), len(yosys_cmds)
+	opensta_cmds["run"] = "🚀 立即执行已拼装的完整命令串"
+	opensta_cmds["cancel"] = "❌ 清空当前输入并退出构建器"
+
+	return abc_cmds, yosys_cmds, opensta_cmds, len(abc_cmds), len(yosys_cmds), len(opensta_cmds)
 
 
 # Build at import time for immediate availability to handlers.
-ABC_COMMANDS, YOSYS_COMMANDS, ABC_COUNT, YOSYS_COUNT = build_command_dicts()
+ABC_COMMANDS, YOSYS_COMMANDS, OPENSTA_COMMANDS, ABC_COUNT, YOSYS_COUNT, OPENSTA_COUNT = build_command_dicts()
 
 # ───────────────────── AI4EDA-OpenABC-Data-Toolkit ───────────────────── #
 # Dynamically constructed nested command tree based on discovered CLI (ai4eda/cli.py)

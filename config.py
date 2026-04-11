@@ -114,6 +114,7 @@ COMMANDS 命令:
   /model                    交互式选择分析引擎（LogicRT / DeepSeek）
   /abc  [args]              调用 ABC 逻辑综合工具
   /yosys [args]             调用 Yosys 开源综合工具
+  /opensta [args]           调用 OpenSTA 静态时序分析工具
   /ai4eda [args]            进入 CktClaw Toolkit（AI4EDA 数据处理/转换）
   /about                    查看 CktClaw 平台简介与能力矩阵
   /clear                    创建新会话，清除屏幕
@@ -127,12 +128,15 @@ EDA TOOLS 工具:
   /abc                                       # 交互式输入 ABC 命令
   /yosys -p "read_verilog f.v; stat"         # Yosys 内联脚本
   /yosys                                     # 交互式输入 Yosys 命令
+  /opensta -c "read_liberty lib.lib; report_checks"  # OpenSTA 内联脚本
+  /opensta                                   # 交互式输入 OpenSTA 命令
 
 EXAMPLES 示例:
   > /reverse /path/to/circuit.aig    # 处理 AIG 文件
   > 这个电路实现什么功能？            # 多轮对话
   > 如何优化这个电路？                # 继续提问
   > /model                           # 选择分析引擎（交互式）
+  > /opensta                         # 进入 OpenSTA 时序分析
   > /session info                    # 查看会话信息
   > /clear                           # 新建会话
 
@@ -141,7 +145,8 @@ TIPS 提示:
   • 会话历史自动保存到 SQLite 数据库
   • 长短记忆系统：Verilog 代码锚定，最近对话滑动窗口
   • 可在同一会话中处理多个 AIG 文件
-  • /abc 和 /yosys 需要系统 PATH 中有对应工具
+  • /abc、/yosys 和 /opensta 需要系统 PATH 中有对应工具
+  • OpenSTA 支持环境变量 OPENSTA_PATH 指定可执行文件路径
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
