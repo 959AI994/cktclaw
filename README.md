@@ -1,21 +1,45 @@
-# CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
+<div align="center">
 
-<p align="center">
-  <img src="figure/cktclaw2(1).png" alt="CktClaw logo" width="520"/>
-</p>
+<img src="figure/cktclaw2(1).png" alt="CktClaw logo" width="100%" />
 
-Developed by Jingxin Wang (PhD Student at Shanghai Jiao Tong University)
+# CktClaw
 
-**CktClaw** is an advanced EDA ecosystem specialized in AIG-to-Verilog Functional Recovery and AI4EDA data orchestration. It transforms low-level gate abstractions back into structured RTL, empowered by AI agents and Graph Neural Networks.
+**面向智能 EDA 的多智能体自主生态 · The Autonomous Multi-Agent Ecosystem for Intelligent EDA**
+
+[Jingxin Wang](https://github.com/959AI994) · PhD Student · Shanghai Jiao Tong University · ACE Lab
+
+</div>
+
+---
+
+**CktClaw** 专注于 AIG→Verilog 功能恢复与 AI4EDA 数据编排：在图神经网络与大模型辅助下，将门级抽象还原为结构化 RTL，并串联分析、综合与度量工具链。
+
+---
+
+## Contents
+
+| [Key Capabilities](#key-capabilities) | [Features](#features) | [Installation](#installation) |
+| :---: | :---: | :---: |
+| [Quick Start](#quick-start) | [Commands](#available-commands) | [Architecture](#architecture) |
+| [Models](#models) | [Use Cases](#use-cases) | [Configuration](#configuration) |
+| [Troubleshooting](#troubleshooting) | [Citation](#citation) | [Contact](#contact) |
+
+---
 
 ## Key Capabilities
+
+*核心能力：AIG 逆向、数据工具链与综合度量*
 
 - **Circuit Reverse Engineering**: 面向 AIG→Verilog 的语义恢复与结构模式识别，支持复杂控制/数据通路重建与净化。
 - **AI4EDA Hub**: 内置 GraphML/PyG 转换与向量化表征，结合大模型实现可解释电路理解与知识注入。
 - **Hardware Metrics & Synthesis**: 集成 ABC/Yosys，基于 ASAP7 库进行面积/时延估计，并支持自动化优化序列探索。
 - **High-Performance Data Tooling**: 面向大规模数据集的高吞吐转换与清洗，覆盖跨版本 PyG 兼容性与稳健 I/O。
 
+---
+
 ## Features
+
+*功能概览：交互式 CLI、多引擎与 EDA 集成*
 
 ### 1. Interactive CLI Interface
 - Modern REPL experience with command history and auto-completion
@@ -45,6 +69,8 @@ AIG File → PT Format → LogicRT Inference → Verilog Generation
     Syntax Validation → LLM Analysis → Session Storage
 ```
 
+---
+
 ## Installation
 
 ### Prerequisites
@@ -68,6 +94,8 @@ pip install -r requirements.txt  # if available
 pip install prompt_toolkit rich torch transformers
 ```
 
+---
+
 ## Quick Start
 
 ### Launch CktClaw
@@ -88,6 +116,8 @@ You'll see the welcome screen:
 
 CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 ```
+
+---
 
 ## Available Commands
 
@@ -126,6 +156,8 @@ CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 Ctrl+C             # Exit CktClaw
 ```
 
+---
+
 ## Architecture
 
 ```
@@ -152,6 +184,8 @@ cktclaw/
     └── completers.py          # Auto-completion
 ```
 
+---
+
 ## Models
 
 CktClaw integrates multiple AI models for circuit analysis:
@@ -161,6 +195,8 @@ CktClaw integrates multiple AI models for circuit analysis:
 - **DeepSeek**: Cloud-based API for enhanced reasoning
 
 LogicRT is the core model that powers the reverse engineering pipeline, while CodeV and DeepSeek provide natural language analysis capabilities.
+
+---
 
 ## Use Cases
 
@@ -193,6 +229,8 @@ Ask questions about generated Verilog:
 > Can you optimize the critical path?
 ```
 
+---
+
 ## Configuration
 
 Edit `config.py` to customize:
@@ -202,11 +240,15 @@ Edit `config.py` to customize:
 - Database location
 - UI themes
 
+---
+
 ## Performance Tips
 
 1. **GPU Isolation**: Set `CUDA_VISIBLE_DEVICES` to avoid conflicts
 2. **Model Loading**: First-time model loading may take 30-60 seconds
 3. **Session Persistence**: All sessions are automatically saved to SQLite
+
+---
 
 ## Troubleshooting
 
@@ -225,13 +267,19 @@ pip install prompt_toolkit rich
 - Set `ABC_PATH` and `YOSYS_PATH` environment variables
 - Or install tools to system PATH
 
+---
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
 
+---
+
 ## License
 
 [Add your license here]
+
+---
 
 ## Citation
 
@@ -245,6 +293,8 @@ If you use CktClaw in your research, please cite:
   institution = {Shanghai Jiao Tong University}
 }
 ```
+
+---
 
 ## Contact
 
