@@ -280,8 +280,8 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
         console.print(table)
         console.print()
         console.print("[dim]💡 提示:[/dim]")
-        console.print("[dim]  • /sessions <session_id> - 切换到指定会话[/dim]")
-        console.print("[dim]  • /sessions delete <session_id> - 删除指定会话[/dim]")
+        console.print("[dim]  • /sessions 96e36f87 - 切换到指定会话（直接输入ID，不要尖括号）[/dim]")
+        console.print("[dim]  • /sessions delete 96e36f87 - 删除指定会话[/dim]")
         console.print()
 
     except Exception as e:
