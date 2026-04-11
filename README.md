@@ -12,16 +12,45 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-16%2F16%20passing-brightgreen.svg)](tests/)
 
+**中文** | [English](README-EN.md)
+
 </div>
 
 ---
 
 ## 📋 目录 · Table of Contents
 
-| [核心能力](#-核心能力--key-capabilities) | [功能特性](#-功能特性--features) | [快速开始](#-快速开始--quick-start) |
-| :---: | :---: | :---: |
-| [架构设计](#-架构设计--architecture) | [命令参考](#-命令参考--commands) | [配置说明](#-配置说明--configuration) |
-| [使用案例](#-使用案例--use-cases) | [故障排除](#-故障排除--troubleshooting) | [引用](#-引用--citation) |
+<table>
+<tr>
+<td width="33%">
+
+### 快速入门
+- [🎯 核心能力](#-核心能力--key-capabilities)
+- [✨ 功能特性](#-功能特性--features)
+- [🚀 快速开始](#-快速开始--quick-start)
+- [📖 用户指南](#-用户指南--user-guide)
+
+</td>
+<td width="33%">
+
+### 核心系统
+- [🧠 CktMem 系统](#-功能特性--features)
+- [🔧 Harness 服务](#-功能特性--features)
+- [🛠️ EDA 集成](#-功能特性--features)
+- [🏗️ 架构设计](#-架构设计--architecture)
+
+</td>
+<td width="33%">
+
+### 进阶使用
+- [⚙️ 配置说明](#-配置说明--configuration)
+- [🔌 添加 EDA 技能](#-添加-eda-技能)
+- [🧪 测试](#-测试--testing)
+- [📚 API 参考](#-api-参考)
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -180,6 +209,355 @@ CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 
 # 帮助
 > /help
+```
+
+---
+
+## 📖 用户指南 · User Guide
+
+### 基础命令详解
+
+#### 电路分析命令
+```bash
+/reverse <路径>        # 将 AIG 转换为 Verilog 并分析
+                       # 示例: /reverse circuits/multiplier.aig
+```
+
+#### EDA 工具命令
+```bash
+/abc                   # 启动 ABC 交互式终端
+/yosys                 # 启动 Yosys 交互式终端
+/opensta               # 启动 OpenSTA 进行时序分析
+```
+
+#### AI4EDA 工具包
+```bash
+/ai4eda                # 进入 AI4EDA 数据处理菜单
+                       # - AIG → PyG 转换
+                       # - GraphML 生成
+                       # - 批量数据集处理
+```
+
+#### 模型与引擎管理
+```bash
+/model                 # 交互式模型选择菜单
+/engine <名称>         # 切换分析引擎
+                       # 选项: logicrt (本地), deepseek (云端)
+```
+
+#### 会话管理
+```bash
+/clear                 # 开始新会话
+/session info          # 显示当前会话详情
+/sessions list         # 列出所有最近会话
+```
+
+### 工作流示例
+
+#### 示例 1: 电路逆向工程完整流程
+
+```bash
+# 步骤 1: 加载并分析电路
+> /reverse circuits/alu.aig
+[LogicRT] 正在加载 AIG 文件...
+[LogicRT] 正在分析电路结构...
+[Verilog] 已生成: alu.v
+
+# 步骤 2: 提问
+> 这个电路实现什么功能？
+[Assistant] 这是一个算术逻辑单元 (ALU)，支持...
+
+# 步骤 3: 探索优化
+> 能否建议面积优化方案？
+[Assistant] 根据分析，您可以...
+
+# 步骤 4: 使用 ABC 综合
+> /abc
+abc> read_aiger circuits/alu.aig
+abc> strash; balance; rewrite
+abc> print_stats
+```
+
+#### 示例 2: 长对话自动压缩
+
+```bash
+> /reverse circuit1.aig
+> 分析时序特性
+> 功耗如何？
+> 与 circuit2.aig 对比
+... (继续对话)
+
+# 当 token 超过 150K 时，自动压缩触发：
+[INFO] Token count: 155000 > threshold: 150000
+[INFO] Triggering auto-compact...
+[Compact] Strategy: Session Memory Compact
+[Compact] Pre-compact tokens: 155000
+[Compact] Post-compact tokens: 42000
+💾 Compacted conversation, saved ~113,000 tokens
+
+# 对话无缝继续
+> 继续分析...
+```
+
+#### 示例 3: AI4EDA 批量处理
+
+```bash
+> /ai4eda
+╔══════════════════════════════════════╗
+║       AI4EDA 工具包菜单              ║
+╠══════════════════════════════════════╣
+║ 1. AIG → PyG 批量转换                ║
+║ 2. GraphML 生成                      ║
+║ 3. 数据集清洗                        ║
+║ 4. 特征提取                          ║
+║ 5. 返回主菜单                        ║
+╚══════════════════════════════════════╝
+
+> 1
+[输入] 源目录: ./datasets/aig_files
+[输入] 输出目录: ./datasets/pyg_data
+[批处理] 正在处理 1000 个 AIG 文件...
+[进度] ████████████████████ 100% (1000/1000)
+[成功] 在 45.2 秒内转换了 1000 个文件
+```
+
+### 理解自动压缩机制
+
+CktClaw 自动管理上下文以防止 token 溢出：
+
+**何时触发？**
+- Token 数量超过 150,000
+- 可在 `cktmem/models.py` 中配置阈值
+
+**压缩策略：**
+
+1. **Session Memory Compact**（最轻量）
+   - 保留后缀消息
+   - 无需 LLM 摘要
+   - 适合保留 80%+ 对话内容
+
+2. **Micro Compact**（中等）
+   - 清理工具结果
+   - 移除图片/文档块
+   - 无需调用 LLM
+
+3. **Full Compact**（最重）
+   - LLM 生成摘要
+   - 最大压缩率
+   - 保留核心决策
+
+4. **Simple Suffix**（兜底）
+   - 保留最近消息
+   - 始终可用
+
+**保留什么？**
+- 核心电路分析结果
+- 重要决策和结论
+- 最近访问的文件（最多 5 个）
+- 用户偏好和上下文
+
+---
+
+## 🔌 添加 EDA 技能
+
+CktClaw 让集成新的 EDA 工具变得简单。以下是完整步骤：
+
+### 步骤 1: 创建工具运行器
+
+在 `eda_tools/` 中创建新文件：
+
+```python
+# eda_tools/my_tool_runner.py
+
+import subprocess
+from typing import Optional
+
+class MyToolRunner:
+    """MyTool EDA 软件运行器"""
+
+    def __init__(self, tool_path: str = "mytool"):
+        self.tool_path = tool_path
+
+    def run_command(self, command: str) -> str:
+        """执行 MyTool 命令并返回输出"""
+        try:
+            result = subprocess.run(
+                [self.tool_path, "-c", command],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return result.stdout
+        except Exception as e:
+            return f"错误: {str(e)}"
+
+    def interactive_mode(self):
+        """启动交互式 MyTool 终端"""
+        subprocess.run([self.tool_path, "-i"])
+```
+
+### 步骤 2: 创建命令处理器
+
+在 `handlers/` 中创建处理器：
+
+```python
+# handlers/mytool_handler.py
+
+from eda_tools.my_tool_runner import MyToolRunner
+from ui.renderer import console
+
+class MyToolHandler:
+    """处理 /mytool 命令"""
+
+    def __init__(self):
+        self.runner = MyToolRunner()
+
+    async def handle(self, args: str = ""):
+        """处理 /mytool 命令"""
+        console.print("[bold cyan]正在启动 MyTool...[/bold cyan]")
+
+        if args:
+            # 直接执行命令
+            output = self.runner.run_command(args)
+            console.print(output)
+        else:
+            # 启动交互模式
+            self.runner.interactive_mode()
+```
+
+### 步骤 3: 注册命令
+
+在 `main.py` 中添加：
+
+```python
+# main.py
+
+from handlers.mytool_handler import MyToolHandler
+
+# 在命令处理部分：
+elif user_input.startswith('/mytool'):
+    args = user_input[8:].strip()
+    mytool_handler = MyToolHandler()
+    await mytool_handler.handle(args)
+```
+
+### 步骤 4: 添加到帮助系统
+
+更新 `handlers/help_handler.py`：
+
+```python
+# handlers/help_handler.py
+
+COMMANDS = {
+    # ... 现有命令 ...
+    "/mytool": "启动 MyTool EDA 软件",
+    "/mytool <cmd>": "直接执行 MyTool 命令",
+}
+```
+
+### 步骤 5: （可选）添加 AI 集成
+
+为工具启用 AI 驱动的分析：
+
+```python
+# handlers/mytool_handler.py
+
+async def analyze_with_ai(self, circuit_file: str):
+    """使用 MyTool + AI 分析电路"""
+
+    # 运行工具分析
+    output = self.runner.run_command(f"analyze {circuit_file}")
+
+    # 发送给 AI 进行解释
+    prompt = f"""
+    MyTool 分析输出:
+    {output}
+
+    请用通俗语言解释结果。
+    """
+
+    # 使用聊天处理器获取 AI 响应
+    from handlers.chat_handler_v2 import process_chat_v2
+    response = await process_chat_v2(prompt, session_id)
+
+    return response
+```
+
+### 完整示例: 添加 Cadence Genus
+
+```python
+# eda_tools/genus_runner.py
+class GenusRunner:
+    def __init__(self, genus_path: str = "genus"):
+        self.genus_path = genus_path
+
+    def synthesize(self, rtl_file: str, constraints: str) -> dict:
+        """运行综合并返回指标"""
+        script = f"""
+        read_hdl {rtl_file}
+        read_sdc {constraints}
+        syn_generic
+        syn_map
+        syn_opt
+        report_area
+        report_timing
+        """
+        output = self.run_script(script)
+        return self.parse_metrics(output)
+
+# handlers/genus_handler.py
+class GenusHandler:
+    async def handle(self, args: str):
+        if args.startswith("synth"):
+            # 解析: /genus synth design.v constraints.sdc
+            _, rtl, sdc = args.split()
+            metrics = self.runner.synthesize(rtl, sdc)
+
+            # 显示结果
+            console.print(f"[green]面积: {metrics['area']} um²[/green]")
+            console.print(f"[yellow]延迟: {metrics['delay']} ns[/yellow]")
+```
+
+### 高级技巧
+
+#### 1. 添加进度条
+
+```python
+from rich.progress import Progress
+
+with Progress() as progress:
+    task = progress.add_task("[cyan]处理中...", total=100)
+    for i in range(100):
+        # 执行工作
+        progress.update(task, advance=1)
+```
+
+#### 2. 添加配置文件支持
+
+```python
+# config/mytool_config.py
+MYTOOL_CONFIG = {
+    "path": "/usr/local/bin/mytool",
+    "timeout": 60,
+    "max_retries": 3,
+}
+```
+
+#### 3. 添加错误处理
+
+```python
+from typing import Optional, Tuple
+
+def run_with_retry(self, command: str, max_retries: int = 3) -> Tuple[bool, str]:
+    """带重试的命令执行"""
+    for attempt in range(max_retries):
+        try:
+            result = self.run_command(command)
+            return True, result
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return False, f"失败: {str(e)}"
+            time.sleep(1)
 ```
 
 ---
@@ -438,30 +816,76 @@ python test_next_steps.py
 - ✅ 下一步行动: 4/4 通过
 - **总计**: 16/16 通过 (100%)
 
+### 编写自定义测试
+
+```python
+# test_my_feature.py
+import asyncio
+from cktmem import ContextManager, Storage, CompactConfig
+
+async def test_my_feature():
+    storage = Storage("test.db")
+    config = CompactConfig()
+    manager = ContextManager(storage, "system prompt", config)
+
+    result = await manager.build_context("session_id", "test input")
+    assert len(result) > 0
+    print("✅ 测试通过")
+
+if __name__ == "__main__":
+    asyncio.run(test_my_feature())
+```
+
 ---
 
-## 📊 性能指标 · Performance Metrics
+## 📚 API 参考
 
-### 功能完整度 · Functionality Completeness
+### CktMem API
 
-| 模块 | 完整度 | 状态 |
-|------|--------|------|
-| Auto Compact | 90% | 🟢 优秀 |
-| Micro Compact | 95% | 🟢 优秀 |
-| Tool Orchestration | 90% | 🟢 优秀 |
-| API Services | 100% | 🟢 完美 |
-| Tools | 100% | 🟢 完美 |
-| Hooks | 95% | 🟢 优秀 |
-| Attachments | 90% | 🟢 优秀 |
-| **总体** | **95%** | 🟢 **优秀** |
+```python
+from cktmem import ContextManager, Storage, CompactConfig
 
-### 代码统计 · Code Statistics
+# 初始化
+storage = Storage("sessions.db")
+config = CompactConfig(auto_compact_threshold=150_000)
+manager = ContextManager(storage, system_prompt, config)
 
-- 核心代码: 1,419 行
-- 测试代码: 930 行
-- 文档: 2,950 行
-- **总计**: 5,299 行
+# 构建上下文（自动压缩）
+messages = await manager.build_context(
+    session_id="session_123",
+    user_message="分析这个电路",
+    auto_compact=True
+)
+```
 
+### Harness Services API
+
+```python
+# 工具编排
+from harness.services.tools import run_tools
+
+tool_calls = [
+    {"id": "1", "name": "Read", "input": {"file_path": "test.v"}},
+    {"id": "2", "name": "Grep", "input": {"pattern": "module"}},
+]
+async for update in run_tools(tool_calls, executor, context):
+    if update.message:
+        print(update.message)
+
+# 速率限制
+from harness.services.api import RateLimiter, RateLimitConfig
+limiter = RateLimiter(RateLimitConfig())
+can_proceed = await limiter.acquire(estimated_tokens=5000)
+
+# 自定义 Hook
+from harness.hooks.pre_compact import PreCompactHook, register_pre_compact_hook
+class MyHook(PreCompactHook):
+    async def execute(self, hook_input, abort_signal=None):
+        return PreCompactHookResult(
+            new_custom_instructions="保留所有技术细节"
+        )
+register_pre_compact_hook(MyHook())
+```
 ---
 
 ## 🤝 贡献 · Contributing
@@ -506,5 +930,7 @@ MIT License
 **CktClaw** - 让电路分析更智能 · Making Circuit Analysis Smarter
 
 ⭐ 如果这个项目对您有帮助，请给我们一个 Star！
+
+[报告问题](https://github.com/959AI994/cktclaw/issues) · [功能请求](https://github.com/959AI994/cktclaw/issues) · [English Docs](README-EN.md)
 
 </div>
