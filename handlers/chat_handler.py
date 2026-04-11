@@ -284,16 +284,17 @@ async def process_chat(user_message: str, cli_state) -> None:
         # Auto-generate session title on first chat turn
         if cli_state.chat_turns == 1:
             try:
-                from ..cktmem.title_generator import generate_title_from_context
+                from ..cktmem.title_generator import generate_session_title_with_llm
 
                 # Check if session already has a title
                 session_info = await cli_state.storage.get_session(cli_state.session_id)
                 if not session_info.get("session_title"):
-                    # Generate title from first user message and assistant response
-                    title = generate_title_from_context(
+                    # Generate title using LLM
+                    title = await generate_session_title_with_llm(
                         user_message=user_content,
                         assistant_response=assistant_content,
-                        circuit_name=cli_state.project_name,
+                        llm_analyzer=cli_state.llm_analyzer,
+                        max_length=40,
                     )
 
                     # Update session with generated title

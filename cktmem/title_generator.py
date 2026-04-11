@@ -8,6 +8,90 @@ import re
 from typing import Optional
 
 
+async def generate_session_title_with_llm(
+    user_message: str,
+    assistant_response: Optional[str] = None,
+    llm_analyzer=None,
+    max_length: int = 40,
+) -> str:
+    """
+    使用 LLM 生成会话标题
+
+    Args:
+        user_message: 用户的第一条消息
+        assistant_response: 助手回复（可选）
+        llm_analyzer: LLM 分析器实例
+        max_length: 最大标题长度
+
+    Returns:
+        生成的会话标题
+    """
+    if llm_analyzer is None:
+        # Fallback to rule-based generation
+        return generate_session_title(user_message, max_length)
+
+    try:
+        # 构造 prompt
+        prompt = f"""请为这个 EDA 电路设计对话生成一个简短精准的标题（不超过{max_length}个字符）。
+
+用户问题：
+{user_message[:500]}
+
+{"助手回复：" if assistant_response else ""}
+{assistant_response[:500] if assistant_response else ""}
+
+标题生成要求：
+1. 提取核心关键词：电路名、模块名、文件名、操作类型
+2. 如果提到具体实体（如"上海交通大学"），使用常见缩写（如"SJTU"）
+3. 优先格式：<操作> <对象>（如"分析 SJTU 电路"、"优化 RISC-V CPU"、"逆向 adder.aig"）
+4. 如果是代码片段，提取模块名（如"counter 模块"）
+5. 保持简洁专业，不要啰嗦
+
+直接输出标题，不要任何解释或前缀："""
+
+        # 调用 LLM
+        messages = [{"role": "user", "content": prompt}]
+
+        # 使用 DeepSeek 生成标题（快速且便宜）
+        response = llm_analyzer.chat_with_deepseek(messages)
+
+        if isinstance(response, str):
+            title = response.strip()
+        elif isinstance(response, dict):
+            title = response.get("content", "").strip()
+        else:
+            title = str(response).strip()
+
+        # 清理标题
+        title = title.replace('"', '').replace("'", '').strip()
+
+        # 移除可能的前缀和后缀
+        prefixes = ["标题：", "标题:", "Title:", "Title：", "**", "##"]
+        for prefix in prefixes:
+            if title.startswith(prefix):
+                title = title[len(prefix):].strip()
+            if title.endswith(prefix):
+                title = title[:-len(prefix)].strip()
+
+        # 移除 markdown 格式
+        title = title.replace('**', '').replace('*', '').strip()
+
+        # 截断到最大长度
+        if len(title) > max_length:
+            title = title[:max_length-3] + "..."
+
+        # 验证标题有效性
+        if len(title) < 2 or len(title) > max_length + 10:
+            # Fallback to rule-based
+            return generate_session_title(user_message, max_length)
+
+        return title
+
+    except Exception as e:
+        # Fallback to rule-based generation
+        return generate_session_title(user_message, max_length)
+
+
 def generate_session_title(user_message: str, max_length: int = 40) -> str:
     """
     根据用户消息生成会话标题
