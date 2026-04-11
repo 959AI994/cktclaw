@@ -1,5 +1,9 @@
 # CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 
+<p align="center">
+  <img src="figure/cktclaw2(1).png" alt="CktClaw logo" width="520"/>
+</p>
+
 Developed by Jingxin Wang (PhD Student at Shanghai Jiao Tong University)
 
 **CktClaw** is an advanced EDA ecosystem specialized in AIG-to-Verilog Functional Recovery and AI4EDA data orchestration. It transforms low-level gate abstractions back into structured RTL, empowered by AI agents and Graph Neural Networks.
