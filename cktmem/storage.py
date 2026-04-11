@@ -41,6 +41,7 @@ class Storage:
                 project_name TEXT,
                 working_dir TEXT,
                 model_choice TEXT DEFAULT 'logicrt',
+                session_title TEXT,
 
                 anchor_verilog_code TEXT,
                 anchor_analysis_report TEXT,
@@ -150,6 +151,7 @@ class Storage:
         project_name: Optional[str] = None,
         working_dir: Optional[str] = None,
         model_choice: Optional[str] = None,
+        session_title: Optional[str] = None,
     ):
         """更新会话信息"""
         conn = self._get_connection()
@@ -171,6 +173,10 @@ class Storage:
             updates.append("model_choice = ?")
             params.append(model_choice)
 
+        if session_title is not None:
+            updates.append("session_title = ?")
+            params.append(session_title)
+
         if updates:
             updates.append("updated_at = datetime('now')")
             params.append(session_id)
@@ -180,6 +186,31 @@ class Storage:
             conn.commit()
 
         conn.close()
+
+    async def list_sessions(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """列出所有会话"""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                session_id,
+                session_title,
+                project_name,
+                model_choice,
+                created_at,
+                updated_at,
+                total_compactions
+            FROM sessions
+            ORDER BY updated_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
 
     async def store_anchor_memory(
         self,

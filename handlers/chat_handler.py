@@ -280,6 +280,31 @@ async def process_chat(user_message: str, cli_state) -> None:
         )
 
         cli_state.chat_turns += 1
+
+        # Auto-generate session title on first chat turn
+        if cli_state.chat_turns == 1:
+            try:
+                from ..cktmem.title_generator import generate_title_from_context
+
+                # Check if session already has a title
+                session_info = await cli_state.storage.get_session(cli_state.session_id)
+                if not session_info.get("session_title"):
+                    # Generate title from first user message and assistant response
+                    title = generate_title_from_context(
+                        user_message=user_content,
+                        assistant_response=assistant_content,
+                        circuit_name=cli_state.project_name,
+                    )
+
+                    # Update session with generated title
+                    await cli_state.storage.update_session(
+                        session_id=cli_state.session_id,
+                        session_title=title,
+                    )
+            except Exception as title_error:
+                # Don't fail the whole chat if title generation fails
+                pass
+
     except Exception as e:
         render_error(
             console,

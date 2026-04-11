@@ -291,6 +291,7 @@ class CLIState:
                 "/opensta": "⏱️ 进入 OpenSTA 静态时序分析交互模式",
                 "/ai4eda": "🧰 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）",
                 # "/cktclaw": "🧰 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）",
+                "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
                 "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek)",
                 "/clear": "🧹 清屏并开启新的对话 Session",

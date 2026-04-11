@@ -119,8 +119,10 @@ def handle_sessions_command(args: str, cli_state) -> None:
     Handle /sessions subcommands.
 
     Commands:
+    - /sessions: List recent sessions (default)
     - /sessions list: List recent sessions
     - /sessions delete <session_id>: Delete a session
+    - /sessions <session_id>: Switch to a session
 
     Args:
         args: Subcommand and arguments
@@ -129,11 +131,8 @@ def handle_sessions_command(args: str, cli_state) -> None:
     console = cli_state.console
 
     if not args.strip():
-        render_error(
-            console,
-            "Usage: /sessions <list|delete>",
-            error_type="error",
-        )
+        # Default: list sessions
+        _list_sessions(cli_state, limit=20)
         return
 
     parts = args.strip().split(maxsplit=1)
@@ -141,7 +140,7 @@ def handle_sessions_command(args: str, cli_state) -> None:
     extra_args = parts[1] if len(parts) > 1 else ""
 
     if subcommand == "list":
-        _list_sessions(cli_state, limit=10)
+        _list_sessions(cli_state, limit=20)
 
     elif subcommand == "delete":
         if not extra_args:
@@ -154,11 +153,8 @@ def handle_sessions_command(args: str, cli_state) -> None:
         _delete_session(extra_args, cli_state)
 
     else:
-        render_error(
-            console,
-            f"Unknown subcommand: /sessions {subcommand}. Available: list, delete",
-            error_type="error",
-        )
+        # Try to switch to session by ID
+        _switch_session(subcommand, cli_state)
 
 
 # ━━━━━━━━━━ Helper Functions ━━━━━━━━━━
@@ -217,11 +213,11 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
     try:
         conn = cli_state.storage._get_connection()
 
-        # Query recent sessions
+        # Query recent sessions with title
         rows = conn.execute(
-            """SELECT session_id, created_at, project_name, model_choice
+            """SELECT session_id, created_at, updated_at, project_name, model_choice, session_title, total_compactions
                FROM sessions
-               ORDER BY created_at DESC
+               ORDER BY updated_at DESC
                LIMIT ?""",
             (limit,),
         ).fetchall()
@@ -232,35 +228,132 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
             console.print("[dim]No sessions found[/dim]")
             return
 
-        console.print()
-        console.print(f"[bold cyan]Recent Sessions (latest {len(rows)})[/bold cyan]")
-        render_divider(console)
+        from rich.table import Table
 
-        for i, row in enumerate(rows, 1):
+        table = Table(
+            title=f"📚 历史会话列表 (最近 {len(rows)} 个)",
+            show_header=True,
+            header_style="bold cyan",
+            border_style="blue",
+        )
+
+        table.add_column("ID", style="cyan", width=10)
+        table.add_column("标题", style="green", width=30)
+        table.add_column("项目", style="yellow", width=15)
+        table.add_column("引擎", style="magenta", width=8)
+        table.add_column("更新时间", style="white", width=16)
+        table.add_column("压缩", style="red", width=4)
+
+        for row in rows:
             session_id = row[0]
             created_at = row[1]
-            project_name = row[2] or "(none)"
-            model_choice = row[3]
+            updated_at = row[2] or created_at
+            project_name = row[3] or "-"
+            model_choice = row[4]
+            session_title = row[5] or "(无标题)"
+            total_compactions = row[6] or 0
 
             # Highlight current session
+            session_id_display = session_id[:8]
             if session_id == cli_state.session_id:
-                prefix = "[bold green]→[/bold green]"
-            else:
-                prefix = " "
+                session_id_display = f"[bold green]→ {session_id_display}[/bold green]"
 
-            console.print(
-                f"{prefix} [{i}] {session_id[:8]} | "
-                f"[cyan]{created_at[:10]}[/cyan] | "
-                f"[yellow]{project_name}[/yellow] | "
-                f"[magenta]{model_choice}[/magenta]"
+            # Truncate long strings
+            if len(session_title) > 30:
+                session_title = session_title[:27] + "..."
+            if len(project_name) > 15:
+                project_name = project_name[:12] + "..."
+
+            # Format time
+            time_display = updated_at[:16] if updated_at else created_at[:16]
+
+            table.add_row(
+                session_id_display,
+                session_title,
+                project_name,
+                model_choice,
+                time_display,
+                str(total_compactions),
             )
 
+        console.print()
+        console.print(table)
+        console.print()
+        console.print("[dim]💡 提示:[/dim]")
+        console.print("[dim]  • /sessions <session_id> - 切换到指定会话[/dim]")
+        console.print("[dim]  • /sessions delete <session_id> - 删除指定会话[/dim]")
         console.print()
 
     except Exception as e:
         render_error(
             console,
             f"Failed to list sessions: {e}",
+            error_type="error",
+        )
+
+
+def _switch_session(session_id_prefix: str, cli_state) -> None:
+    """Switch to a different session by ID prefix."""
+    console = cli_state.console
+
+    try:
+        conn = cli_state.storage._get_connection()
+
+        # Find sessions matching the prefix
+        rows = conn.execute(
+            """SELECT session_id, session_title, project_name, model_choice
+               FROM sessions
+               WHERE session_id LIKE ?
+               ORDER BY updated_at DESC
+               LIMIT 10""",
+            (f"{session_id_prefix}%",),
+        ).fetchall()
+
+        conn.close()
+
+        if not rows:
+            render_error(
+                console,
+                f"未找到会话: {session_id_prefix}",
+                error_type="error",
+            )
+            return
+
+        if len(rows) > 1:
+            console.print(f"[yellow]⚠[/yellow] 找到多个匹配的会话，请提供更长的 ID:")
+            for row in rows[:5]:
+                sid = row[0]
+                title = row[1] or "(无标题)"
+                console.print(f"  • {sid[:12]}... - {title}")
+            return
+
+        # Switch to the session
+        session_id = rows[0][0]
+        session_title = rows[0][1] or "(无标题)"
+        project_name = rows[0][2]
+        model_choice = rows[0][3]
+
+        cli_state.session_id = session_id
+        cli_state.project_name = project_name
+        cli_state.model_choice = model_choice
+
+        from rich.panel import Panel
+        console.print()
+        console.print(Panel(
+            f"[green]✓[/green] 已切换到会话\n\n"
+            f"Session ID: [cyan]{session_id[:8]}...[/cyan]\n"
+            f"标题: [green]{session_title}[/green]\n"
+            f"项目: [yellow]{project_name or '-'}[/yellow]\n"
+            f"引擎: [magenta]{model_choice}[/magenta]",
+            title="会话切换",
+            border_style="green",
+        ))
+        console.print()
+
+    except Exception as e:
+        render_error(
+            console,
+            f"Failed to switch session: {e}",
             error_type="error",
         )
 
