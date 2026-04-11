@@ -1,0 +1,38 @@
+# Database files
+*.db
+*.db-shm
+*.db-wal
+logicrt_sessions.db
+cktclaw_sessions.db
+
+# PyTorch model files
+*.pt
+
+# Test data
+test/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
