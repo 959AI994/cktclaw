@@ -104,6 +104,22 @@ class Storage:
             )
         """)
 
+        # session_memories 表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                summary TEXT,
+                content TEXT NOT NULL,
+                memory_type TEXT DEFAULT 'general',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+            )
+        """)
+
         conn.commit()
         conn.close()
 
@@ -476,3 +492,114 @@ class Storage:
             tool_call_id=row["tool_call_id"],
             name=row["name"],
         )
+
+    # ━━━━━━━━━━ Session Memory Methods ━━━━━━━━━━
+
+    async def save_session_memory(
+        self,
+        session_id: str,
+        topic: str,
+        summary: str,
+        content: str,
+        memory_type: str = "general",
+    ):
+        """
+        保存 Session Memory
+
+        Args:
+            session_id: 会话 ID
+            topic: 语义主题（如 "circuit_adder", "project_requirements"）
+            summary: 一行摘要
+            content: 完整内容
+            memory_type: 记忆类型（general, circuit, requirement, decision）
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # 使用 INSERT OR REPLACE 来更新已存在的主题
+        cursor.execute("""
+            INSERT INTO session_memories (session_id, topic, summary, content, memory_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(session_id, topic)
+            DO UPDATE SET
+                summary = excluded.summary,
+                content = excluded.content,
+                memory_type = excluded.memory_type,
+                updated_at = datetime('now')
+        """, (session_id, topic, summary, content, memory_type))
+
+        conn.commit()
+        conn.close()
+
+    async def get_session_memories(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        获取会话的所有 Session Memory
+
+        Returns:
+            记忆列表，按更新时间排序
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT topic, summary, content, memory_type, created_at, updated_at
+            FROM session_memories
+            WHERE session_id = ?
+            ORDER BY updated_at DESC
+        """, (session_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
+    async def delete_session_memory(self, session_id: str, topic: str):
+        """删除指定主题的 Session Memory"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DELETE FROM session_memories
+            WHERE session_id = ? AND topic = ?
+        """, (session_id, topic))
+
+        conn.commit()
+        conn.close()
+
+    async def format_session_memory(self, session_id: str) -> str:
+        """
+        格式化 Session Memory 为可读文本（类似 MEMORY.md）
+
+        Returns:
+            格式化的 Session Memory 内容
+        """
+        memories = await self.get_session_memories(session_id)
+
+        if not memories:
+            return ""
+
+        lines = [
+            "# Session Memory",
+            "",
+            "This session has the following memories:",
+            "",
+        ]
+
+        # 索引部分
+        for mem in memories:
+            lines.append(f"- [{mem['topic']}] {mem['summary']}")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # 详细内容
+        for mem in memories:
+            lines.append(f"## {mem['topic']}")
+            lines.append("")
+            lines.append(mem['content'])
+            lines.append("")
+
+        return "\n".join(lines)
+

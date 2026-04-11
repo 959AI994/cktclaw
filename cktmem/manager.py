@@ -5,6 +5,7 @@
 1. 组装四层上下文
 2. 触发自动压缩
 3. 管理边界标记
+4. 集成文件系统记忆（CktMem 2.0）
 """
 
 from typing import List, Optional
@@ -15,6 +16,7 @@ from .models import (
 from .storage import Storage
 from .compactor import Compactor
 from .token_counter import TokenCounter
+from .memdir import load_memory_prompt
 
 
 class ContextManager:
@@ -25,12 +27,14 @@ class ContextManager:
         storage: Storage,
         system_prompt: str,
         config: Optional[CompactConfig] = None,
+        project_root: Optional[str] = None,
     ):
         self.storage = storage
         self.system_prompt = system_prompt
         self.config = config or CompactConfig()
         self.compactor = Compactor(storage, self.config)
         self.token_counter = TokenCounter()
+        self.project_root = project_root
 
     async def build_context(
         self,
@@ -42,7 +46,7 @@ class ContextManager:
         构建完整上下文
 
         流程：
-        1. 加载四层消息
+        1. 加载四层消息（包括文件系统记忆）
         2. 估算 Token
         3. 触发压缩（如果需要）
         4. 返回最终消息列表
@@ -50,12 +54,22 @@ class ContextManager:
         # 1. 加载各层消息
         messages = []
 
-        # System Layer
+        # System Layer - 基础系统提示词
         messages.append(Message(
             role=MessageRole.SYSTEM,
             content=self.system_prompt,
             layer=ContextLayer.SYSTEM,
         ))
+
+        # System Layer - 文件系统记忆提示词（CktMem 2.0）
+        memory_prompt = load_memory_prompt(self.project_root)
+        if memory_prompt:
+            messages.append(Message(
+                role=MessageRole.SYSTEM,
+                content=memory_prompt,
+                layer=ContextLayer.SYSTEM,
+                metadata={"type": "filesystem_memory"},
+            ))
 
         # Project Layer（如果有）
         project_messages = await self.storage.get_project_messages(session_id)
@@ -104,17 +118,18 @@ class ContextManager:
         """加载 Session Layer"""
         messages = []
 
-        # Anchor Memory
-        anchor = await self.storage.get_anchor_memory(session_id)
-        if anchor:
+        # Session Memory（自动加载）
+        session_memory = await self.storage.format_session_memory(session_id)
+        if session_memory:
             messages.append(Message(
-                role=MessageRole.ASSISTANT,
-                content=self._format_anchor_memory(anchor),
-                msg_type=MessageType.CORE_CONTEXT,
+                role=MessageRole.SYSTEM,
+                content=session_memory,
+                msg_type=MessageType.CHAT,
                 layer=ContextLayer.SESSION,
+                metadata={"type": "session_memory"},
             ))
 
-        # Core Contexts（后续电路分析）
+        # Core Contexts（电路分析）
         core_contexts = await self.storage.get_core_contexts(session_id)
         messages.extend(core_contexts)
 
@@ -123,16 +138,6 @@ class ContextManager:
         messages.extend(summaries)
 
         return messages
-
-    def _format_anchor_memory(self, anchor) -> str:
-        """格式化 Anchor Memory"""
-        content = "## Initial Circuit Analysis (Anchor Memory)\n\n"
-        content += "### Verilog Code\n```verilog\n"
-        content += anchor.verilog_code
-        content += "\n```\n\n"
-        content += "### Analysis Report\n"
-        content += anchor.analysis_report
-        return content
 
     async def _rebuild_after_compact(
         self,

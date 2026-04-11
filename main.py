@@ -402,6 +402,7 @@ class LogicRTCLI:
                 register_reverse_skill,
                 register_opensta_skill,
                 register_ai4eda_skill,
+                register_session_memory_skill,
             )
             import asyncio
             try:
@@ -410,6 +411,7 @@ class LogicRTCLI:
                 asyncio.run(register_reverse_skill())
                 asyncio.run(register_opensta_skill())
                 asyncio.run(register_ai4eda_skill())
+                asyncio.run(register_session_memory_skill())
             except RuntimeError:
                 # Already in async context
                 import concurrent.futures
@@ -419,6 +421,7 @@ class LogicRTCLI:
                     future3 = executor.submit(asyncio.run, register_reverse_skill())
                     future4 = executor.submit(asyncio.run, register_opensta_skill())
                     future5 = executor.submit(asyncio.run, register_ai4eda_skill())
+                    future6 = executor.submit(asyncio.run, register_session_memory_skill())
                     future1.result()
                     future2.result()
                     future3.result()
