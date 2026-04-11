@@ -174,12 +174,12 @@ def select_model_interactive(cli_state) -> None:
 
     # Persist to database
     try:
-        conn = cli_state.memory_manager._get_conn()
-        conn.execute(
-            "UPDATE sessions SET model_choice = ? WHERE session_id = ?",
-            (selected_engine, cli_state.session_id),
-        )
-        conn.commit()
+        # Use cktmem storage instead of old memory_manager
+        import asyncio
+        asyncio.run(cli_state.storage.update_session(
+            cli_state.session_id,
+            model_choice=selected_engine
+        ))
     except Exception as e:
         console.print(f"\n[red]✗ 会话更新失败: {e}[/red]\n")
         return

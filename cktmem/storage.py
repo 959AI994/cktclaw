@@ -144,6 +144,43 @@ class Storage:
             return dict(row)
         return None
 
+    async def update_session(
+        self,
+        session_id: str,
+        project_name: Optional[str] = None,
+        working_dir: Optional[str] = None,
+        model_choice: Optional[str] = None,
+    ):
+        """更新会话信息"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Build update query dynamically
+        updates = []
+        params = []
+
+        if project_name is not None:
+            updates.append("project_name = ?")
+            params.append(project_name)
+
+        if working_dir is not None:
+            updates.append("working_dir = ?")
+            params.append(working_dir)
+
+        if model_choice is not None:
+            updates.append("model_choice = ?")
+            params.append(model_choice)
+
+        if updates:
+            updates.append("updated_at = datetime('now')")
+            params.append(session_id)
+
+            query = f"UPDATE sessions SET {', '.join(updates)} WHERE session_id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+
+        conn.close()
+
     async def store_anchor_memory(
         self,
         session_id: str,

@@ -92,6 +92,15 @@ from .cktmem import (
     ContextLayer,
 )
 
+# Import Harness modules for architecture management
+from .harness import (
+    get_state_manager,
+    get_task_manager,
+    get_skill_registry,
+    get_coordinator_manager,
+    CoordinatorMode,
+)
+
 # Keep old imports for backward compatibility (optional fallback)
 try:
     from webapp.memory.db_manager import MemoryManager
@@ -126,6 +135,12 @@ class CLIState:
     storage: Optional[Storage] = None
     context_manager: Optional[ContextManager] = None
 
+    # Harness managers (architecture core)
+    harness_state_manager: Optional[Any] = None  # StateManager from harness.bootstrap
+    harness_task_manager: Optional[Any] = None   # TaskManager from harness.tasks
+    harness_skill_registry: Optional[Any] = None  # SkillRegistry from harness.skills
+    harness_coordinator: Optional[Any] = None     # CoordinatorManager from harness.coordinator
+
     # Legacy managers (for backward compatibility)
     memory_manager: Optional[Any] = None  # MemoryManager (deprecated)
     context_builder: Optional[Any] = None  # ContextBuilder (deprecated)
@@ -156,6 +171,49 @@ class CLIState:
         if self.console is None:
             self.console = create_console()
 
+        # ━━━━━━━━━━ Initialize Harness Architecture ━━━━━━━━━━
+        # Bootstrap: Global state management
+        if self.harness_state_manager is None:
+            self.harness_state_manager = get_state_manager()
+            # Set working directory
+            import asyncio
+            try:
+                asyncio.run(self.harness_state_manager.set_cwd(os.getcwd()))
+            except RuntimeError:
+                # Already in async context
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self.harness_state_manager.set_cwd(os.getcwd())
+                    )
+                    future.result()
+
+        # Tasks: Task lifecycle management
+        if self.harness_task_manager is None:
+            self.harness_task_manager = get_task_manager()
+
+        # Skills: Skill registry
+        if self.harness_skill_registry is None:
+            self.harness_skill_registry = get_skill_registry()
+
+        # Coordinator: Multi-agent scheduling
+        if self.harness_coordinator is None:
+            self.harness_coordinator = get_coordinator_manager()
+            # Start in Normal mode (can switch to Coordinator mode later)
+            import asyncio
+            try:
+                asyncio.run(self.harness_coordinator.set_mode(CoordinatorMode.NORMAL))
+            except RuntimeError:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self.harness_coordinator.set_mode(CoordinatorMode.NORMAL)
+                    )
+                    future.result()
+
+        # ━━━━━━━━━━ Initialize CktMem (Context Management) ━━━━━━━━━━
         # Initialize CktMem storage and context manager
         if self.storage is None:
             self.storage = Storage(config.CLI_DATABASE_PATH)
@@ -334,6 +392,31 @@ class LogicRTCLI:
         """Display welcome banner and initialization info"""
         console = self.state.console
 
+        # ━━━━━━━━━━ Register Skills ━━━━━━━━━━
+        # Register all bundled skills
+        try:
+            from .skills import register_abc_skill, register_yosys_skill, register_reverse_skill, register_opensta_skill
+            import asyncio
+            try:
+                asyncio.run(register_abc_skill())
+                asyncio.run(register_yosys_skill())
+                asyncio.run(register_reverse_skill())
+                asyncio.run(register_opensta_skill())
+            except RuntimeError:
+                # Already in async context
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future1 = executor.submit(asyncio.run, register_abc_skill())
+                    future2 = executor.submit(asyncio.run, register_yosys_skill())
+                    future3 = executor.submit(asyncio.run, register_reverse_skill())
+                    future4 = executor.submit(asyncio.run, register_opensta_skill())
+                    future1.result()
+                    future2.result()
+                    future3.result()
+                    future4.result()
+        except Exception as e:
+            console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
+
         # Print banner
         console.print(config.WELCOME_BANNER, style="bold cyan")
 
@@ -360,6 +443,12 @@ class LogicRTCLI:
         info_table.add_row(
             f"{Icons.DATABASE} 数据库 DB:",
             f"[dim]{Path(config.CLI_DATABASE_PATH).name}[/dim]"
+        )
+
+        # 添加 Harness 状态
+        info_table.add_row(
+            f"🏗️ 架构 Harness:",
+            f"[green]已激活 Active[/green]"
         )
 
         # 创建面板

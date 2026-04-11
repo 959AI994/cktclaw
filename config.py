@@ -42,9 +42,9 @@ try:
     from webapp.backend.config import DEEPSEEK_CONFIG
 except ImportError:
     DEEPSEEK_CONFIG = {
-        "api_key": os.environ.get("DEEPSEEK_API_KEY", ""),
-        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-        "default_model": "deepseek-v3-1-250821",
+        "api_key": os.environ.get("DEEPSEEK_API_KEY", "sk-af52153ce10d4453abf859151ea6ef05"),
+        "base_url": "https://api.deepseek.com",
+        "default_model": "deepseek-chat",
         "timeout": 120,
         "temperature": 0.3,
         "max_tokens": 2000,

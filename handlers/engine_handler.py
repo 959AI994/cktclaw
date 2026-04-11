@@ -49,12 +49,12 @@ def switch_engine(engine_choice: str, cli_state) -> None:
 
     # Update session in database
     try:
-        conn = cli_state.memory_manager._get_conn()
-        conn.execute(
-            "UPDATE sessions SET model_choice = ? WHERE session_id = ?",
-            (engine_choice, cli_state.session_id),
-        )
-        conn.commit()
+        # Use cktmem storage instead of old memory_manager
+        import asyncio
+        asyncio.run(cli_state.storage.update_session(
+            cli_state.session_id,
+            model_choice=engine_choice
+        ))
     except Exception as e:
         render_error(
             console,

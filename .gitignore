@@ -47,3 +47,5 @@ cktclaw_sessions.db.backup
 test_compression.py
 test_deepseek.py
 test_integration.py
+HARNESS_INTEGRATION_REPORT.md
+test_integration_full.py
