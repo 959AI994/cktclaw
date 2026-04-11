@@ -97,18 +97,18 @@ async def abc_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, Any
 
         # 更新任务状态
         try:
-        if abc_output.success:
-            await task_manager.update_task_status(task_handle.task_id, TaskStatus.COMPLETED)
-            await task_manager.append_output(
-                task_handle.task_id,
-                f"✅ ABC 执行成功\n{cleaned or '(无输出)'}"
-            )
-        else:
-            await task_manager.update_task_status(task_handle.task_id, TaskStatus.FAILED)
-            await task_manager.append_output(
-                task_handle.task_id,
-                f"❌ ABC 执行失败: {abc_output.error}"
-            )
+            if abc_output.success:
+                await task_manager.update_task_status(task_handle.task_id, TaskStatus.COMPLETED)
+                await task_manager.append_output(
+                    task_handle.task_id,
+                    f"✅ ABC 执行成功\n{cleaned or '(无输出)'}"
+                )
+            else:
+                await task_manager.update_task_status(task_handle.task_id, TaskStatus.FAILED)
+                await task_manager.append_output(
+                    task_handle.task_id,
+                    f"❌ ABC 执行失败: {abc_output.error}"
+                )
         except Exception as task_error:
             # 忽略任务状态更新错误（可能已经是终止状态）
             pass

@@ -395,13 +395,20 @@ class LogicRTCLI:
         # ━━━━━━━━━━ Register Skills ━━━━━━━━━━
         # Register all bundled skills
         try:
-            from .skills import register_abc_skill, register_yosys_skill, register_reverse_skill, register_opensta_skill
+            from .skills import (
+                register_abc_skill,
+                register_yosys_skill,
+                register_reverse_skill,
+                register_opensta_skill,
+                register_ai4eda_skill,
+            )
             import asyncio
             try:
                 asyncio.run(register_abc_skill())
                 asyncio.run(register_yosys_skill())
                 asyncio.run(register_reverse_skill())
                 asyncio.run(register_opensta_skill())
+                asyncio.run(register_ai4eda_skill())
             except RuntimeError:
                 # Already in async context
                 import concurrent.futures
@@ -409,6 +416,13 @@ class LogicRTCLI:
                     future1 = executor.submit(asyncio.run, register_abc_skill())
                     future2 = executor.submit(asyncio.run, register_yosys_skill())
                     future3 = executor.submit(asyncio.run, register_reverse_skill())
+                    future4 = executor.submit(asyncio.run, register_opensta_skill())
+                    future5 = executor.submit(asyncio.run, register_ai4eda_skill())
+                    future1.result()
+                    future2.result()
+                    future3.result()
+                    future4.result()
+                    future5.result()
                     future4 = executor.submit(asyncio.run, register_opensta_skill())
                     future1.result()
                     future2.result()

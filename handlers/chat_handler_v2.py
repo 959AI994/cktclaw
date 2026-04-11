@@ -294,6 +294,10 @@ def _extract_skill_name(command: str) -> Optional[str]:
         return "yosys"
     elif command.startswith("reverse"):
         return "reverse"
+    elif command.startswith("opensta"):
+        return "opensta"
+    elif command.startswith("ai4eda"):
+        return "ai4eda"
 
     return None
 
