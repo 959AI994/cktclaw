@@ -219,9 +219,7 @@ class CLIState:
             self.storage = Storage(config.CLI_DATABASE_PATH)
 
         if self.context_manager is None:
-            # Import here to avoid loading models at startup
-            from cktclaw.models import LLMVerilogAnalyzer
-            system_prompt = LLMVerilogAnalyzer.LOGICRT_SYSTEM_PROMPT
+            system_prompt = config.LOGICRT_SYSTEM_PROMPT
 
             # Configure compression settings
             compact_config = CompactConfig(

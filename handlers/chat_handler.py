@@ -36,6 +36,10 @@ try:
 except ImportError as e:
     raise ImportError(f"Failed to import LLMVerilogAnalyzer: {e}")
 
+from cktclaw.utils.tool_call_parser import ToolCallParser
+
+_tool_call_parser = ToolCallParser()
+
 
 async def process_chat(user_message: str, cli_state) -> None:
     """
@@ -120,10 +124,10 @@ async def process_chat(user_message: str, cli_state) -> None:
                 else:
                     # Plain-text tool-call JSON emitted by local model
                     command_to_execute = _extract_tool_call_command(response_text)
-                    # Secondary fallback: reuse analyzer-side robust parser if available
-                    if not command_to_execute and hasattr(cli_state.llm_analyzer, "_extract_local_tool_call"):
+                    # Secondary fallback: standalone robust parser
+                    if not command_to_execute:
                         try:
-                            parsed = cli_state.llm_analyzer._extract_local_tool_call(response_text)
+                            parsed = _tool_call_parser.parse(response_text)
                             if isinstance(parsed, dict) and parsed.get("type") == "tool_call":
                                 if parsed.get("name") == "execute_cktclaw_command":
                                     tool_call_id = str(parsed.get("tool_call_id") or f"parser_call_{step + 1}")
@@ -185,9 +189,9 @@ async def process_chat(user_message: str, cli_state) -> None:
                                 new_command = str((new_resp.get("arguments") or {}).get("command", "")).strip() or None
                         if not new_command:
                             new_command = _extract_tool_call_command(new_text)
-                        if not new_command and hasattr(cli_state.llm_analyzer, "_extract_local_tool_call"):
+                        if not new_command:
                             try:
-                                parsed = cli_state.llm_analyzer._extract_local_tool_call(new_text)
+                                parsed = _tool_call_parser.parse(new_text)
                                 if isinstance(parsed, dict) and parsed.get("type") == "tool_call":
                                     if parsed.get("name") == "execute_cktclaw_command":
                                         new_command = str((parsed.get("arguments") or {}).get("command", "")).strip() or None
