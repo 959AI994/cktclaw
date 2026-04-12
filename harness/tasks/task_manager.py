@@ -124,17 +124,22 @@ class TaskManager:
 
         Raises:
             TaskNotFoundError: Unknown id.
-            TaskStateError: Task already terminal.
+            TaskStateError: Task already terminal (unless setting same status).
         """
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise TaskNotFoundError(f"Task {task_id} not found")
 
+            # Allow idempotent updates (setting same terminal status)
             if is_terminal_task_status(task.status):
-                raise TaskStateError(
-                    f"Cannot update task {task_id} in terminal state {task.status}"
-                )
+                if task.status == status:
+                    # Idempotent: already in this terminal state, no-op
+                    return
+                else:
+                    raise TaskStateError(
+                        f"Cannot update task {task_id} in terminal state {task.status}"
+                    )
 
             task.status = status
 

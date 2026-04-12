@@ -106,6 +106,52 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     if cli_state.llm_analyzer is None:
         cli_state.llm_analyzer = LLMVerilogAnalyzer(verbose=False)
 
+    # ━━━━━━━━━━ 2.5. Build tools from SkillRegistry ━━━━━━━━━━
+    skill_registry = get_skill_registry()
+    all_skills = await skill_registry.list_skills()
+
+    # 构建工具列表
+    tools = []
+    for skill in all_skills:
+        if skill.user_invocable:  # 只包含用户可调用的技能
+            tool_spec = {
+                "type": "function",
+                "function": {
+                    "name": skill.name,
+                    "description": f"{skill.description}\n使用场景: {skill.when_to_use}",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "args": {
+                                "type": "string",
+                                "description": f"参数格式: {skill.argument_hint}\n参数名: {', '.join(skill.argument_names)}"
+                            }
+                        },
+                        "required": ["args"],
+                    },
+                },
+            }
+            tools.append(tool_spec)
+
+    # 添加通用的 execute_cktclaw_command 作为 fallback
+    tools.append({
+        "type": "function",
+        "function": {
+            "name": "execute_cktclaw_command",
+            "description": "执行通用 CktClaw 命令（仅在没有专门技能时使用）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "命令字符串"
+                    }
+                },
+                "required": ["command"],
+            },
+        },
+    })
+
     # ━━━━━━━━━━ 3. Create QueryLoop ━━━━━━━━━━
     start_time = time.time()
 
@@ -154,12 +200,13 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
             if not can_proceed:
                 raise Exception("Rate limit exceeded after retry")
 
-        # 调用 LLM
+        # 调用 LLM（传递动态构建的 tools）
         llm_resp = await asyncio.to_thread(
             _chat_with_messages,
             cli_state.llm_analyzer,
             messages,
             cli_state.current_engine,
+            tools,  # 传递工具列表
         )
 
         # Debug: print LLM response
@@ -206,22 +253,53 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     # Create tool executor function
     async def tool_executor(tool_name: str, tool_args: Dict[str, Any]) -> str:
         """Execute tool via Skill Registry"""
+        skill_registry = get_skill_registry()
+
+        # Check if tool_name is a registered skill
+        try:
+            skill = await skill_registry.get_skill(tool_name)
+            if skill and skill.executor:
+                # Direct skill invocation
+                context = {"cli_state": cli_state}
+                args_str = tool_args.get("args", "")
+                result = await skill.executor(args_str, context)
+
+                # Convert result to string
+                if isinstance(result, list):
+                    return "\n".join(
+                        item.get("text", str(item))
+                        for item in result
+                        if isinstance(item, dict)
+                    )
+                return str(result)
+        except Exception as e:
+            # Skill not found or execution failed, continue to fallback
+            if tool_name != "execute_cktclaw_command":
+                console.print(f"[yellow]⚠️ Skill '{tool_name}' execution failed: {e}[/yellow]")
+
+        # Handle legacy execute_cktclaw_command
         if tool_name == "execute_cktclaw_command":
             command = tool_args.get("command", "")
 
             # Try to route to Skill first
-            skill_registry = get_skill_registry()
-
-            # Parse command to extract skill name
             skill_name = _extract_skill_name(command)
 
             if skill_name:
                 try:
                     skill = await skill_registry.get_skill(skill_name)
                     if skill and skill.executor:
+                        # Extract arguments (remove skill name from command)
+                        if command.startswith("/"):
+                            # Format: "/skill_name args..."
+                            parts = command.split(maxsplit=1)
+                            args_str = parts[1] if len(parts) > 1 else ""
+                        else:
+                            # Format: "skill_name args..." (legacy)
+                            args_str = command[len(skill_name):].strip()
+
                         # Execute via Skill
                         context = {"cli_state": cli_state}
-                        result = await skill.executor(command, context)
+                        result = await skill.executor(args_str, context)
 
                         # Convert result to string
                         if isinstance(result, list):
@@ -356,7 +434,7 @@ def _extract_skill_name(command: str) -> Optional[str]:
     return None
 
 
-def _chat_with_messages(analyzer, messages, engine):
+def _chat_with_messages(analyzer, messages, engine, tools=None):
     """Call LLM with messages (synchronous wrapper)"""
     # Map engine to model_choice
     if engine == "logicrt":
@@ -366,8 +444,8 @@ def _chat_with_messages(analyzer, messages, engine):
     else:
         model_choice = "local"
 
-    # Call the actual method
-    return analyzer.chat_with_context(messages, model_choice)
+    # Call the actual method with tools
+    return analyzer.chat_with_context(messages, model_choice, tools=tools)
 
 
 # Import legacy functions for fallback

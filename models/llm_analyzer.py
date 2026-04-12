@@ -693,7 +693,8 @@ Format the response in markdown with clear sections."""
         return self.chat_with_context(messages, model_choice)
 
     def chat_with_context(self, messages: List[Dict[str, str]],
-                          model_choice: str = "deepseek") -> str:
+                          model_choice: str = "deepseek",
+                          tools: Optional[List[Dict]] = None) -> str:
         """
         多轮对话接口（新版 — 接受 ContextBuilder 组装好的 messages）。
 
@@ -704,6 +705,7 @@ Format the response in markdown with clear sections."""
             messages: 完整的 messages 列表
                       [{"role": "system"/"user"/"assistant", "content": "..."}]
             model_choice: "deepseek" 或 "local"
+            tools: 可选的工具列表，如果提供则覆盖默认的 TOOL_SPECS
 
         Returns:
             模型回复文本
@@ -711,9 +713,9 @@ Format the response in markdown with clear sections."""
         if model_choice == "local":
             return self._chat_with_local_model_ctx(messages)
         else:
-            return self._chat_with_deepseek_ctx(messages)
+            return self._chat_with_deepseek_ctx(messages, tools=tools)
 
-    def _chat_with_deepseek_ctx(self, messages: List[Dict[str, str]]) -> str:
+    def _chat_with_deepseek_ctx(self, messages: List[Dict[str, str]], tools: Optional[List[Dict]] = None) -> str:
         """使用 DeepSeek API 进行多轮对话（接受预组装 messages）"""
 
         try:
@@ -722,12 +724,15 @@ Format the response in markdown with clear sections."""
                 "Content-Type": "application/json"
             }
 
+            # 使用传入的 tools 或默认的 TOOL_SPECS
+            tool_specs = tools if tools is not None else self.TOOL_SPECS
+
             payload = {
                 "model": DEEPSEEK_CONFIG['default_model'],
                 "messages": messages,
                 "temperature": DEEPSEEK_CONFIG.get('temperature', 0.3),
                 "max_tokens": DEEPSEEK_CONFIG.get('max_tokens', 2000),
-                "tools": self.TOOL_SPECS,
+                "tools": tool_specs,
                 "tool_choice": "auto",
             }
 
