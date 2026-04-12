@@ -789,7 +789,7 @@ MIT License
 If you use CktClaw in your research, please cite:
 
 ```bibtex
-@software{cktclaw2024,
+@software{cktclaw2026,
   author = {Wang, Jingxin},
   title = {CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA},
   year = {2024},
@@ -804,7 +804,7 @@ If you use CktClaw in your research, please cite:
 
 - **Author**: AlexWang
 - **Institution**: Shanghai Jiao Tong University
-- **Lab**: ACE Lab
+- **Email**: jingxin.wang@sjtu.edu.cn
 - **GitHub**: [@959AI994](https://github.com/959AI994)
 
 ---
