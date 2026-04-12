@@ -1,0 +1,172 @@
+{
+  "session_id": "rltf_d88e9184b6fd",
+  "config": {
+    "aig_file_path": "test/aig/ADD1b.aig",
+    "max_iterations": 5,
+    "convergence_threshold": 0.01,
+    "target_area": null,
+    "target_delay": null,
+    "target_power": null,
+    "llm_model": "deepseek-chat",
+    "temperature": 0.7,
+    "abc_timeout": 30,
+    "sta_timeout": 60,
+    "session_id": null,
+    "enable_checkpoints": true,
+    "checkpoint_interval": 2
+  },
+  "status": "completed",
+  "current_iteration": 5,
+  "iterations": [
+    {
+      "iteration_id": 1,
+      "timestamp": "2026-04-12T13:22:38.815268",
+      "abc_sequence": "strash; balance; rewrite",
+      "abc_output": "ABC command line: \"source -s /home/wjx/.cktclaw-tools/oss-cad-suite/super_prove/lib/super_prove/abc.rc ; abc -c \"read_aiger test/aig/ADD1b.aig; strash; balance; rewrite; ps; write_aiger /tmp/tmpqyalfbep.aig\"\".\n\n",
+      "abc_success": true,
+      "abc_duration": 0.11860084533691406,
+      "sta_output": "OpenSTA 2.6.0 aa598a2f14 Copyright (c) 2024, Parallax Software, Inc.\nLicense GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n\nThis is free software, and you are free to change and redistribute it\nunder certain conditions; type `show_copying' for details. \nThis program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.\nError: source -script is not a known keyword or flag.\n\u001b[0;31msta\u001b[0m [~/pythonproject/cktclaw] \n",
+      "sta_success": true,
+      "sta_duration": 0.03488922119140625,
+      "metrics": {
+        "area": 0,
+        "delay": 0.0,
+        "power": null,
+        "node_count": 0,
+        "edge_count": 0,
+        "levels": 0
+      },
+      "reward": 0.0,
+      "cumulative_reward": 0.0,
+      "is_best_so_far": true,
+      "convergence_score": null
+    },
+    {
+      "iteration_id": 2,
+      "timestamp": "2026-04-12T13:22:38.956312",
+      "abc_sequence": "strash; rewrite; refactor",
+      "abc_output": "ABC command line: \"source -s /home/wjx/.cktclaw-tools/oss-cad-suite/super_prove/lib/super_prove/abc.rc ; abc -c \"read_aiger test/aig/ADD1b.aig; strash; rewrite; refactor; ps; write_aiger /tmp/tmp8aq_fe8e.aig\"\".\n\n",
+      "abc_success": true,
+      "abc_duration": 0.10744881629943848,
+      "sta_output": "OpenSTA 2.6.0 aa598a2f14 Copyright (c) 2024, Parallax Software, Inc.\nLicense GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n\nThis is free software, and you are free to change and redistribute it\nunder certain conditions; type `show_copying' for details. \nThis program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.\nError: source -script is not a known keyword or flag.\n\u001b[0;31msta\u001b[0m [~/pythonproject/cktclaw] \n",
+      "sta_success": true,
+      "sta_duration": 0.033141136169433594,
+      "metrics": {
+        "area": 0,
+        "delay": 0.0,
+        "power": null,
+        "node_count": 0,
+        "edge_count": 0,
+        "levels": 0
+      },
+      "reward": 0.0,
+      "cumulative_reward": 0.0,
+      "is_best_so_far": false,
+      "convergence_score": null
+    },
+    {
+      "iteration_id": 3,
+      "timestamp": "2026-04-12T13:22:39.104459",
+      "abc_sequence": "strash; balance; rewrite; refactor",
+      "abc_output": "ABC command line: \"source -s /home/wjx/.cktclaw-tools/oss-cad-suite/super_prove/lib/super_prove/abc.rc ; abc -c \"read_aiger test/aig/ADD1b.aig; strash; balance; rewrite; refactor; ps; write_aiger /tmp/tmpjyijq0co.aig\"\".\n\n",
+      "abc_success": true,
+      "abc_duration": 0.11491203308105469,
+      "sta_output": "OpenSTA 2.6.0 aa598a2f14 Copyright (c) 2024, Parallax Software, Inc.\nLicense GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n\nThis is free software, and you are free to change and redistribute it\nunder certain conditions; type `show_copying' for details. \nThis program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.\nError: source -script is not a known keyword or flag.\n\u001b[0;31msta\u001b[0m [~/pythonproject/cktclaw] \n",
+      "sta_success": true,
+      "sta_duration": 0.03217506408691406,
+      "metrics": {
+        "area": 0,
+        "delay": 0.0,
+        "power": null,
+        "node_count": 0,
+        "edge_count": 0,
+        "levels": 0
+      },
+      "reward": 0.0,
+      "cumulative_reward": 0.0,
+      "is_best_so_far": false,
+      "convergence_score": null
+    },
+    {
+      "iteration_id": 4,
+      "timestamp": "2026-04-12T13:22:39.252800",
+      "abc_sequence": "strash; balance; rewrite; balance",
+      "abc_output": "ABC command line: \"source -s /home/wjx/.cktclaw-tools/oss-cad-suite/super_prove/lib/super_prove/abc.rc ; abc -c \"read_aiger test/aig/ADD1b.aig; strash; balance; rewrite; balance; ps; write_aiger /tmp/tmpuqpm5389.aig\"\".\n\n",
+      "abc_success": true,
+      "abc_duration": 0.11549186706542969,
+      "sta_output": "OpenSTA 2.6.0 aa598a2f14 Copyright (c) 2024, Parallax Software, Inc.\nLicense GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n\nThis is free software, and you are free to change and redistribute it\nunder certain conditions; type `show_copying' for details. \nThis program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.\nError: source -script is not a known keyword or flag.\n\u001b[0;31msta\u001b[0m [~/pythonproject/cktclaw] \n",
+      "sta_success": true,
+      "sta_duration": 0.032440900802612305,
+      "metrics": {
+        "area": 0,
+        "delay": 0.0,
+        "power": null,
+        "node_count": 0,
+        "edge_count": 0,
+        "levels": 0
+      },
+      "reward": 0.0,
+      "cumulative_reward": 0.0,
+      "is_best_so_far": false,
+      "convergence_score": null
+    },
+    {
+      "iteration_id": 5,
+      "timestamp": "2026-04-12T13:22:39.397531",
+      "abc_sequence": "strash; balance; rewrite; rewrite; balance",
+      "abc_output": "ABC command line: \"source -s /home/wjx/.cktclaw-tools/oss-cad-suite/super_prove/lib/super_prove/abc.rc ; abc -c \"read_aiger test/aig/ADD1b.aig; strash; balance; rewrite; rewrite; balance; ps; write_aiger /tmp/tmpo8puqvii.aig\"\".\n\n",
+      "abc_success": true,
+      "abc_duration": 0.11583781242370605,
+      "sta_output": "OpenSTA 2.6.0 aa598a2f14 Copyright (c) 2024, Parallax Software, Inc.\nLicense GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n\nThis is free software, and you are free to change and redistribute it\nunder certain conditions; type `show_copying' for details. \nThis program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.\nError: source -script is not a known keyword or flag.\n\u001b[0;31msta\u001b[0m [~/pythonproject/cktclaw] \n",
+      "sta_success": true,
+      "sta_duration": 0.027797460556030273,
+      "metrics": {
+        "area": 0,
+        "delay": 0.0,
+        "power": null,
+        "node_count": 0,
+        "edge_count": 0,
+        "levels": 0
+      },
+      "reward": 0.0,
+      "cumulative_reward": 0.0,
+      "is_best_so_far": false,
+      "convergence_score": null
+    }
+  ],
+  "best_iteration": {
+    "iteration_id": 1,
+    "timestamp": "2026-04-12T13:22:38.815268",
+    "abc_sequence": "strash; balance; rewrite",
+    "abc_output": "ABC command line: \"source -s /home/wjx/.cktclaw-tools/oss-cad-suite/super_prove/lib/super_prove/abc.rc ; abc -c \"read_aiger test/aig/ADD1b.aig; strash; balance; rewrite; ps; write_aiger /tmp/tmpqyalfbep.aig\"\".\n\n",
+    "abc_success": true,
+    "abc_duration": 0.11860084533691406,
+    "sta_output": "OpenSTA 2.6.0 aa598a2f14 Copyright (c) 2024, Parallax Software, Inc.\nLicense GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>\n\nThis is free software, and you are free to change and redistribute it\nunder certain conditions; type `show_copying' for details. \nThis program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.\nError: source -script is not a known keyword or flag.\n\u001b[0;31msta\u001b[0m [~/pythonproject/cktclaw] \n",
+    "sta_success": true,
+    "sta_duration": 0.03488922119140625,
+    "metrics": {
+      "area": 0,
+      "delay": 0.0,
+      "power": null,
+      "node_count": 0,
+      "edge_count": 0,
+      "levels": 0
+    },
+    "reward": 0.0,
+    "cumulative_reward": 0.0,
+    "is_best_so_far": true,
+    "convergence_score": null
+  },
+  "best_metrics": {
+    "area": 0,
+    "delay": 0.0,
+    "power": null,
+    "node_count": 0,
+    "edge_count": 0,
+    "levels": 0
+  },
+  "start_time": "2026-04-12T13:22:38.660830",
+  "end_time": "2026-04-12T13:22:39.397587",
+  "total_duration": 0.736757,
+  "errors": []
+}

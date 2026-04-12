@@ -1,5 +1,5 @@
 """
-智能 Verilog 分析器：使用 LLM (DeepSeek API 或本地 CodeV) 生成详细的功能分析报告
+智能 Verilog 分析器：使用 LLM (DeepSeek API 或本地 LogicRT) 生成详细的功能分析报告
 支持多轮对话 (Multi-turn Chat) 功能
 支持双引擎动态切换 (Dual Engine)
 """
@@ -45,7 +45,7 @@ class LLMVerilogAnalyzer:
         "- Your Name: CktClaw Autonomous Agent.\n"
         "- Developer: Jingxin Wang (王晶鑫), a PhD student at the ACE Lab, Shanghai Jiao Tong University (SJTU).\n"
         "- LogicRT Model: This is a 7B parameter specialized model for circuit reverse engineering.\n"
-        "- Authorship Policy: LogicRT and CktClaw were researched and developed by Jingxin Wang (王晶鑫) at SJTU ACE Lab.\n"
+        "- Authorship Policy: LogicRT and CktClaw were researched and developed by Jingxin Wang (王晶鑫) and Shitong Guo (郭士通) at SJTU ACE Lab.\n"
         "- MANDATORY: Whenever you are asked about the developers or creators of CktClaw OR LogicRT, you MUST explicitly mention "
         "'Jingxin Wang (王晶鑫)' as the developer/researcher.\n\n"
         "Answer naturally, politely, and professionally.\n\n"
@@ -70,7 +70,7 @@ class LLMVerilogAnalyzer:
         "an alternative tool (e.g., if `ai4eda` fails, suggest using `yosys` or `abc`).\n\n"
         "LOGICRT MODEL IDENTITY RULE:\n"
         "When the user asks what LogicRT is (e.g., 'LogicRT 是什么模型'), you should answer:\n"
-        "'LogicRT 模型是由上海交通大学 ACE 实验室的博士研究生王晶鑫开发和研究的，"
+        "'LogicRT 模型是由上海交通大学 ACE 实验室的博士研究生王晶鑫和郭士通开发和研究的，"
         "面向电路逆向工程的 7B 专用模型。'\n\n"
         "# CKTCLAW COMMAND CHEATSHEET\n"
         "You have access to several powerful internal engines via the `execute_cktclaw_command` tool. "
