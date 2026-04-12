@@ -611,7 +611,16 @@ class LogicRTCLI:
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(asyncio.run, coro)
-                future.result()
+                try:
+                    # Set timeout to allow quick exit on Ctrl+C
+                    future.result(timeout=300)  # 5 minutes max
+                except concurrent.futures.TimeoutError:
+                    console = self.state.console
+                    console.print("\n[yellow]⚠️ 操作超时[/yellow]")
+                except KeyboardInterrupt:
+                    # User pressed Ctrl+C, exit immediately
+                    future.cancel()
+                    raise
         except RuntimeError:
             # No running loop, safe to use asyncio.run()
             asyncio.run(coro)
@@ -622,6 +631,9 @@ class LogicRTCLI:
         console.print(f"\n[bold cyan]感谢使用 CKTCLAW！[/bold cyan]")
         console.print(f"[dim]会话已保存 Session saved: {self.state.session_id[:8]}[/dim]")
         self.running = False
+
+        # Exit immediately to avoid waiting for background threads
+        sys.exit(0)
 
 
 # ━━━━━━━━━━ Entry Point ━━━━━━━━━━
