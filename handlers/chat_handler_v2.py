@@ -39,6 +39,7 @@ from ..harness.services.api import (
 
 try:
     from cktclaw.models import LLMVerilogAnalyzer
+    from cktclaw import config as _ckt_config
 except ImportError as e:
     raise ImportError(f"Failed to import LLMVerilogAnalyzer: {e}")
 
@@ -54,7 +55,8 @@ def get_rate_limiter() -> RateLimiter:
     if _global_rate_limiter is None:
         config = RateLimitConfig(
             max_requests_per_minute=60,  # 每分钟最多 60 个请求
-            max_tokens_per_minute=100_000,  # 每分钟最多 100K tokens
+            # 估算按「消息字符/4」；长 system + 多轮会话很容易 >100K，会误触发 acquire 失败并 sleep ~60s
+            max_tokens_per_minute=2_000_000,
         )
         _global_rate_limiter = RateLimiter(config)
 
@@ -104,7 +106,11 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
 
     # ━━━━━━━━━━ 2. Initialize LLM analyzer ━━━━━━━━━━
     if cli_state.llm_analyzer is None:
-        cli_state.llm_analyzer = LLMVerilogAnalyzer(verbose=False)
+        cli_state.llm_analyzer = LLMVerilogAnalyzer(
+            codev_path=_ckt_config.CODEV_PATH,
+            gpu_id=_ckt_config.CODEV_CHAT_GPU_ID,
+            verbose=_ckt_config.VERBOSE,
+        )
 
     # ━━━━━━━━━━ 2.5. Build tools from SkillRegistry ━━━━━━━━━━
     skill_registry = get_skill_registry()
@@ -156,35 +162,29 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     # Create LLM wrapper function
     async def llm_wrapper(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Wrapper for LLM calls with rate limiting"""
-        # 获取速率限制器
-        limiter = get_rate_limiter()
-
-        # 估算 Token 数
-        estimated_tokens = sum(
-            len(str(msg.get("content", ""))) // 4
-            for msg in messages
-        )
-
-        # 速率限制检查
-        can_proceed = await limiter.acquire(estimated_tokens=estimated_tokens)
-
-        if not can_proceed:
-            # 获取等待时间
-            wait_time = limiter.get_wait_time()
-
-            if cli_state.console:
-                cli_state.console.print(
-                    f"[yellow]⏳ Rate limit reached. Waiting {wait_time:.1f}s...[/yellow]"
-                )
-
-            # 等待
-            await asyncio.sleep(wait_time)
-
-            # 重试
+        # 仅 DeepSeek 云端需要限流；本地 logicrt 共用限流时会误触发约 60s 等待。
+        if cli_state.current_engine == "deepseek":
+            limiter = get_rate_limiter()
+            estimated_tokens = sum(
+                len(str(msg.get("content", ""))) // 4
+                for msg in messages
+            )
             can_proceed = await limiter.acquire(estimated_tokens=estimated_tokens)
 
             if not can_proceed:
-                raise Exception("Rate limit exceeded after retry")
+                wait_time = limiter.get_wait_time()
+
+                if cli_state.console:
+                    cli_state.console.print(
+                        f"[yellow]⏳ Rate limit reached. Waiting {wait_time:.1f}s...[/yellow]"
+                    )
+
+                await asyncio.sleep(wait_time)
+
+                can_proceed = await limiter.acquire(estimated_tokens=estimated_tokens)
+
+                if not can_proceed:
+                    raise Exception("Rate limit exceeded after retry")
 
         # 调用 LLM（传递动态构建的 tools）
         llm_resp = await asyncio.to_thread(

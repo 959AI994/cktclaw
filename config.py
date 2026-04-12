@@ -12,6 +12,8 @@ Centralized configuration for LogicRT CLI, including:
 import os
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parent
+
 # ━━━━━━━━━━ Database Configuration ━━━━━━━━━━
 # Isolated CLI database (separate from webapp)
 CLI_DATABASE_PATH = str(Path(__file__).parent / "cktclaw_sessions.db")
@@ -28,9 +30,28 @@ CONTEXT_WINDOW_SIZE = 16384  # Max tokens for context (CodeV/DeepSeek)
 DEFAULT_MAX_TOKENS = 2000  # Max tokens for generation
 INFERENCE_TIMEOUT = 300  # 5 minutes timeout for long AIG processing
 
-# CodeV model configuration
-CODEV_PATH = "models/llm_decoder/CodeV"
-CODEV_GPU_ID = 1  # Logical GPU ID for CodeV chat/analysis (maps to physical GPU 3)
+# CodeV model configuration（对话 / 分析用本地 CodeV）
+# 优先级: 环境变量 CKTCLAW_CODEV_PATH → 并排的 GenEDA CodeV 目录 → 本仓库 models/llm_decoder/CodeV
+_GENEDA_CODEV = (
+    _REPO_ROOT.parent
+    / "0reverse"
+    / "GenEDA-main"
+    / "reverse_engineering"
+    / "models"
+    / "llm_decoder"
+    / "CodeV"
+)
+_REPO_BUNDLED_CODEV = _REPO_ROOT / "models" / "llm_decoder" / "CodeV"
+if os.environ.get("CKTCLAW_CODEV_PATH"):
+    CODEV_PATH = os.environ["CKTCLAW_CODEV_PATH"]
+elif _GENEDA_CODEV.is_dir():
+    CODEV_PATH = str(_GENEDA_CODEV.resolve())
+else:
+    CODEV_PATH = str(_REPO_BUNDLED_CODEV.resolve())
+# 对话懒加载用：-2 = 自动选择显存 ≥2GB 的可见 GPU；0/1/… = 固定逻辑 GPU
+CODEV_CHAT_GPU_ID = int(os.environ.get("CKTCLAW_CODEV_CHAT_GPU", "-2"))
+# 其它子系统（如历史脚本）仍可用的逻辑 GPU编号
+CODEV_GPU_ID = int(os.environ.get("CKTCLAW_CODEV_GPU", "1"))
 
 # LogicRT inference configuration
 LOGICRT_CHECKPOINT = "output/full_training_norm/dpo_batch_20260319_103708/checkpoint-200"
@@ -123,8 +144,8 @@ VERILOG_VALIDATION_RETRIES = 3  # Retry count for Verilog generation if syntax e
 VERILOG_MAX_LENGTH = 50000  # Max Verilog code length to accept
 
 # ━━━━━━━━━━ GPU Configuration ━━━━━━━━━━
-# GPU device isolation (inherit from webapp)
-CUDA_VISIBLE_DEVICES = os.environ.get("CUDA_VISIBLE_DEVICES", "2,3,4,5")
+# 仅反映当前进程环境；默认不隐式限制（main 不再写死 2,3,4,5）
+CUDA_VISIBLE_DEVICES = os.environ.get("CUDA_VISIBLE_DEVICES", "")
 
 # ━━━━━━━━━━ Logging Configuration ━━━━━━━━━━
 VERBOSE = os.environ.get("LOGICRT_VERBOSE", "0") == "1"

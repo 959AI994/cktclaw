@@ -25,6 +25,9 @@ from ..config import (
     VERILOG_VALIDATION_RETRIES,
     VERILOG_MAX_LENGTH,
     AIG_TO_PT_TIMEOUT,
+    CODEV_PATH,
+    CODEV_CHAT_GPU_ID,
+    VERBOSE,
 )
 from ..ui import (
     render_error,
@@ -210,7 +213,11 @@ async def process_aig(aig_path: str, cli_state) -> None:
 
             if cli_state.llm_analyzer is None:
                 cli_state.llm_analyzer = await asyncio.to_thread(
-                    lambda: LLMVerilogAnalyzer(verbose=False),
+                    lambda: LLMVerilogAnalyzer(
+                        codev_path=CODEV_PATH,
+                        gpu_id=CODEV_CHAT_GPU_ID,
+                        verbose=VERBOSE,
+                    ),
                 )
 
             analysis_result = await asyncio.to_thread(

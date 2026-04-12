@@ -8,6 +8,7 @@ multi-strategy tool call parsing for weak local models.
 
 import os
 import re
+import sys
 import time
 from typing import Any, Dict, List, Optional, Union
 
@@ -18,6 +19,9 @@ from ...utils.verilog_parser import VerilogMetricsExtractor
 
 class LocalCodeVProvider(BaseLLMProvider):
     """Local CodeV model provider with lazy loading and GPU management."""
+
+    # 形如 org/model 的 HuggingFace Hub id（单段斜杠），不按本地路径做存在性检查
+    _HF_REPO_ID = re.compile(r"^[\w.-]+/[\w.-]+$")
 
     def __init__(
         self,
@@ -34,7 +38,9 @@ class LocalCodeVProvider(BaseLLMProvider):
         self._model = None
         self._tokenizer = None
         self._loaded = False
+        self._load_failure_reason: Optional[str] = None
         self._tool_parser = ToolCallParser(verbose=verbose)
+        self._min_free_gpu_gb = float(os.environ.get("CKTCLAW_CODEV_MIN_GB", "2"))
 
         # Compute physical GPU number
         cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "not set")
@@ -48,6 +54,24 @@ class LocalCodeVProvider(BaseLLMProvider):
         if self.verbose:
             print(msg)
 
+    def _notify_user(self, msg: str) -> None:
+        """关键错误始终打到 stderr，避免 verbose=False 时用户只看到泛化提示。"""
+        print(msg, file=sys.stderr, flush=True)
+
+    @classmethod
+    def _expects_local_directory(cls, path: str) -> bool:
+        """若返回 True，则 path 应按磁盘目录解析（不存在则立即失败，不空等 Hub）。"""
+        p = path.strip()
+        if not p or p.startswith(("http://", "https://")):
+            return False
+        norm = p.replace("\\", "/").lstrip("/")
+        # Windows盘符
+        if len(p) > 1 and p[1] == ":":
+            return True
+        if cls._HF_REPO_ID.fullmatch(norm):
+            return False
+        return True
+
     # ── GPU Management ──
 
     def _find_best_gpu(self) -> int:
@@ -55,7 +79,16 @@ class LocalCodeVProvider(BaseLLMProvider):
         try:
             import torch
             if not torch.cuda.is_available():
-                self._log("  [GPU Selection] CUDA not available, cannot use local model")
+                msg = "  [GPU Selection] CUDA not available, cannot use local model"
+                self._log(msg)
+                self._notify_user(
+                    f"[CktClaw] {msg}\n"
+                    "  若使用 Conda：先 `conda activate aig_verilog`（或你的 CUDA 版 PyTorch 环境），"
+                    "并确认 `python -c \"import torch; print(torch.cuda.is_available())\"` 为 True。\n"
+                    "  若本机只有一块 GPU，启动前可设: export CUDA_VISIBLE_DEVICES=0\n"
+                    "  若 nvidia-smi 某卡为 ERR，请从 CUDA_VISIBLE_DEVICES 中排除该物理编号。\n"
+                    "  实验室隔离可见卡: export CKTCLAW_CUDA_VISIBLE_DEVICES=2,3,4,5"
+                )
                 return -1
 
             gpu_count = torch.cuda.device_count()
@@ -81,7 +114,7 @@ class LocalCodeVProvider(BaseLLMProvider):
                         f"{free_mem:.2f} GB free / {total_mem:.2f} GB total"
                     )
 
-                    if free_mem > max_free_mem and free_mem >= 2.0:
+                    if free_mem > max_free_mem and free_mem >= self._min_free_gpu_gb:
                         max_free_mem = free_mem
                         best_gpu = i
                 except Exception as e:
@@ -92,8 +125,19 @@ class LocalCodeVProvider(BaseLLMProvider):
                 self._log(f"  [GPU Selection] ✓ Selected Logical GPU {best_gpu} with {max_free_mem:.2f} GB free")
                 return best_gpu
             else:
-                self._log("  [GPU Selection] ✗ No GPU with sufficient memory (≥2GB free)")
+                self._log(
+                    f"  [GPU Selection] ✗ No GPU with sufficient memory "
+                    f"(≥{self._min_free_gpu_gb}GB free)"
+                )
                 self._log("  [GPU Selection] → Recommend using DeepSeek API instead")
+                self._notify_user(
+                    f"[CktClaw] 无满足条件的 GPU：需要 CUDA 且至少一张可见卡剩余显存 ≥ "
+                    f"{self._min_free_gpu_gb}GB（可设置 CKTCLAW_CODEV_MIN_GB 调低）。\n"
+                    "  环境：请在含 CUDA 版 PyTorch 的 Conda 中运行（如 `conda activate aig_verilog`）。\n"
+                    "  检查: echo \"$CUDA_VISIBLE_DEVICES\"（空表示全部物理 GPU 可见）。\n"
+                    "  排除占满/故障卡示例: export CUDA_VISIBLE_DEVICES=0,1,2,3\n"
+                    "  或固定逻辑卡: export CKTCLAW_CODEV_CHAT_GPU=0"
+                )
                 return -1
 
         except Exception as e:
@@ -107,6 +151,21 @@ class LocalCodeVProvider(BaseLLMProvider):
         if self._loaded:
             return True
 
+        self._load_failure_reason = None
+
+        # 本地目录须存在，避免 transformers 把路径当 Hub id 空等数十秒
+        if self._expects_local_directory(self.codev_path):
+            abs_path = os.path.abspath(os.path.expanduser(self.codev_path))
+            if not os.path.isdir(abs_path):
+                self._load_failure_reason = (
+                    f"本地模型目录不存在:\n  {abs_path}\n\n"
+                    "CktClaw 对话用的 CodeV 权重需要自行准备并放到该路径，或设置:\n"
+                    "  export CKTCLAW_CODEV_PATH=/绝对路径/到你的/CodeV或兼容HF快照目录\n\n"
+                    "目录内通常需包含 config.json、tokenizer 与模型权重。"
+                )
+                self._notify_user(f"[CktClaw]\n{self._load_failure_reason}")
+                return False
+
         # Auto GPU selection
         if self.requested_gpu_id == -2:
             self._log(f"\n{'='*70}")
@@ -116,9 +175,16 @@ class LocalCodeVProvider(BaseLLMProvider):
             self.gpu_id = self._find_best_gpu()
 
             if self.gpu_id < 0:
+                self._load_failure_reason = (
+                    "未选中可用 GPU（需要 CUDA 且满足显存门槛）。可尝试:\n"
+                    "  • conda activate aig_verilog（或你的 CUDA PyTorch 环境）\n"
+                    "  • export CUDA_VISIBLE_DEVICES=0（若当前可见卡不对）\n"
+                    "  • export CKTCLAW_CODEV_CHAT_GPU=0 或 export CKTCLAW_CODEV_MIN_GB=1"
+                )
                 self._log("  ✗ No suitable GPU found for Local CodeV")
                 self._log("  → Please use DeepSeek API engine instead")
                 self._log(f"{'='*70}\n")
+                self._notify_user(f"[CktClaw] {self._load_failure_reason}")
                 return False
 
             self.device = f"cuda:{self.gpu_id}"
@@ -180,20 +246,30 @@ class LocalCodeVProvider(BaseLLMProvider):
             self._log(f"  ✓ eos_token: {self._tokenizer.eos_token!r} (id={self._tokenizer.eos_token_id})")
             self._log(f"  ✓ pad_token: {self._tokenizer.pad_token!r} (id={self._tokenizer.pad_token_id})")
             self._log(f"{'='*70}\n")
+            self._load_failure_reason = None
             return True
 
         except Exception as e:
             import torch as _torch
             if isinstance(e, _torch.cuda.OutOfMemoryError):
+                self._load_failure_reason = (
+                    f"GPU 显存不足 (OOM)，逻辑 GPU {self.gpu_id}。"
+                    "可换卡、释放显存或使用 /model 切换 DeepSeek。"
+                )
                 self._log(f"\n  ✗ GPU Out of Memory!")
                 self._log(f"  → Logical GPU {self.gpu_id} (Physical GPU {self._physical_gpu}) does not have enough memory")
                 self._log("  → Please switch to DeepSeek API engine (/model or /engine deepseek)")
+                self._notify_user(f"[CktClaw] {self._load_failure_reason}")
             else:
+                self._load_failure_reason = f"{type(e).__name__}: {e}"
                 self._log(f"  ✗ Failed to load Local CodeV: {e}")
                 if self.verbose:
                     import traceback
                     traceback.print_exc()
                 self._log("  → User will see an error message in chat")
+                self._notify_user(
+                    f"[CktClaw] 加载本地模型失败: {self._load_failure_reason}"
+                )
             self._log(f"{'='*70}\n")
             self._loaded = False
             return False
@@ -259,9 +335,11 @@ class LocalCodeVProvider(BaseLLMProvider):
     ) -> Union[str, Dict[str, Any]]:
         """Multi-turn chat using local CodeV model."""
         if not self._ensure_loaded():
+            detail = self._load_failure_reason or "原因未知"
             return (
-                "⚠️ Failed to load Local CodeV model. "
-                "Please try again or switch to DeepSeek-V3 engine."
+                "⚠️ 无法加载本地 CodeV 模型。\n\n"
+                f"{detail}\n\n"
+                "也可输入 /model 切换到 DeepSeek 云端引擎。"
             )
 
         try:
@@ -306,9 +384,10 @@ class LocalCodeVProvider(BaseLLMProvider):
     ) -> str:
         """Analyze Verilog code using local CodeV model."""
         if not self._ensure_loaded():
+            detail = self._load_failure_reason or "原因未知"
             return (
-                "⚠️ Failed to load Local CodeV model. "
-                "Please try again or switch to DeepSeek-V3 engine.\n\n"
+                "⚠️ 无法加载本地 CodeV 模型。\n\n"
+                f"{detail}\n\n"
                 + VerilogMetricsExtractor.generate_fallback_analysis(verilog_code, metrics)
             )
 

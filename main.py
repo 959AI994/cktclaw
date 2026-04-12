@@ -21,6 +21,23 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Any
 from datetime import datetime
 
+
+def _flush_stdin_typeahead() -> None:
+    """丢弃 stdin 上尚未被读取的数据。
+
+    在 Rich spinner / LLM 等待期间，终端仍会把按键回显到屏幕（与状态行糊在一起），
+    若此时敲了回车，整行会留在缓冲区；下一轮 prompt_toolkit 会立刻把它当成新输入，
+    从而误发第二条「聊天」、再次调用 DeepSeek（看起来像重复响应）。
+    """
+    try:
+        import termios
+
+        if not sys.stdin.isatty():
+            return
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (ImportError, AttributeError, OSError, ValueError):
+        pass
+
 # ━━━━━━━━━━ Silence noisy third-party output BEFORE any library import ━━━━━━━━━━
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -36,8 +53,16 @@ _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# Set GPU isolation BEFORE importing torch
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", "2,3,4,5")
+# GPU 可见性：须在导入 torch 之前决定。
+# 旧版默认写死 2,3,4,5，会导致 nvidia-smi 里空闲的 0/1 对 PyTorch 不可见；且若列表中含 ERR/故障卡，
+# mem_get_info 可能异常，出现「明明有空卡却报无满足条件 GPU」。
+# • 未设置时：不修改 CUDA_VISIBLE_DEVICES，由驱动暴露全部 GPU，LocalCodeV 按空闲显存自动选卡。
+# • 需与实验室隔离策略一致时：export CKTCLAW_CUDA_VISIBLE_DEVICES=2,3,4,5
+# • 或直接：export CUDA_VISIBLE_DEVICES=0,1,2,3（排除占满或故障卡）
+if "CUDA_VISIBLE_DEVICES" not in os.environ:
+    _iso = os.environ.get("CKTCLAW_CUDA_VISIBLE_DEVICES")
+    if _iso is not None and str(_iso).strip() != "":
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(_iso).strip()
 
 # Configure external EDA tool paths early (before handlers import)
 _DEFAULT_ABC = "/home/wjx/abc/abc"
@@ -449,6 +474,37 @@ class LogicRTCLI:
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
+        # ━━━━━━━━━━ Load Project Behavior (.cktclaw/) ━━━━━━━━━━
+        try:
+            from .bootstrap import WorkspaceParser, inject_project_behavior
+
+            _ws_parser = WorkspaceParser(verbose=config.VERBOSE)
+
+            import asyncio as _aio
+            try:
+                _behavior = _aio.run(_ws_parser.load_project_behavior())
+            except RuntimeError:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as _pool:
+                    _behavior = _pool.submit(
+                        _aio.run, _ws_parser.load_project_behavior()
+                    ).result()
+
+            if _behavior.has_content:
+                console.print("[dim]📂 Loading .cktclaw/ project behavior...[/dim]")
+                try:
+                    _aio.run(inject_project_behavior(_behavior, self.state))
+                except RuntimeError:
+                    with concurrent.futures.ThreadPoolExecutor() as _pool:
+                        _pool.submit(
+                            _aio.run,
+                            inject_project_behavior(_behavior, self.state),
+                        ).result()
+
+        except Exception as e:
+            if config.VERBOSE:
+                console.print(f"[dim]⚠️ .cktclaw/ loader: {e}[/dim]")
+
         # Print banner
         console.print(config.WELCOME_BANNER, style="bold cyan")
 
@@ -513,6 +569,8 @@ class LogicRTCLI:
 
         while self.running:
             try:
+                # 避免在上一轮耗时任务进行中误入缓冲区的内容被当作下一轮输入
+                _flush_stdin_typeahead()
                 # 极简提示符
                 user_input = self.state.session_manager.prompt(
                     HTML('<ansicyan><b>CktClaw</b></ansicyan> <ansigray>></ansigray> ')
@@ -522,9 +580,12 @@ class LogicRTCLI:
                 if user_input.strip():
                     self._dispatch_input_sync(user_input)
 
-            except (KeyboardInterrupt, EOFError):
-                # Ctrl+C 或 Ctrl+D → 退出程序
-                self.shutdown()
+            except KeyboardInterrupt:
+                # 本地模型在子线程里跑 torch.generate 时，sys.exit 会等线程结束 → 极慢
+                self.shutdown(from_interrupt=True)
+                break
+            except EOFError:
+                self.shutdown(from_interrupt=False)
                 break
             except Exception as e:
                 render_error(console, str(e), error_type="internal")
@@ -637,21 +698,39 @@ class LogicRTCLI:
                     console = self.state.console
                     console.print("\n[yellow]⚠️ 操作超时[/yellow]")
                 except KeyboardInterrupt:
-                    # User pressed Ctrl+C, exit immediately
-                    future.cancel()
-                    raise
+                    # 无法取消已在执行的 worker；os._exit 不等待 ThreadPoolExecutor 收尾
+                    try:
+                        self.state.console.print(
+                            "\n[dim]已中断：立即退出（未等待本地推理线程）[/dim]"
+                        )
+                    except Exception:
+                        print(
+                            "\n已中断，立即退出。",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    os._exit(130)
         except RuntimeError:
             # No running loop, safe to use asyncio.run()
-            asyncio.run(coro)
+            try:
+                asyncio.run(coro)
+            except KeyboardInterrupt:
+                os._exit(130)
 
-    def shutdown(self):
-        """Graceful shutdown"""
+    def shutdown(self, from_interrupt: bool = False):
+        """Graceful shutdown. from_interrupt=True 时用 os._exit，避免等待 GPU 子线程。"""
         console = self.state.console
-        console.print(f"\n[bold cyan]感谢使用 CKTCLAW！[/bold cyan]")
-        console.print(f"[dim]会话已保存 Session saved: {self.state.session_id[:8]}[/dim]")
+        try:
+            console.print(f"\n[bold cyan]感谢使用 CKTCLAW！[/bold cyan]")
+            console.print(
+                f"[dim]会话已保存 Session saved: {self.state.session_id[:8]}[/dim]"
+            )
+        except Exception:
+            pass
         self.running = False
 
-        # Exit immediately to avoid waiting for background threads
+        if from_interrupt:
+            os._exit(130)
         sys.exit(0)
 
 
@@ -666,8 +745,8 @@ def main():
         cli.startup()
         cli.repl_loop()
     except KeyboardInterrupt:
-        print("\n[Interrupted]")
-        sys.exit(0)
+        print("\n[Interrupted]", flush=True)
+        os._exit(130)
     except Exception as e:
         print(f"[FATAL ERROR] {e}", file=sys.stderr)
         import traceback

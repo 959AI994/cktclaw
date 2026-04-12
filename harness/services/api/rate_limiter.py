@@ -74,13 +74,17 @@ class RateLimiter:
             if self.state.requests_count >= self.config.max_requests_per_minute:
                 return False
 
-            # 检查 Token 数限制
-            if self.state.tokens_count + estimated_tokens > self.config.max_tokens_per_minute:
+            # 单次请求的估算不应「一口吃掉」整分钟额度，否则首条长上下文会直接失败并触发 ~60s 重试间隔
+            est = min(
+                max(0, int(estimated_tokens)),
+                max(1, self.config.max_tokens_per_minute // 2),
+            )
+            if self.state.tokens_count + est > self.config.max_tokens_per_minute:
                 return False
 
-            # 更新计数器
+            # 更新计数器（使用截断后的 est，与上面检查一致）
             self.state.requests_count += 1
-            self.state.tokens_count += estimated_tokens
+            self.state.tokens_count += est
 
             return True
 

@@ -33,6 +33,7 @@ from ..ui import (
 
 try:
     from cktclaw.models import LLMVerilogAnalyzer
+    from cktclaw import config as _ckt_config
 except ImportError as e:
     raise ImportError(f"Failed to import LLMVerilogAnalyzer: {e}")
 
@@ -97,7 +98,11 @@ async def process_chat(user_message: str, cli_state) -> None:
         try:
             # Lazy-load LLM analyzer if needed (verbose=False: 不输出 GPU/模型加载日志)
             if cli_state.llm_analyzer is None:
-                cli_state.llm_analyzer = LLMVerilogAnalyzer(verbose=False)
+                cli_state.llm_analyzer = LLMVerilogAnalyzer(
+                    codev_path=_ckt_config.CODEV_PATH,
+                    gpu_id=_ckt_config.CODEV_CHAT_GPU_ID,
+                    verbose=_ckt_config.VERBOSE,
+                )
 
             # Agent loop: keep calling model until no tool_call is returned.
             working_messages = list(messages)
