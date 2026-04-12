@@ -291,6 +291,9 @@ class CLIState:
                 "/opensta": "⏱️ 进入 OpenSTA 静态时序分析交互模式",
                 "/ai4eda": "🧰 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）",
                 # "/cktclaw": "🧰 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）",
+                "/rltf": "🔁 RLTF：PPA 反馈驱动的 ABC 优化序列搜索（workflows/rltf）",
+                "/pareto-negotiate": "⚖️ Pareto 多智能体协商，博弈驱动 PPA（workflows/pareto_negotiation）",
+                "/pareto": "⚖️ 同 /pareto-negotiate（别名）",
                 "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
                 "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek)",
@@ -301,7 +304,7 @@ class CLIState:
             # Magic: treat '/' as part of a word to trigger completion instantly
             slash_pattern = re.compile(r'(/[\w-]*)')
             # Pad commands for left-aligned pretty two-column layout
-            pad_width = 12
+            pad_width = max(22, max(len(cmd) for cmd in GLOBAL_COMMANDS) + 2)
             formatted_words = [cmd.ljust(pad_width) for cmd in GLOBAL_COMMANDS.keys()]
             formatted_meta = {cmd.ljust(pad_width): desc for cmd, desc in GLOBAL_COMMANDS.items()}
             root_completer = WordCompleter(
@@ -361,6 +364,13 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "opensta": "opensta",  # EDA tool: OpenSTA
             "ai4eda": "ai4eda",  # CktClaw Toolkit
             "cktclaw": "ai4eda",
+            "rltf": "rltf",
+            "rltf-opt": "rltf",
+            "rl-synth": "rltf",
+            "pareto-negotiate": "pareto-negotiate",
+            "pareto": "pareto-negotiate",
+            "negotiate": "pareto-negotiate",
+            "multi-agent": "pareto-negotiate",
             "about": "about",
             "clear": "clear",
             "session": "session",
@@ -495,6 +505,7 @@ class LogicRTCLI:
             "  • 输入 [bold cyan]/reverse <路径>[/bold cyan] 处理电路\n"
             "  • 输入 [bold cyan]/abc[/bold cyan] 或 [bold cyan]/yosys[/bold cyan] 进入交互式逻辑综合终端\n"
             "  • 输入 [bold cyan]/ai4eda[/bold cyan] 进入 CktClaw Toolkit（AI4EDA 数据处理/转换）\n"
+            "  • 输入 [bold cyan]/rltf[/bold cyan] 或 [bold cyan]/pareto-negotiate[/bold cyan] 运行 workflow 技能\n"
             "  • 输入 [bold cyan]/model[/bold cyan] 选择分析引擎\n"
         )
 
@@ -566,6 +577,16 @@ class LogicRTCLI:
         elif cmd_type == "opensta":
             from .handlers.opensta_handler import handle_opensta
             handle_opensta(args, self.state)
+
+        elif cmd_type == "rltf":
+            from .handlers.workflow_skill_handler import process_workflow_skill
+            self._run_async_handler(process_workflow_skill("rltf", args, self.state))
+
+        elif cmd_type == "pareto-negotiate":
+            from .handlers.workflow_skill_handler import process_workflow_skill
+            self._run_async_handler(
+                process_workflow_skill("pareto-negotiate", args, self.state)
+            )
 
         elif cmd_type == "clear":
             from .handlers.session_handler import create_new_session

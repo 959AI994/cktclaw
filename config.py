@@ -113,12 +113,19 @@ COMMANDS 命令:
   /yosys [args]             调用 Yosys 开源综合工具
   /opensta [args]           调用 OpenSTA 静态时序分析工具
   /ai4eda [args]            进入 CktClaw Toolkit（AI4EDA 数据处理/转换）
+  /rltf [args]              RLTF：PPA 反馈驱动的 ABC 优化序列（workflows/rltf）
+  /pareto-negotiate [args]  Pareto 多智能体协商优化 PPA（workflows/pareto_negotiation）
+  /pareto [args]            同 /pareto-negotiate（别名）
   /about                    查看 CktClaw 平台简介与能力矩阵
   /clear                    创建新会话，清除屏幕
   /session info             显示当前会话信息
   /sessions list            列出最近的会话
   /help, /?                 显示此帮助信息
   /exit, /quit              退出程序（或按 Ctrl+C）
+
+WORKFLOWS 工作流（需技能已成功注册）:
+  /rltf [aig] [max_iter]           无参数时交互选择 .aig；结果在 data/rltf_sessions/
+  /pareto-negotiate [aig] [rounds] 无参数时交互选择 .aig；别名：/pareto /negotiate
 
 EDA TOOLS 工具:
   /abc -c "read f.aig; print_stats"          # ABC 内联脚本
