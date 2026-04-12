@@ -1,11 +1,11 @@
 """
-Interaction Tools - 用户交互工具
+Interaction Tools - User Interaction Tools
 
-参考 Claude Code 的用户交互工具实现。
+Implements user interaction tools.
 
-核心功能：
-1. AskUserQuestionTool - 询问用户问题
-2. BriefTool - 简要说明
+Core features:
+1. AskUserQuestionTool - Ask user questions
+2. BriefTool - Brief explanation
 """
 
 from typing import Optional, List, Dict, Any
@@ -14,7 +14,7 @@ from enum import Enum
 
 
 class QuestionType(Enum):
-    """问题类型"""
+    """Question type"""
     SINGLE_CHOICE = "single_choice"
     MULTIPLE_CHOICE = "multiple_choice"
     TEXT_INPUT = "text_input"
@@ -23,7 +23,7 @@ class QuestionType(Enum):
 
 @dataclass
 class QuestionOption:
-    """问题选项"""
+    """Question option"""
     label: str
     description: str
     value: str
@@ -31,7 +31,7 @@ class QuestionOption:
 
 @dataclass
 class Question:
-    """问题"""
+    """Question"""
     question: str
     header: str
     options: List[QuestionOption]
@@ -41,7 +41,7 @@ class Question:
 
 @dataclass
 class UserAnswer:
-    """用户回答"""
+    """User answer"""
     question_id: str
     answer: str
     selected_options: Optional[List[str]] = None
@@ -49,13 +49,13 @@ class UserAnswer:
 
 class AskUserQuestionTool:
     """
-    询问用户问题工具
+    Ask user question tool
 
-    在执行过程中向用户提问以获取决策
+    Ask user questions during execution to get decisions
     """
 
     def __init__(self):
-        """初始化询问用户问题工具"""
+        """Initialize ask user question tool"""
         self.pending_questions: Dict[str, Question] = {}
         self.answers: Dict[str, UserAnswer] = {}
 
@@ -67,22 +67,22 @@ class AskUserQuestionTool:
         multi_select: bool = False
     ) -> str:
         """
-        询问用户问题
+        Ask user question
 
         Args:
-            question: 问题内容
-            header: 问题标题（简短标签，最多12字符）
-            options: 选项列表，每个选项包含 label 和 description
-            multi_select: 是否允许多选
+            question: Question content
+            header: Question title (short label, max 12 characters)
+            options: Option list, each option contains label and description
+            multi_select: Whether to allow multiple selection
 
         Returns:
-            用户的回答
+            User's answer
         """
-        # 生成问题 ID
+        # Generate question ID
         import uuid
         question_id = f"q-{uuid.uuid4().hex[:8]}"
 
-        # 解析选项
+        # Parse options
         question_options = []
         for opt in options:
             question_options.append(QuestionOption(
@@ -91,7 +91,7 @@ class AskUserQuestionTool:
                 value=opt.get("value", opt["label"])
             ))
 
-        # 创建问题
+        # Create question
         q = Question(
             question=question,
             header=header,
@@ -100,10 +100,10 @@ class AskUserQuestionTool:
             multi_select=multi_select
         )
 
-        # 保存问题
+        # Save question
         self.pending_questions[question_id] = q
 
-        # 格式化问题输出
+        # Format question output
         output = f"\n{'='*60}\n"
         output += f"❓ {header}\n"
         output += f"{'='*60}\n\n"
@@ -119,8 +119,8 @@ class AskUserQuestionTool:
         output += f"\nQuestion ID: {question_id}\n"
         output += f"{'='*60}\n"
 
-        # 在实际实现中，这里应该等待用户输入
-        # 现在返回格式化的问题
+        # In actual implementation, should wait for user input
+        # Now return formatted question
         return output
 
     def submit_answer(
@@ -130,12 +130,12 @@ class AskUserQuestionTool:
         selected_options: Optional[List[str]] = None
     ):
         """
-        提交用户回答
+        Submit user answer
 
         Args:
-            question_id: 问题 ID
-            answer: 回答内容
-            selected_options: 选中的选项（多选时使用）
+            question_id: Question ID
+            answer: Answer content
+            selected_options: Selected options (used for multiple selection)
         """
         user_answer = UserAnswer(
             question_id=question_id,
@@ -145,27 +145,27 @@ class AskUserQuestionTool:
 
         self.answers[question_id] = user_answer
 
-        # 移除待处理问题
+        # Remove pending question
         self.pending_questions.pop(question_id, None)
 
     def get_answer(self, question_id: str) -> Optional[UserAnswer]:
         """
-        获取用户回答
+        Get user answer
 
         Args:
-            question_id: 问题 ID
+            question_id: Question ID
 
         Returns:
-            用户回答
+            User answer
         """
         return self.answers.get(question_id)
 
 
 class BriefTool:
     """
-    简要说明工具
+    Brief explanation tool
 
-    向用户提供简要说明或状态更新
+    Provide brief explanation or status update to user
     """
 
     @staticmethod
@@ -175,17 +175,17 @@ class BriefTool:
         level: str = "info"
     ) -> str:
         """
-        发送简要说明
+        Send brief explanation
 
         Args:
-            message: 说明内容
-            title: 标题
-            level: 级别（info, warning, error, success）
+            message: Explanation content
+            title: Title
+            level: Level (info, warning, error, success)
 
         Returns:
-            格式化的说明
+            Formatted explanation
         """
-        # 选择图标
+        # Select icon
         icons = {
             "info": "ℹ️",
             "warning": "⚠️",
@@ -194,7 +194,7 @@ class BriefTool:
         }
         icon = icons.get(level, "ℹ️")
 
-        # 格式化输出
+        # Format output
         output = f"\n{'-'*60}\n"
         if title:
             output += f"{icon} {title}\n"
@@ -205,16 +205,16 @@ class BriefTool:
         return output
 
 
-# 全局交互工具实例
+# Global interaction tool instance
 _global_ask_user_tool: Optional[AskUserQuestionTool] = None
 
 
 def get_ask_user_tool() -> AskUserQuestionTool:
     """
-    获取全局询问用户工具实例
+    Get global ask user tool instance
 
     Returns:
-        询问用户工具实例
+        Ask user tool instance
     """
     global _global_ask_user_tool
 
@@ -224,7 +224,7 @@ def get_ask_user_tool() -> AskUserQuestionTool:
     return _global_ask_user_tool
 
 
-# 工具注册
+# Tool registration
 INTERACTION_TOOLS = {
     "AskUserQuestion": AskUserQuestionTool,
     "Brief": BriefTool,

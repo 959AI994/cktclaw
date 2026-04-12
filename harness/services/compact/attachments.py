@@ -1,7 +1,7 @@
 """
-Attachments - 文件附件恢复
+Post-compact file attachments — re-inject recently read files after trimming.
 
-在压缩后恢复最近访问的文件，避免模型重新读取。
+Helps the model avoid re-reading large files from disk when context was cut.
 """
 
 from typing import Dict, Any, List, Optional, Set
@@ -12,7 +12,7 @@ import asyncio
 
 @dataclass
 class FileAttachment:
-    """文件附件"""
+    """Single restored file snapshot."""
     file_path: str
     content: str
     timestamp: float
@@ -21,13 +21,12 @@ class FileAttachment:
 
 @dataclass
 class AttachmentResult:
-    """附件结果"""
+    """Batch of synthetic attachments plus accounting."""
     attachments: List[Dict[str, Any]]
     total_tokens: int
     files_restored: int
 
 
-# 配置常量
 POST_COMPACT_MAX_FILES_TO_RESTORE = 5
 POST_COMPACT_TOKEN_BUDGET = 50_000
 POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
@@ -35,36 +34,33 @@ POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
 
 def estimate_file_tokens(content: str) -> int:
     """
-    估算文件内容的 Token 数
+    Rough token estimate from UTF-8 text length.
 
     Args:
-        content: 文件内容
+        content: File text
 
     Returns:
-        估算的 Token 数
+        Approximate token count (~4 chars per token)
     """
-    # 粗估：1 token ≈ 4 chars
     return len(content) // 4
 
 
 def should_exclude_from_restore(file_path: str) -> bool:
     """
-    判断文件是否应该排除在恢复之外
+    Skip binary-ish, build, or VCS paths when restoring.
 
     Args:
-        file_path: 文件路径
+        file_path: Absolute or relative path
 
     Returns:
-        是否应该排除
+        True if this path should not be re-attached
     """
-    # 排除的文件类型
     excluded_extensions = {
         ".db", ".sqlite", ".log", ".tmp",
         ".pyc", ".pyo", ".pyd",
         ".so", ".dll", ".dylib",
     }
 
-    # 排除的目录
     excluded_dirs = {
         "__pycache__", ".git", ".svn", ".hg",
         "node_modules", ".venv", "venv",
@@ -72,11 +68,9 @@ def should_exclude_from_restore(file_path: str) -> bool:
 
     path = Path(file_path)
 
-    # 检查扩展名
     if path.suffix.lower() in excluded_extensions:
         return True
 
-    # 检查目录
     for part in path.parts:
         if part in excluded_dirs:
             return True
@@ -86,18 +80,17 @@ def should_exclude_from_restore(file_path: str) -> bool:
 
 def collect_read_tool_file_paths(messages: List[Dict[str, Any]]) -> Set[str]:
     """
-    从消息中收集已读取的文件路径
+    Collect file_path targets from prior Read tool_calls in the transcript.
 
     Args:
-        messages: 消息列表
+        messages: Chat messages (assistant blocks with tool_calls)
 
     Returns:
-        文件路径集合
+        Set of resolved absolute paths already present in kept messages
     """
     file_paths = set()
 
     for message in messages:
-        # 检查工具调用
         if message.get("role") == "assistant":
             tool_calls = message.get("tool_calls", [])
             for tool_call in tool_calls:
@@ -109,7 +102,7 @@ def collect_read_tool_file_paths(messages: List[Dict[str, Any]]) -> Set[str]:
                             import json
                             try:
                                 args = json.loads(args)
-                            except:
+                            except Exception:
                                 continue
                         file_path = args.get("file_path")
                         if file_path:
@@ -120,14 +113,14 @@ def collect_read_tool_file_paths(messages: List[Dict[str, Any]]) -> Set[str]:
 
 async def read_file_safe(file_path: str, max_tokens: int) -> Optional[str]:
     """
-    安全地读取文件
+    Read text from disk with a byte cap derived from max_tokens.
 
     Args:
-        file_path: 文件路径
-        max_tokens: 最大 Token 数
+        file_path: Path to read
+        max_tokens: Soft cap translated to bytes (~4 chars/token)
 
     Returns:
-        文件内容（如果成功）
+        File text or None on failure / missing file
     """
     try:
         path = Path(file_path)
@@ -135,19 +128,16 @@ async def read_file_safe(file_path: str, max_tokens: int) -> Optional[str]:
         if not path.exists() or not path.is_file():
             return None
 
-        # 检查文件大小
         file_size = path.stat().st_size
-        max_bytes = max_tokens * 4  # 粗估
+        max_bytes = max_tokens * 4
 
         if file_size > max_bytes:
-            # 文件太大，只读取前面部分
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read(max_bytes)
                 if len(content) >= max_bytes:
                     content = content[:max_bytes] + "\n\n[... file truncated for compaction]"
                 return content
         else:
-            # 读取完整文件
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
 
@@ -164,34 +154,28 @@ async def create_post_compact_file_attachments(
     preserved_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> AttachmentResult:
     """
-    创建压缩后的文件附件
-
-    参考 compact.ts:1415-1464
+    Build attachment dicts from read_file_state after compaction.
 
     Args:
-        read_file_state: 文件状态字典 {file_path: {content, timestamp}}
-        max_files: 最大恢复文件数
-        token_budget: Token 预算
-        max_tokens_per_file: 每个文件的最大 Token 数
-        preserved_messages: 保留的消息（用于去重）
+        read_file_state: Map of file_path -> {content, timestamp, ...}
+        max_files: Max number of files to restore
+        token_budget: Total token budget for all attachments
+        max_tokens_per_file: Per-file read cap
+        preserved_messages: Messages already kept (paths deduped)
 
     Returns:
-        附件结果
+        AttachmentResult with list payloads and totals
     """
-    # 收集已经在保留消息中的文件路径
     preserved_file_paths = set()
     if preserved_messages:
         preserved_file_paths = collect_read_tool_file_paths(preserved_messages)
 
-    # 过滤和排序文件
     candidate_files = []
 
     for file_path, state in read_file_state.items():
-        # 排除不应该恢复的文件
         if should_exclude_from_restore(file_path):
             continue
 
-        # 排除已经在保留消息中的文件
         resolved_path = str(Path(file_path).resolve())
         if resolved_path in preserved_file_paths:
             continue
@@ -202,13 +186,10 @@ async def create_post_compact_file_attachments(
             "content": state.get("content", ""),
         })
 
-    # 按时间戳排序（最近的优先）
     candidate_files.sort(key=lambda f: f["timestamp"], reverse=True)
 
-    # 限制文件数量
     candidate_files = candidate_files[:max_files]
 
-    # 创建附件
     attachments = []
     total_tokens = 0
     files_restored = 0
@@ -216,28 +197,22 @@ async def create_post_compact_file_attachments(
     for file_info in candidate_files:
         file_path = file_info["file_path"]
 
-        # 读取文件（限制大小）
         content = await read_file_safe(file_path, max_tokens_per_file)
 
         if content is None:
             continue
 
-        # 估算 Token 数
         file_tokens = estimate_file_tokens(content)
 
-        # 检查是否超出预算
         if total_tokens + file_tokens > token_budget:
-            # 尝试截断内容
             remaining_budget = token_budget - total_tokens
-            if remaining_budget < 1000:  # 预算不足，跳过
+            if remaining_budget < 1000:
                 break
 
-            # 截断内容
             max_chars = remaining_budget * 4
             content = content[:max_chars] + "\n\n[... file truncated due to token budget]"
             file_tokens = estimate_file_tokens(content)
 
-        # 创建附件
         attachment = {
             "type": "file_attachment",
             "file_path": file_path,
@@ -250,7 +225,6 @@ async def create_post_compact_file_attachments(
         total_tokens += file_tokens
         files_restored += 1
 
-        # 检查是否达到预算
         if total_tokens >= token_budget:
             break
 
@@ -263,13 +237,13 @@ async def create_post_compact_file_attachments(
 
 def format_file_attachment_message(attachment: Dict[str, Any]) -> Dict[str, Any]:
     """
-    格式化文件附件为消息
+    Wrap one attachment dict as a synthetic user message.
 
     Args:
-        attachment: 附件字典
+        attachment: create_post_compact_file_attachments entry
 
     Returns:
-        消息字典
+        User-role message suitable to append to the transcript
     """
     file_path = attachment["file_path"]
     content = attachment["content"]
@@ -290,14 +264,14 @@ async def create_and_format_file_attachments(
     preserved_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    创建并格式化文件附件为消息列表
+    High-level helper: build attachments then convert to user messages.
 
     Args:
-        read_file_state: 文件状态字典
-        preserved_messages: 保留的消息
+        read_file_state: Same as create_post_compact_file_attachments
+        preserved_messages: Dedup source
 
     Returns:
-        消息列表
+        List of user-shaped messages
     """
     result = await create_post_compact_file_attachments(
         read_file_state=read_file_state,

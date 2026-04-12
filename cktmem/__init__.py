@@ -1,11 +1,9 @@
 """
-CktMem - 基于文件系统的记忆管理系统
+CktMem — file-backed session memory for CktClaw.
 
-完全重构，参考 Claude Code 的 memdir 实现
-使用磁盘上的 markdown 文件而不是数据库
+Stores markdown memories on disk (no database required for the v2 path).
 """
 
-# 新的文件系统记忆模块
 from .paths import (
     get_auto_mem_path,
     get_project_root,
@@ -38,7 +36,7 @@ from .find_relevant_memories import (
     load_memory_contents,
 )
 
-# 保留旧模块以兼容现有代码
+# Legacy SQLite-backed context stack (kept for compatibility)
 from .models import (
     Message,
     MessageRole,
@@ -65,7 +63,7 @@ from .utils import (
 __version__ = "2.0.0"
 
 __all__ = [
-    # 新的文件系统记忆 API
+    # File-system memory API
     "get_auto_mem_path",
     "get_project_root",
     "is_auto_memory_enabled",
@@ -82,7 +80,7 @@ __all__ = [
     "find_relevant_memories",
     "load_memory_contents",
 
-    # 旧的数据库记忆 API（兼容性）
+    # Legacy database API
     "ContextManager",
     "Storage",
     "Compactor",
@@ -101,4 +99,3 @@ __all__ = [
     "estimate_text_tokens",
     "calculate_compression_ratio",
 ]
-

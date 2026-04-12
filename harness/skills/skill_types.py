@@ -1,19 +1,17 @@
 """
-Skill Types - 技能类型定义
+Skill types — enums and the SkillDefinition payload used by the registry.
 
-参考 src/skills/ 实现 Python 版本的技能系统。
+Covers:
+1. SkillType discriminator
+2. SkillDefinition metadata + optional executor hook
+3. LoadedFrom provenance buckets
+4. Lightweight helpers (display name, prompt assembly)
 
-核心职责：
-1. 定义技能类型枚举（SkillType）
-2. 定义技能定义结构（SkillDefinition）
-3. 定义技能来源（LoadedFrom）
-4. 提供技能元数据管理
-
-设计原则：
-- 技能资产化（可注册、可发现、可复用）
-- 元数据驱动（name, description, whenToUse）
-- 灵活执行（支持同步/异步、内联/fork）
-- 权限控制（allowedTools, userInvocable）
+Principles:
+- Treat skills as versioned assets (register, discover, reuse)
+- Drive behavior from structured frontmatter (name, description, when_to_use)
+- Support inline vs fork execution contexts
+- Gate dangerous capabilities via allowed_tools / user_invocable flags
 """
 
 from enum import Enum
@@ -22,78 +20,78 @@ from pydantic import BaseModel, Field
 
 
 class SkillType(str, Enum):
-    """技能类型"""
-    PROMPT = "prompt"           # Prompt 技能（最常见）
-    TOOL = "tool"               # 工具技能
-    WORKFLOW = "workflow"       # 工作流技能
+    """How the harness should interpret a skill body."""
+    PROMPT = "prompt"           # Markdown / prompt-first skill
+    TOOL = "tool"               # Callable tool skill
+    WORKFLOW = "workflow"       # Multi-step workflow skill
 
 
 class LoadedFrom(str, Enum):
-    """技能来源"""
-    BUNDLED = "bundled"                     # 内置技能
-    USER_SETTINGS = "userSettings"          # 用户配置
-    PROJECT_SETTINGS = "projectSettings"    # 项目配置
-    POLICY_SETTINGS = "policySettings"      # 策略配置
-    PLUGIN = "plugin"                       # 插件
-    MCP = "mcp"                             # MCP 服务器
-    COMMANDS_DEPRECATED = "commands_DEPRECATED"  # 旧版命令
+    """Where a skill definition was discovered on disk."""
+    BUNDLED = "bundled"                     # Shipped with CktClaw
+    USER_SETTINGS = "userSettings"          # ~/.config / user scope
+    PROJECT_SETTINGS = "projectSettings"    # Repo-local .cktclaw
+    POLICY_SETTINGS = "policySettings"      # Policy bundle
+    PLUGIN = "plugin"                       # Third-party plugin path
+    MCP = "mcp"                             # MCP-provided skill
+    COMMANDS_DEPRECATED = "commands_DEPRECATED"  # Legacy command bridge
 
 
 class ExecutionContext(str, Enum):
-    """执行上下文"""
-    INLINE = "inline"   # 内联执行（默认）
-    FORK = "fork"       # Fork 执行（独立进程）
+    """Whether the skill runs in-process or in an isolated fork."""
+    INLINE = "inline"   # Default: same interpreter
+    FORK = "fork"       # Spawned worker / subprocess
 
 
 class SkillDefinition(BaseModel):
     """
-    技能定义
+    Canonical skill record consumed by SkillRegistry and the CLI.
 
-    包含技能的所有元数据和执行逻辑
+    Optional ``executor`` overrides default markdown prompt assembly.
     """
-    # 基本信息
+    # Identity
     name: str
     skill_type: SkillType = SkillType.PROMPT
     description: str
     display_name: Optional[str] = None
     aliases: List[str] = Field(default_factory=list)
 
-    # 使用指导
+    # Usage hints for routers / slash commands
     when_to_use: Optional[str] = None
     argument_hint: Optional[str] = None
     argument_names: List[str] = Field(default_factory=list)
 
-    # 权限与工具
+    # Capability gates
     allowed_tools: List[str] = Field(default_factory=list)
     user_invocable: bool = True
     is_hidden: bool = False
 
-    # 模型配置
+    # Model overrides
     model: Optional[str] = None
     disable_model_invocation: bool = False
 
-    # 执行配置
+    # Execution
     execution_context: ExecutionContext = ExecutionContext.INLINE
     agent: Optional[str] = None
     effort: Optional[int] = None
 
-    # 来源信息
+    # Provenance
     loaded_from: LoadedFrom = LoadedFrom.BUNDLED
     source: str = "bundled"
     skill_root: Optional[str] = None
     version: Optional[str] = None
 
-    # 路径过滤（条件激活）
+    # Path globs for conditional activation
     paths: Optional[List[str]] = None
 
-    # 内容
+    # Payload
     content_length: int = 0
     markdown_content: Optional[str] = None
 
-    # 钩子配置
+    # Optional hook metadata
     hooks: Optional[Dict[str, Any]] = None
 
-    # 执行函数（可选）
+    # Optional async executor (args, context) -> Anthropic-style blocks
     executor: Optional[Callable[[str, Dict[str, Any]], Awaitable[List[Dict[str, Any]]]]] = None
 
     class Config:
@@ -101,11 +99,11 @@ class SkillDefinition(BaseModel):
         use_enum_values = True
 
     def user_facing_name(self) -> str:
-        """获取用户可见的技能名称"""
+        """Label shown in menus (falls back to canonical name)."""
         return self.display_name or self.name
 
     def is_enabled(self) -> bool:
-        """检查技能是否启用"""
+        """False when the skill should stay hidden from discovery."""
         return not self.is_hidden
 
     async def get_prompt_for_command(
@@ -114,22 +112,20 @@ class SkillDefinition(BaseModel):
         context: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        获取技能的 Prompt 内容
+        Produce assistant-visible content blocks for this skill.
 
         Args:
-            args: 命令参数
-            context: 执行上下文
+            args: Raw argument string from the invocation.
+            context: Optional structured context for executors.
 
         Returns:
-            Prompt 内容块列表
+            List of content parts (typically a single text block).
         """
         if self.executor:
             return await self.executor(args, context or {})
 
-        # 默认实现：返回 markdown 内容
         content = self.markdown_content or self.description
 
-        # 替换参数占位符
         if args and self.argument_names:
             arg_values = args.split()
             for i, arg_name in enumerate(self.argument_names):
@@ -137,7 +133,6 @@ class SkillDefinition(BaseModel):
                     placeholder = f"${{{arg_name}}}"
                     content = content.replace(placeholder, arg_values[i])
 
-        # 添加 skill root 前缀
         if self.skill_root:
             content = f"Base directory for this skill: {self.skill_root}\n\n{content}"
 
@@ -146,12 +141,12 @@ class SkillDefinition(BaseModel):
 
 def estimate_skill_frontmatter_tokens(skill: SkillDefinition) -> int:
     """
-    估算技能前置元数据的 Token 数
+    Rough token estimate for registry statistics.
 
-    仅计算 name, description, whenToUse（不包括完整内容）
+    Uses name + description + when_to_use only (ignores full markdown body).
     """
     frontmatter_text = " ".join(
         filter(None, [skill.name, skill.description, skill.when_to_use])
     )
-    # 粗估：1 token ≈ 4 chars
+    # Heuristic: ~4 characters per token for Latin text
     return len(frontmatter_text) // 4

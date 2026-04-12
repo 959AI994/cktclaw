@@ -1,8 +1,8 @@
 """
-CktMem Memory Scan - 记忆文件扫描
+CktMem memory scan — walk markdown files and extract lightweight metadata.
 
-参考 Claude Code 的 memoryScan.ts 实现
-扫描记忆目录，读取 frontmatter，生成记忆清单
+Reads only the first lines for frontmatter parsing, skips the index file, and
+produces a manifest suitable for LLM-based retrieval.
 """
 
 import os
@@ -16,15 +16,14 @@ from .paths import get_auto_mem_path, ENTRYPOINT_NAME
 
 def parse_frontmatter(content: str) -> Optional[Dict[str, str]]:
     """
-    解析 markdown frontmatter
+    Parse a leading ``---`` YAML block when present.
 
     Args:
-        content: 文件内容（前 30 行）
+        content: Typically the first ~30 lines of a markdown file.
 
     Returns:
-        frontmatter 字典，如果没有则返回 None
+        Key/value map or None when no frontmatter delimiter is found.
     """
-    # 匹配 YAML frontmatter: ---\n...\n---
     pattern = r'^---\s*\n(.*?)\n---\s*\n'
     match = re.match(pattern, content, re.DOTALL)
 
@@ -34,7 +33,6 @@ def parse_frontmatter(content: str) -> Optional[Dict[str, str]]:
     frontmatter_text = match.group(1)
     frontmatter = {}
 
-    # 简单解析 YAML（只支持 key: value 格式）
     for line in frontmatter_text.split('\n'):
         line = line.strip()
         if ':' in line:
@@ -46,19 +44,14 @@ def parse_frontmatter(content: str) -> Optional[Dict[str, str]]:
 
 def scan_memory_files(memory_dir: Optional[str] = None, max_files: int = 200) -> List[Dict[str, Any]]:
     """
-    扫描记忆目录中的所有 .md 文件
+    Recursively collect ``*.md`` files under the memory root.
 
     Args:
-        memory_dir: 记忆目录路径（可选，默认使用 get_auto_mem_path()）
-        max_files: 最多扫描文件数
+        memory_dir: Optional override; defaults to ``get_auto_mem_path()``.
+        max_files: Stop after this many successfully parsed files.
 
     Returns:
-        记忆文件列表，每个包含：
-        - path: 文件路径
-        - name: 文件名
-        - frontmatter: frontmatter 字典
-        - mtime: 修改时间
-        - size: 文件大小
+        Dict rows with path, name, relative_path, frontmatter, mtime, size.
     """
     if memory_dir is None:
         memory_dir = get_auto_mem_path()
@@ -69,18 +62,14 @@ def scan_memory_files(memory_dir: Optional[str] = None, max_files: int = 200) ->
 
     memories = []
 
-    # 递归扫描所有 .md 文件
     for md_file in memory_path.rglob("*.md"):
-        # 跳过 MEMORY.md
         if md_file.name == ENTRYPOINT_NAME:
             continue
 
-        # 跳过隐藏文件
         if md_file.name.startswith('.'):
             continue
 
         try:
-            # 读取前 30 行
             with open(md_file, 'r', encoding='utf-8') as f:
                 lines = []
                 for i, line in enumerate(f):
@@ -89,10 +78,8 @@ def scan_memory_files(memory_dir: Optional[str] = None, max_files: int = 200) ->
                     lines.append(line)
                 content = ''.join(lines)
 
-            # 解析 frontmatter
             frontmatter = parse_frontmatter(content)
 
-            # 获取文件信息
             stat = md_file.stat()
 
             memories.append({
@@ -108,11 +95,9 @@ def scan_memory_files(memory_dir: Optional[str] = None, max_files: int = 200) ->
             print(f"Warning: Failed to scan {md_file}: {e}")
             continue
 
-        # 限制文件数
         if len(memories) >= max_files:
             break
 
-    # 按修改时间排序（新 → 旧）
     memories.sort(key=lambda m: m['mtime'], reverse=True)
 
     return memories
@@ -120,13 +105,7 @@ def scan_memory_files(memory_dir: Optional[str] = None, max_files: int = 200) ->
 
 def format_memory_manifest(memories: List[Dict[str, Any]]) -> str:
     """
-    格式化记忆清单（用于 LLM 选择相关记忆）
-
-    Args:
-        memories: 记忆文件列表
-
-    Returns:
-        格式化的清单文本
+    Render ``memories`` into a compact bullet list for the selection prompt.
     """
     if not memories:
         return "No memories found."
@@ -139,7 +118,6 @@ def format_memory_manifest(memories: List[Dict[str, Any]]) -> str:
         description = frontmatter.get('description', '(no description)')
         mem_type = frontmatter.get('type', 'unknown')
 
-        # 计算新鲜度
         days_ago = (datetime.now() - mem['mtime']).days
         freshness = ""
         if days_ago == 0:
@@ -161,14 +139,12 @@ def format_memory_manifest(memories: List[Dict[str, Any]]) -> str:
 
 
 if __name__ == "__main__":
-    # 测试记忆扫描
-    print("CktMem Memory Scan 测试")
+    print("CktMem memory_scan smoke test")
     print("=" * 60)
 
     memory_dir = get_auto_mem_path()
-    print(f"扫描目录: {memory_dir}")
+    print(f"scan_dir={memory_dir}")
 
-    # 创建测试记忆文件
     test_memories = [
         {
             'filename': 'user_background.md',
@@ -202,15 +178,13 @@ Process: ASAP7 (7nm)
         file_path = memory_path / test_mem['filename']
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(test_mem['content'])
-        print(f"✓ 创建测试文件: {test_mem['filename']}")
+        print(f"wrote test file {test_mem['filename']}")
 
-    # 扫描记忆
     memories = scan_memory_files(memory_dir)
-    print(f"\n找到 {len(memories)} 个记忆文件")
+    print(f"\nfiles_found={len(memories)}")
 
-    # 格式化清单
     manifest = format_memory_manifest(memories)
-    print("\n记忆清单:")
+    print("\nmanifest:")
     print(manifest)
 
     print("\n" + "=" * 60)

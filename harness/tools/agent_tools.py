@@ -1,12 +1,12 @@
 """
-Agent Tools - 智能体工具
+Agent Tools - Agent Tools
 
-参考 Claude Code 的智能体工具实现。
+Implements agent tools.
 
-核心功能：
-1. AgentTool - 生成子智能体
-2. SendMessageTool - 继续智能体
-3. TaskStopTool - 停止智能体
+Core features:
+1. AgentTool - Create sub-agents
+2. SendMessageTool - Continue agent
+3. TaskStopTool - Stop agent
 """
 
 import asyncio
@@ -18,7 +18,7 @@ import uuid
 
 @dataclass
 class AgentConfig:
-    """智能体配置"""
+    """Agent configuration"""
     agent_id: str
     name: str
     description: str
@@ -29,7 +29,7 @@ class AgentConfig:
 
 @dataclass
 class AgentResult:
-    """智能体执行结果"""
+    """Agent execution result"""
     agent_id: str
     status: str  # running, completed, failed, killed
     output: str
@@ -38,13 +38,13 @@ class AgentResult:
 
 class AgentTool:
     """
-    智能体工具
+    Agent tool
 
-    生成和管理子智能体
+    Create and manage sub-agents
     """
 
     def __init__(self):
-        """初始化智能体工具"""
+        """Initialize agent tool"""
         self.active_agents: Dict[str, AgentConfig] = {}
         self.agent_results: Dict[str, AgentResult] = {}
 
@@ -58,23 +58,23 @@ class AgentTool:
         model: str = "deepseek-chat"
     ) -> AgentResult:
         """
-        创建子智能体
+        Create sub-agent
 
         Args:
-            name: 智能体名称
-            description: 智能体描述
-            system_prompt: 系统提示词
-            initial_message: 初始消息
-            max_turns: 最大轮次
-            model: 模型名称
+            name: Agent name
+            description: Agent description
+            system_prompt: System prompt
+            initial_message: Initial message
+            max_turns: Maximum turns
+            model: Model name
 
         Returns:
-            智能体执行结果
+            Agent execution result
         """
-        # 生成智能体 ID
+        # Generate agent ID
         agent_id = f"agent-{uuid.uuid4().hex[:8]}"
 
-        # 创建智能体配置
+        # Create agent configuration
         config = AgentConfig(
             agent_id=agent_id,
             name=name,
@@ -84,10 +84,10 @@ class AgentTool:
             model=model
         )
 
-        # 保存配置
+        # Save configuration
         self.active_agents[agent_id] = config
 
-        # 创建结果
+        # Create result
         result = AgentResult(
             agent_id=agent_id,
             status="running",
@@ -110,14 +110,14 @@ class AgentTool:
         message: str
     ) -> AgentResult:
         """
-        向智能体发送消息
+        Send message to agent
 
         Args:
-            agent_id: 智能体 ID
-            message: 消息内容
+            agent_id: Agent ID
+            message: Message content
 
         Returns:
-            智能体执行结果
+            Agent execution result
         """
         if agent_id not in self.active_agents:
             raise ValueError(f"Agent not found: {agent_id}")
@@ -125,7 +125,7 @@ class AgentTool:
         config = self.active_agents[agent_id]
         result = self.agent_results[agent_id]
 
-        # 更新结果
+        # Update result
         result.output += f"\n\nUser: {message}\nAgent: Processing..."
 
         return result
@@ -136,14 +136,14 @@ class AgentTool:
         reason: str = "User requested"
     ) -> AgentResult:
         """
-        停止智能体
+        Stop agent
 
         Args:
-            agent_id: 智能体 ID
-            reason: 停止原因
+            agent_id: Agent ID
+            reason: Stop reason
 
         Returns:
-            智能体执行结果
+            Agent execution result
         """
         if agent_id not in self.active_agents:
             raise ValueError(f"Agent not found: {agent_id}")
@@ -152,29 +152,29 @@ class AgentTool:
         result.status = "killed"
         result.output += f"\n\nAgent stopped: {reason}"
 
-        # 清理
+        # Clean up
         self.active_agents.pop(agent_id, None)
 
         return result
 
     def get_agent_status(self, agent_id: str) -> Optional[AgentResult]:
         """
-        获取智能体状态
+        Get agent status
 
         Args:
-            agent_id: 智能体 ID
+            agent_id: Agent ID
 
         Returns:
-            智能体执行结果
+            Agent execution result
         """
         return self.agent_results.get(agent_id)
 
     def list_agents(self) -> List[Dict[str, Any]]:
         """
-        列出所有智能体
+        List all agents
 
         Returns:
-            智能体列表
+            Agent list
         """
         agents = []
         for agent_id, config in self.active_agents.items():
@@ -190,17 +190,17 @@ class AgentTool:
 
 class SendMessageTool:
     """
-    发送消息工具
+    Send message tool
 
-    向智能体发送消息以继续对话
+    Send message to agent to continue conversation
     """
 
     def __init__(self, agent_tool: AgentTool):
         """
-        初始化发送消息工具
+        Initialize send message tool
 
         Args:
-            agent_tool: 智能体工具实例
+            agent_tool: Agent tool instance
         """
         self.agent_tool = agent_tool
 
@@ -210,31 +210,31 @@ class SendMessageTool:
         message: str
     ) -> AgentResult:
         """
-        发送消息
+        Send message
 
         Args:
-            agent_id: 智能体 ID
-            message: 消息内容
+            agent_id: Agent ID
+            message: Message content
 
         Returns:
-            智能体执行结果
+            Agent execution result
         """
         return await self.agent_tool.send_message(agent_id, message)
 
 
 class TaskStopTool:
     """
-    任务停止工具
+    Task stop tool
 
-    停止正在运行的智能体
+    Stop running agent
     """
 
     def __init__(self, agent_tool: AgentTool):
         """
-        初始化任务停止工具
+        Initialize task stop tool
 
         Args:
-            agent_tool: 智能体工具实例
+            agent_tool: Agent tool instance
         """
         self.agent_tool = agent_tool
 
@@ -244,28 +244,28 @@ class TaskStopTool:
         reason: str = "User requested"
     ) -> AgentResult:
         """
-        停止任务
+        Stop task
 
         Args:
-            agent_id: 智能体 ID
-            reason: 停止原因
+            agent_id: Agent ID
+            reason: Stop reason
 
         Returns:
-            智能体执行结果
+            Agent execution result
         """
         return await self.agent_tool.stop_agent(agent_id, reason)
 
 
-# 全局智能体工具实例
+# Global agent tool instance
 _global_agent_tool: Optional[AgentTool] = None
 
 
 def get_agent_tool() -> AgentTool:
     """
-    获取全局智能体工具实例
+    Get global agent tool instance
 
     Returns:
-        智能体工具实例
+        Agent tool instance
     """
     global _global_agent_tool
 
@@ -275,7 +275,7 @@ def get_agent_tool() -> AgentTool:
     return _global_agent_tool
 
 
-# 工具注册
+# Tool registration
 AGENT_TOOLS = {
     "Agent": AgentTool,
     "SendMessage": SendMessageTool,

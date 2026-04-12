@@ -1,8 +1,8 @@
 """
-CktMem Find Relevant Memories - 相关记忆检索
+CktMem relevance picker — ask the LLM which markdown memories matter now.
 
-参考 Claude Code 的 findRelevantMemories.ts 实现
-使用 LLM 从记忆清单中选择相关的记忆文件
+Scans the memory tree, formats a manifest, and parses a JSON path list from
+the model response.
 """
 
 import json
@@ -20,30 +20,27 @@ async def find_relevant_memories(
     max_memories: int = 5,
 ) -> List[str]:
     """
-    使用 LLM 找到与用户查询相关的记忆文件
+    Return absolute paths to the most relevant memory files for ``user_query``.
 
     Args:
-        user_query: 用户的查询或消息
-        llm_analyzer: LLM 分析器实例
-        memory_dir: 记忆目录（可选）
-        max_memories: 最多返回的记忆文件数
+        user_query: Latest user text (truncated inside the prompt).
+        llm_analyzer: Object exposing ``chat_with_deepseek(messages)``.
+        memory_dir: Optional override; defaults to ``get_auto_mem_path()``.
+        max_memories: Hard cap on returned files.
 
     Returns:
-        相关记忆文件的路径列表
+        Existing files under ``memory_dir`` (empty list on failure / no hits).
     """
     if memory_dir is None:
         memory_dir = get_auto_mem_path()
 
-    # 扫描所有记忆文件
     memories = scan_memory_files(memory_dir)
 
     if not memories:
         return []
 
-    # 格式化清单
     manifest = format_memory_manifest(memories)
 
-    # 构造 LLM prompt
     prompt = f"""You are helping to select relevant memories for the current conversation.
 
 User's current query:
@@ -66,17 +63,14 @@ If no memories are relevant, respond with an empty array: []
 """
 
     try:
-        # 调用 LLM
         messages = [{"role": "user", "content": prompt}]
         response = llm_analyzer.chat_with_deepseek(messages)
 
         if isinstance(response, dict):
             response = response.get("content", "")
 
-        # 解析 JSON 响应
         response = response.strip()
 
-        # 提取 JSON 数组
         json_match = response
         if '[' in response and ']' in response:
             start = response.index('[')
@@ -85,7 +79,6 @@ If no memories are relevant, respond with an empty array: []
 
         selected_files = json.loads(json_match)
 
-        # 验证并返回完整路径
         memory_path = Path(memory_dir)
         relevant_paths = []
 
@@ -103,13 +96,13 @@ If no memories are relevant, respond with an empty array: []
 
 async def load_memory_contents(memory_paths: List[str]) -> str:
     """
-    加载记忆文件的完整内容
+    Concatenate memory bodies into a single markdown document.
 
     Args:
-        memory_paths: 记忆文件路径列表
+        memory_paths: Absolute paths produced by ``find_relevant_memories``.
 
     Returns:
-        格式化的记忆内容
+        Markdown string suitable for injection into context.
     """
     if not memory_paths:
         return ""
@@ -137,23 +130,20 @@ async def load_memory_contents(memory_paths: List[str]) -> str:
 
 
 if __name__ == "__main__":
-    # 测试相关记忆检索
     import asyncio
     from models.llm_analyzer import LLMVerilogAnalyzer
 
     async def test():
-        print("CktMem Find Relevant Memories 测试")
+        print("CktMem find_relevant_memories smoke test")
         print("=" * 60)
 
-        # 初始化 LLM
         try:
             llm = LLMVerilogAnalyzer(verbose=False)
-            print("✓ LLM 分析器已加载")
+            print("LLM analyzer loaded")
         except Exception as e:
-            print(f"✗ 无法加载 LLM: {e}")
+            print(f"Failed to load LLM: {e}")
             return
 
-        # 测试查询
         test_queries = [
             "What are the project goals?",
             "Tell me about the user's background",
@@ -161,22 +151,20 @@ if __name__ == "__main__":
         ]
 
         for query in test_queries:
-            print(f"\n查询: {query}")
+            print(f"\nquery={query}")
             print("-" * 60)
 
             relevant = await find_relevant_memories(query, llm)
 
             if relevant:
-                print(f"找到 {len(relevant)} 个相关记忆:")
+                print(f"hits={len(relevant)}")
                 for path in relevant:
                     print(f"  - {Path(path).name}")
 
-                # 加载内容
                 content = await load_memory_contents(relevant)
-                print(f"\n内容预览 (前 200 字符):")
-                print(content[:200] + "...")
+                print(f"\npreview_first_200:\n{content[:200]}...")
             else:
-                print("未找到相关记忆")
+                print("no relevant memories")
 
         print("\n" + "=" * 60)
 

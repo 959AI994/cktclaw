@@ -1,18 +1,16 @@
 """
-Coordinator Manager - 调度管理器
+Coordinator manager — multi-worker routing and prompts.
 
-参考 src/coordinator/coordinatorMode.ts 实现 Python 版本的调度管理。
+Responsibilities:
+1. Track coordinator vs normal mode
+2. Build worker tool contexts
+3. Produce coordinator-specific system prompts
+4. Fan-out worker notifications
 
-核心职责：
-1. 模式管理（Coordinator vs Normal）
-2. Worker 工具上下文生成
-3. System Prompt 生成
-4. Worker 通知处理
-
-设计原则：
-- 单例模式（全局调度器）
-- 线程安全（asyncio.Lock）
-- 模式隔离（不同模式有不同行为）
+Design:
+- Single shared instance for the process
+- asyncio.Lock around mutable coordinator tables
+- Strict separation between coordinator and standalone REPL paths
 """
 
 import asyncio
@@ -30,9 +28,9 @@ from .coordinator_types import (
 
 class CoordinatorManager:
     """
-    调度管理器（单例模式）
+    Singleton coordinator facade.
 
-    管理 Coordinator 模式和 Worker 调度
+    Tracks mode, worker tool lists, and coordinator-only prompts.
     """
 
     _instance: Optional['CoordinatorManager'] = None
@@ -47,21 +45,21 @@ class CoordinatorManager:
 
     @property
     def config(self) -> CoordinatorConfig:
-        """获取配置（只读）"""
+        """Return a copy of the live CoordinatorConfig."""
         return self._config.copy()
 
     async def set_mode(self, mode: CoordinatorMode) -> None:
-        """设置 Coordinator 模式"""
+        """Force coordinator vs normal mode."""
         async with self._manager_lock:
             self._config.mode = mode
 
     async def get_mode(self) -> CoordinatorMode:
-        """获取当前模式"""
+        """Current CoordinatorMode enum value."""
         async with self._manager_lock:
             return self._config.mode
 
     async def is_coordinator_mode(self) -> bool:
-        """检查是否处于 Coordinator 模式"""
+        """True when multi-worker coordinator routing is active."""
         mode = await self.get_mode()
         return mode == CoordinatorMode.COORDINATOR
 
@@ -70,15 +68,13 @@ class CoordinatorManager:
         session_mode: Optional[str],
     ) -> Optional[str]:
         """
-        匹配会话模式
-
-        如果会话模式与当前模式不匹配，切换模式并返回警告消息
+        Align in-memory mode with a persisted session flag.
 
         Args:
-            session_mode: 会话存储的模式（"coordinator" 或 "normal"）
+            session_mode: Stored value "coordinator" or "normal".
 
         Returns:
-            警告消息（如果切换了模式），否则返回 None
+            Human-readable warning when the mode flips, else None.
         """
         if not session_mode:
             return None
@@ -90,7 +86,6 @@ class CoordinatorManager:
             if current_is_coordinator == session_is_coordinator:
                 return None
 
-            # 切换模式
             if session_is_coordinator:
                 self._config.mode = CoordinatorMode.COORDINATOR
                 return "Entered coordinator mode to match resumed session."
@@ -100,15 +95,15 @@ class CoordinatorManager:
 
     async def get_worker_tools_context(self) -> Dict[str, str]:
         """
-        获取 Worker 工具上下文
+        Build the workerToolsContext payload for downstream agents.
 
-        返回一个字典，包含 workerToolsContext 键
+        Returns:
+            Dict with key ``workerToolsContext`` describing tools + MCP + scratchpad.
         """
         async with self._manager_lock:
             if self._config.mode != CoordinatorMode.COORDINATOR:
                 return {}
 
-            # Worker 工具列表
             worker_tools = sorted([
                 tool for tool in self._config.worker_tools
                 if tool not in self._config.internal_tools
@@ -116,7 +111,6 @@ class CoordinatorManager:
 
             content = f"Workers spawned via the Agent tool have access to these tools: {', '.join(worker_tools)}"
 
-            # MCP 服务器
             if self._config.mcp_servers:
                 server_names = ", ".join(self._config.mcp_servers)
                 content += f"\n\nWorkers also have access to MCP tools from connected MCP servers: {server_names}"
@@ -131,9 +125,7 @@ class CoordinatorManager:
 
     async def get_coordinator_system_prompt(self) -> str:
         """
-        获取 Coordinator 系统 Prompt
-
-        返回完整的 Coordinator 指令
+        Long-form coordinator system prompt (empty when not in coordinator mode).
         """
         async with self._manager_lock:
             if self._config.mode != CoordinatorMode.COORDINATOR:
@@ -229,13 +221,13 @@ Never write "based on your findings" or "based on the research." These phrases d
 
     async def parse_notification(self, content: str) -> Optional[WorkerNotification]:
         """
-        解析 Worker 通知
+        Parse embedded <task-notification> XML from assistant/user traffic.
 
         Args:
-            content: 消息内容（可能包含 XML）
+            content: Raw message body that may include XML.
 
         Returns:
-            WorkerNotification 对象，如果解析失败返回 None
+            Parsed WorkerNotification or None when parsing fails.
         """
         return parse_worker_notification(content)
 
@@ -247,13 +239,13 @@ Never write "based on your findings" or "based on the research." These phrases d
         scratchpad_dir: Optional[str] = None,
     ) -> None:
         """
-        配置 Coordinator
+        Patch coordinator fields in place.
 
         Args:
-            mode: Coordinator 模式
-            worker_tools: Worker 工具列表
-            mcp_servers: MCP 服务器列表
-            scratchpad_dir: Scratchpad 目录
+            mode: Optional CoordinatorMode override.
+            worker_tools: Replace worker-visible tool allowlist.
+            mcp_servers: Connected MCP server display names.
+            scratchpad_dir: Shared scratch directory for workers.
         """
         async with self._manager_lock:
             if mode is not None:
@@ -270,33 +262,31 @@ Never write "based on your findings" or "based on the research." These phrases d
                 self._config.scratchpad_enabled = True
 
     def reset(self) -> None:
-        """重置 Coordinator（仅用于测试）"""
+        """Restore defaults (tests only)."""
         self._config = CoordinatorConfig()
 
 
-# 全局单例
 _coordinator_manager: Optional[CoordinatorManager] = None
 
 
 def get_coordinator_manager() -> CoordinatorManager:
-    """获取全局 Coordinator 管理器单例"""
+    """Lazy singleton accessor."""
     global _coordinator_manager
     if _coordinator_manager is None:
         _coordinator_manager = CoordinatorManager()
     return _coordinator_manager
 
 
-# 便捷函数
 async def is_coordinator_mode() -> bool:
-    """检查是否处于 Coordinator 模式"""
+    """Module-level coordinator mode probe."""
     return await get_coordinator_manager().is_coordinator_mode()
 
 
 async def get_worker_tools_context() -> Dict[str, str]:
-    """获取 Worker 工具上下文"""
+    """Module-level workerToolsContext helper."""
     return await get_coordinator_manager().get_worker_tools_context()
 
 
 async def get_coordinator_system_prompt() -> str:
-    """获取 Coordinator 系统 Prompt"""
+    """Module-level coordinator prompt helper."""
     return await get_coordinator_manager().get_coordinator_system_prompt()

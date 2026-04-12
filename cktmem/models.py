@@ -1,7 +1,5 @@
 """
-CktMem 数据模型定义
-
-定义四层上下文模型的核心数据结构
+Pydantic models for layered chat messages and compaction metadata.
 """
 
 from enum import Enum
@@ -11,7 +9,7 @@ from datetime import datetime
 
 
 class MessageRole(str, Enum):
-    """消息角色"""
+    """Wire-format role strings."""
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -19,15 +17,15 @@ class MessageRole(str, Enum):
 
 
 class MessageType(str, Enum):
-    """消息类型"""
-    CHAT = "chat"                    # 普通对话
-    CORE_CONTEXT = "core_context"    # 核心上下文（电路分析结果）
-    COMPACT_BOUNDARY = "compact_boundary"  # 压缩边界
-    COMPACT_SUMMARY = "compact_summary"    # 压缩摘要
+    """Distinguishes chat traffic from structural compaction rows."""
+    CHAT = "chat"
+    CORE_CONTEXT = "core_context"
+    COMPACT_BOUNDARY = "compact_boundary"
+    COMPACT_SUMMARY = "compact_summary"
 
 
 class ContextLayer(str, Enum):
-    """上下文层级"""
+    """Logical layer for prompt assembly."""
     SYSTEM = "system"
     PROJECT = "project"
     SESSION = "session"
@@ -35,7 +33,7 @@ class ContextLayer(str, Enum):
 
 
 class Message(BaseModel):
-    """统一消息结构"""
+    """Single row mirrored in sqlite ``messages``."""
     role: MessageRole
     content: str
     msg_type: MessageType = MessageType.CHAT
@@ -43,7 +41,6 @@ class Message(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    # 可选字段
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
@@ -53,7 +50,7 @@ class Message(BaseModel):
 
 
 class CompactBoundary(BaseModel):
-    """压缩边界标记"""
+    """Structured payload embedded in boundary metadata."""
     pre_compact_tokens: int
     compact_type: Literal["auto", "manual", "session_memory", "micro"]
     timestamp: datetime
@@ -62,7 +59,7 @@ class CompactBoundary(BaseModel):
 
 
 class CompactionResult(BaseModel):
-    """压缩结果"""
+    """Output of ``Compactor.auto_compact``."""
     boundary_marker: Message
     summary_messages: List[Message] = Field(default_factory=list)
     messages_to_keep: List[Message] = Field(default_factory=list)
@@ -72,14 +69,14 @@ class CompactionResult(BaseModel):
 
 
 class SessionMemoryConfig(BaseModel):
-    """Session Memory 压缩配置"""
+    """Tunable thresholds for session-memory style compaction."""
     min_tokens: int = 10_000
     min_text_messages: int = 5
     max_tokens: int = 40_000
 
 
 class CompactConfig(BaseModel):
-    """压缩配置"""
+    """Top-level auto-compaction configuration."""
     auto_compact_threshold: int = 150_000
     target_tokens: int = 40_000
     buffer_tokens: int = 13_000
@@ -87,7 +84,7 @@ class CompactConfig(BaseModel):
 
 
 class AnchorMemory(BaseModel):
-    """Anchor Memory（首份核心上下文）"""
+    """First-pass circuit snapshot stored on the session row."""
     verilog_code: str
     analysis_report: str
     created_at: datetime = Field(default_factory=datetime.now)

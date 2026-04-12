@@ -1,12 +1,10 @@
 """
-Streaming Tool Executor - 流式工具执行器
+Streaming tool executor — chunk tool output for incremental UI updates.
 
-参考 Claude Code 的 StreamingToolExecutor.ts 实现流式工具执行。
-
-核心功能：
-1. 流式执行工具
-2. 实时返回工具输出
-3. 支持工具执行取消
+Core features:
+1. Stream tool execution
+2. Real-time tool output
+3. Support tool execution cancellation
 """
 
 import asyncio
@@ -17,7 +15,7 @@ from datetime import datetime
 
 @dataclass
 class StreamingToolUpdate:
-    """流式工具更新"""
+    """Streaming tool update"""
     tool_call_id: str
     tool_name: str
     chunk: str
@@ -28,9 +26,9 @@ class StreamingToolUpdate:
 
 class StreamingToolExecutor:
     """
-    流式工具执行器
+    Streaming tool executor
 
-    支持流式返回工具执行结果
+    Supports streaming tool execution results
     """
 
     def __init__(
@@ -39,11 +37,11 @@ class StreamingToolExecutor:
         chunk_size: int = 1024
     ):
         """
-        初始化流式工具执行器
+        Initialize streaming tool executor
 
         Args:
-            tool_executor: 工具执行器
-            chunk_size: 每次返回的块大小（字符数）
+            tool_executor: Tool executor
+            chunk_size: Chunk size per return (character count)
         """
         self.tool_executor = tool_executor
         self.chunk_size = chunk_size
@@ -56,21 +54,21 @@ class StreamingToolExecutor:
         tool_args: Dict[str, Any]
     ) -> AsyncGenerator[StreamingToolUpdate, None]:
         """
-        流式执行工具
+        Execute tool in streaming mode
 
         Args:
-            tool_call_id: 工具调用 ID
-            tool_name: 工具名称
-            tool_args: 工具参数
+            tool_call_id: Tool call ID
+            tool_name: Tool name
+            tool_args: Tool arguments
 
         Yields:
-            流式工具更新
+            Streaming tool updates
         """
         try:
-            # 执行工具
+            # Execute tool
             result = await self.tool_executor(tool_name, tool_args)
 
-            # 分块返回结果
+            # Return result in chunks
             result_str = str(result)
             for i in range(0, len(result_str), self.chunk_size):
                 chunk = result_str[i:i + self.chunk_size]
@@ -85,7 +83,7 @@ class StreamingToolExecutor:
                 )
 
         except Exception as e:
-            # 返回错误
+            # Return error
             yield StreamingToolUpdate(
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
@@ -99,15 +97,15 @@ class StreamingToolExecutor:
         tool_call: Dict[str, Any]
     ) -> AsyncGenerator[StreamingToolUpdate, None]:
         """
-        流式执行工具调用
+        Execute tool call in streaming mode
 
         Args:
-            tool_call: 工具调用
+            tool_call: Tool call
 
         Yields:
-            流式工具更新
+            Streaming tool updates
         """
-        # 提取工具信息
+        # Extract tool information
         if "function" in tool_call:
             tool_name = tool_call["function"]["name"]
             tool_args = tool_call["function"].get("arguments", {})
@@ -129,7 +127,7 @@ class StreamingToolExecutor:
             )
             return
 
-        # 流式执行
+        # Execute in streaming mode
         async for update in self.execute_streaming(tool_call_id, tool_name, tool_args):
             yield update
 
@@ -139,14 +137,14 @@ class StreamingToolExecutor:
         tool_call: Dict[str, Any]
     ) -> asyncio.Task:
         """
-        启动工具执行（后台任务）
+        Start tool execution (background task)
 
         Args:
-            tool_call_id: 工具调用 ID
-            tool_call: 工具调用
+            tool_call_id: Tool call ID
+            tool_call: Tool call
 
         Returns:
-            异步任务
+            Async task
         """
         async def execute_and_collect():
             chunks = []
@@ -160,13 +158,13 @@ class StreamingToolExecutor:
 
     async def wait_for_tool(self, tool_call_id: str) -> Optional[str]:
         """
-        等待工具执行完成
+        Wait for tool execution to complete
 
         Args:
-            tool_call_id: 工具调用 ID
+            tool_call_id: Tool call ID
 
         Returns:
-            工具执行结果
+            Tool execution result
         """
         task = self.active_tasks.get(tool_call_id)
         if not task:
@@ -176,15 +174,15 @@ class StreamingToolExecutor:
             result = await task
             return result
         finally:
-            # 清理任务
+            # Clean up task
             self.active_tasks.pop(tool_call_id, None)
 
     def cancel_tool(self, tool_call_id: str):
         """
-        取消工具执行
+        Cancel tool execution
 
         Args:
-            tool_call_id: 工具调用 ID
+            tool_call_id: Tool call ID
         """
         task = self.active_tasks.get(tool_call_id)
         if task and not task.done():
@@ -192,7 +190,7 @@ class StreamingToolExecutor:
             self.active_tasks.pop(tool_call_id, None)
 
     def cancel_all_tools(self):
-        """取消所有工具执行"""
+        """Cancel all tool executions"""
         for tool_call_id in list(self.active_tasks.keys()):
             self.cancel_tool(tool_call_id)
 
@@ -201,13 +199,13 @@ async def collect_streaming_result(
     streaming_updates: AsyncGenerator[StreamingToolUpdate, None]
 ) -> str:
     """
-    收集流式结果
+    Collect streaming results
 
     Args:
-        streaming_updates: 流式更新生成器
+        streaming_updates: Streaming update generator
 
     Returns:
-        完整结果
+        Complete result
     """
     chunks = []
     async for update in streaming_updates:

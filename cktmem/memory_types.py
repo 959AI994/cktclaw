@@ -1,53 +1,51 @@
 """
-CktMem Memory Types - 记忆类型定义
+CktMem memory types — taxonomy, frontmatter samples, and guideline assembly.
 
-参考 Claude Code 的 memoryTypes.ts 实现
-定义记忆的类型、frontmatter 格式、使用指南
+Defines the ``type`` field values surfaced in memory markdown plus helper
+sections stitched into the system prompt.
 """
 
 from typing import List
 
-# 记忆类型定义
 MEMORY_TYPES = {
     "user": {
         "name": "User Preferences & Context",
-        "description": "用户的个人偏好、工作方式、背景信息",
+        "description": "Personal preferences, working style, and background.",
         "examples": [
-            "用户是 EDA 工程师，专注于 ASAP7 工艺",
-            "用户喜欢简洁的代码风格",
-            "用户的项目目标是优化面积和功耗",
+            "User is an EDA engineer focused on the ASAP7 PDK.",
+            "User prefers concise explanations and small diffs.",
+            "Project goals emphasize area and power trade-offs.",
         ]
     },
     "feedback": {
         "name": "Feedback & Corrections",
-        "description": "用户的反馈、纠正、不喜欢的行为",
+        "description": "Corrections, dislikes, or clarifications about assistant behavior.",
         "examples": [
-            "用户不喜欢过于冗长的解释",
-            "用户希望优先使用 Yosys 而不是 ABC",
-            "用户纠正：这个电路是乘法器，不是加法器",
+            "User dislikes overly verbose tool narration.",
+            "User prefers Yosys over ABC for this repo.",
+            "Correction: the highlighted block is a multiplier, not an adder.",
         ]
     },
     "project": {
         "name": "Project Context",
-        "description": "项目级的上下文、需求、设计决策",
+        "description": "Project-level requirements, constraints, and design decisions.",
         "examples": [
-            "项目目标：设计一个低功耗的 RISC-V CPU",
-            "设计约束：时钟频率 2GHz，面积 < 0.5mm²",
-            "已完成的电路：adder, multiplier, alu",
+            "Goal: low-power RISC-V CPU prototype.",
+            "Constraint: 2 GHz target, die area < 0.5 mm².",
+            "Completed macros: adder, multiplier, ALU.",
         ]
     },
     "reference": {
         "name": "Reference Information",
-        "description": "参考信息、工具用法、常用命令",
+        "description": "Commands, tool paths, and reusable cheat-sheets.",
         "examples": [
-            "Yosys 综合命令：synth -top module_name",
-            "ASAP7 标准单元库路径",
-            "常用的优化策略",
+            "Yosys one-liner: synth -top <module>.",
+            "ASAP7 standard-cell library install path.",
+            "Common optimization recipes for this flow.",
         ]
     },
 }
 
-# Frontmatter 示例
 MEMORY_FRONTMATTER_EXAMPLE = [
     "```markdown",
     "---",
@@ -60,7 +58,6 @@ MEMORY_FRONTMATTER_EXAMPLE = [
     "```",
 ]
 
-# 类型说明章节
 TYPES_SECTION = [
     "## Memory Types",
     "",
@@ -76,7 +73,6 @@ for mem_type, info in MEMORY_TYPES.items():
         "",
     ])
 
-# 不应该保存的内容
 WHAT_NOT_TO_SAVE_SECTION = [
     "## What NOT to save",
     "",
@@ -88,7 +84,6 @@ WHAT_NOT_TO_SAVE_SECTION = [
     "Memory is for context that would otherwise be lost between conversations.",
 ]
 
-# 何时访问记忆
 WHEN_TO_ACCESS_SECTION = [
     "## When to access memories",
     "",
@@ -98,7 +93,6 @@ WHEN_TO_ACCESS_SECTION = [
     "- Before making design decisions that might conflict with user preferences",
 ]
 
-# 信任召回
 TRUSTING_RECALL_SECTION = [
     "## Trusting recall",
     "",
@@ -111,14 +105,14 @@ TRUSTING_RECALL_SECTION = [
 
 def build_memory_guidelines(memory_dir: str, skip_index: bool = False) -> List[str]:
     """
-    构建记忆使用指南
+    Build the markdown lines describing how to use the memory directory.
 
     Args:
-        memory_dir: 记忆目录路径
-        skip_index: 是否跳过索引步骤（简化模式）
+        memory_dir: Absolute memory root shown to the model.
+        skip_index: When True, omit the two-step MEMORY.md index instructions.
 
     Returns:
-        指南文本行列表
+        Lines ready to join into a system-prompt section.
     """
     how_to_save = []
 
@@ -180,10 +174,8 @@ def build_memory_guidelines(memory_dir: str, skip_index: bool = False) -> List[s
     return lines
 
 
-# 导入常量供外部使用
 from .paths import MAX_ENTRYPOINT_LINES
 
 if __name__ == "__main__":
-    # 测试指南生成
     guidelines = build_memory_guidelines("/home/user/.cktclaw/projects/test/memory")
     print("\n".join(guidelines))

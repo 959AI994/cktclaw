@@ -1,11 +1,5 @@
 """
-CktMem 单元测试
-
-测试核心功能：
-1. 存储层（Storage）
-2. Token 计数器（TokenCounter）
-3. 压缩器（Compactor）
-4. 上下文管理器（ContextManager）
+Ad-hoc CktMem tests for Storage, TokenCounter, Compactor, and ContextManager.
 """
 
 import asyncio
@@ -26,17 +20,17 @@ from cktmem import (
 
 
 def test_token_counter():
-    """测试 Token 计数器"""
+    """Smoke-test TokenCounter heuristics."""
     print("Testing TokenCounter...")
 
     counter = TokenCounter()
 
-    # 测试文本估算
+    # text estimate
     text = "Hello, world! " * 100
     tokens = counter._estimate_text(text)
     assert tokens > 0, "Token count should be positive"
 
-    # 测试消息估算
+    # message estimate
     msg = Message(
         role=MessageRole.USER,
         content="This is a test message",
@@ -48,41 +42,41 @@ def test_token_counter():
 
 
 async def test_storage():
-    """测试存储层"""
+    """SQLite round-trip checks."""
     print("\nTesting Storage...")
 
-    # 使用临时数据库
+    # temp db file
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
 
     try:
         storage = Storage(db_path=db_path)
 
-        # 测试创建会话
+        # create session
         session_id = "test_session_001"
         await storage.create_session(
             session_id=session_id,
             project_name="test_project",
         )
 
-        # 测试获取会话
+        # fetch session
         session = await storage.get_session(session_id)
         assert session is not None, "Session should exist"
         assert session["session_id"] == session_id
 
-        # 测试存储 Anchor Memory
+        # anchor memory write
         await storage.store_anchor_memory(
             session_id=session_id,
             verilog_code="module test(); endmodule",
             analysis_report="Test report",
         )
 
-        # 测试获取 Anchor Memory
+        # anchor memory read
         anchor = await storage.get_anchor_memory(session_id)
         assert anchor is not None, "Anchor memory should exist"
         assert "module test" in anchor.verilog_code
 
-        # 测试添加消息
+        # insert message
         msg_id = await storage.add_message(
             session_id=session_id,
             role=MessageRole.USER,
@@ -92,11 +86,11 @@ async def test_storage():
         )
         assert msg_id > 0, "Message ID should be positive"
 
-        # 测试获取消息
+        # list messages
         messages = await storage.get_messages(session_id)
         assert len(messages) > 0, "Should have messages"
 
-        # 测试添加 Core Context
+        # core context row
         await storage.add_core_context(
             session_id=session_id,
             aig_filename="test.aig",
@@ -110,13 +104,13 @@ async def test_storage():
         print("✓ Storage tests passed")
 
     finally:
-        # 清理临时文件
+        # cleanup temp db
         if os.path.exists(db_path):
             os.unlink(db_path)
 
 
 async def test_context_manager():
-    """测试上下文管理器"""
+    """Context assembly without compaction."""
     print("\nTesting ContextManager...")
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -125,7 +119,7 @@ async def test_context_manager():
     try:
         storage = Storage(db_path=db_path)
         config = CompactConfig(
-            auto_compact_threshold=5000,  # 低阈值用于测试
+            auto_compact_threshold=5000,  # low threshold for local runs
         )
 
         context_manager = ContextManager(
@@ -134,18 +128,18 @@ async def test_context_manager():
             config=config,
         )
 
-        # 创建会话
+        # session row
         session_id = "test_session_002"
         await storage.create_session(session_id=session_id)
 
-        # 存储 Anchor Memory
+        # seed anchor
         await storage.store_anchor_memory(
             session_id=session_id,
             verilog_code="module adder(); endmodule",
             analysis_report="Adder circuit",
         )
 
-        # 构建上下文
+        # build_context
         messages = await context_manager.build_context(
             session_id=session_id,
             user_message="What is this circuit?",
@@ -155,13 +149,13 @@ async def test_context_manager():
         assert len(messages) > 0, "Should have messages"
         assert messages[0].role == MessageRole.SYSTEM, "First message should be system"
 
-        # 添加助手消息
+        # assistant turn
         await context_manager.add_assistant_message(
             session_id=session_id,
             content="This is an adder circuit.",
         )
 
-        # 获取统计
+        # stats
         stats = await context_manager.get_context_stats(session_id)
         assert stats["total_messages"] > 0, "Should have messages"
         assert stats["total_tokens"] > 0, "Should have tokens"
@@ -174,7 +168,7 @@ async def test_context_manager():
 
 
 async def test_compression():
-    """测试压缩功能"""
+    """Ensure auto_compact can fire on a toy transcript."""
     print("\nTesting Compression...")
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -183,7 +177,7 @@ async def test_compression():
     try:
         storage = Storage(db_path=db_path)
         config = CompactConfig(
-            auto_compact_threshold=1000,  # 非常低的阈值
+            auto_compact_threshold=1000,  # force compaction quickly
         )
 
         context_manager = ContextManager(
@@ -195,12 +189,12 @@ async def test_compression():
         session_id = "test_session_003"
         await storage.create_session(session_id=session_id)
 
-        # 添加大量消息触发压缩
+        # long transcript
         for i in range(10):
             await storage.add_message(
                 session_id=session_id,
                 role=MessageRole.USER,
-                content=f"User message {i}" * 50,  # 长消息
+                content=f"User message {i}" * 50,
                 msg_type=MessageType.CHAT,
                 layer=ContextLayer.TURN,
             )
@@ -212,20 +206,20 @@ async def test_compression():
                 layer=ContextLayer.TURN,
             )
 
-        # 构建上下文（触发压缩）
+        # build_context (may compact)
         messages = await context_manager.build_context(
             session_id=session_id,
             user_message="New question",
             auto_compact=True,
         )
 
-        # 检查是否有压缩边界
+        # optional boundary marker
         has_boundary = any(
             m.msg_type == MessageType.COMPACT_BOUNDARY
             for m in messages
         )
 
-        # 获取统计
+        # stats after compaction attempt
         stats = await context_manager.get_context_stats(session_id)
 
         print(f"  Total messages: {stats['total_messages']}")
@@ -241,7 +235,7 @@ async def test_compression():
 
 
 async def run_all_tests():
-    """运行所有测试"""
+    """Run the informal test suite."""
     print("="*60)
     print("CktMem Unit Tests")
     print("="*60)

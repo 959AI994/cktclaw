@@ -1,13 +1,11 @@
 """
-Tool Orchestration Service - 工具编排服务
+Tool orchestration — batch read-only tools, serialize mutating tools.
 
-参考 Claude Code 的 toolOrchestration.ts 实现工具编排逻辑。
-
-核心功能：
-1. 并行执行只读工具
-2. 串行执行写入工具
-3. 工具执行结果管理
-4. Context Modifier 机制
+Core features:
+1. Parallel execution of read-only tools
+2. Serial execution of write tools
+3. Tool execution result management
+4. Context Modifier mechanism
 """
 
 import asyncio
@@ -17,7 +15,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ToolExecutionResult:
-    """工具执行结果"""
+    """Tool execution result"""
     tool_call_id: str
     tool_name: str
     content: str
@@ -27,14 +25,14 @@ class ToolExecutionResult:
 
 @dataclass
 class ContextModifier:
-    """上下文修改器"""
+    """Context modifier"""
     tool_use_id: str
     modify_context: Callable[[Any], Any]
 
 
 @dataclass
 class MessageUpdate:
-    """消息更新"""
+    """Message update"""
     message: Optional[Dict[str, Any]] = None
     new_context: Optional[Any] = None
     context_modifier: Optional[ContextModifier] = None
@@ -42,70 +40,70 @@ class MessageUpdate:
 
 @dataclass
 class ToolBatch:
-    """工具批次"""
+    """Tool batch"""
     is_concurrency_safe: bool
     tool_calls: List[Dict[str, Any]]
 
 
-# 只读工具列表（可以并行执行）
+# Read-only tools list (can be executed in parallel)
 READ_ONLY_TOOLS = {
     "Read",
     "Grep",
     "Glob",
     "WebFetch",
     "WebSearch",
-    # EDA 只读工具
-    "opensta",  # 静态时序分析（只读）
+    # EDA read-only tools
+    "opensta",  # Static timing analysis (read-only)
 }
 
-# 写入工具列表（必须串行执行）
+# Write tools list (must be executed serially)
 WRITE_TOOLS = {
     "Write",
     "Edit",
     "Bash",
-    # EDA 写入工具
+    # EDA write tools
     "abc",
     "yosys",
     "reverse",
 }
 
-# 最大并发数
+# Maximum concurrency
 MAX_TOOL_USE_CONCURRENCY = 10
 
 
 def is_read_only_tool(tool_name: str) -> bool:
     """
-    判断工具是否为只读工具
+    Determine if tool is read-only
 
     Args:
-        tool_name: 工具名称
+        tool_name: Tool name
 
     Returns:
-        是否为只读工具
+        Whether it's read-only
     """
     return tool_name in READ_ONLY_TOOLS
 
 
 def partition_tool_calls(tool_calls: List[Dict[str, Any]]) -> List[ToolBatch]:
     """
-    将工具调用分区为批次
+    Partition tool calls into batches
 
-    规则：
-    1. 连续的只读工具 → 一个并行批次
-    2. 单个写入工具 → 一个串行批次
+    Rules:
+    1. Consecutive read-only tools → one parallel batch
+    2. Single write tool → one serial batch
 
     Args:
-        tool_calls: 工具调用列表
+        tool_calls: Tool call list
 
     Returns:
-        工具批次列表
+        Tool batch list
     """
     batches = []
     current_batch = []
     current_is_read_only = None
 
     for tool_call in tool_calls:
-        # 提取工具名称
+        # Extract tool name
         if "function" in tool_call:
             tool_name = tool_call["function"]["name"]
         elif "name" in tool_call:
@@ -115,7 +113,7 @@ def partition_tool_calls(tool_calls: List[Dict[str, Any]]) -> List[ToolBatch]:
 
         is_read_only = is_read_only_tool(tool_name)
 
-        # 如果类型改变，创建新批次
+        # If type changes, create new batch
         if current_is_read_only is not None and current_is_read_only != is_read_only:
             if current_batch:
                 batches.append(ToolBatch(
@@ -127,7 +125,7 @@ def partition_tool_calls(tool_calls: List[Dict[str, Any]]) -> List[ToolBatch]:
         current_batch.append(tool_call)
         current_is_read_only = is_read_only
 
-    # 添加最后一个批次
+    # Add last batch
     if current_batch:
         batches.append(ToolBatch(
             is_concurrency_safe=current_is_read_only or False,
@@ -142,18 +140,18 @@ async def execute_tool_call(
     tool_executor: Callable[[str, Dict[str, Any]], Awaitable[str]]
 ) -> ToolExecutionResult:
     """
-    执行单个工具调用
+    Execute single tool call
 
     Args:
-        tool_call: 工具调用
-        tool_executor: 工具执行器
+        tool_call: Tool call
+        tool_executor: Tool executor
 
     Returns:
-        工具执行结果
+        Tool execution result
     """
-    # 提取工具信息
+    # Extract tool information
     if "function" in tool_call:
-        # OpenAI 格式
+        # OpenAI format
         tool_name = tool_call["function"]["name"]
         tool_args = tool_call["function"].get("arguments", {})
         if isinstance(tool_args, str):
@@ -161,7 +159,7 @@ async def execute_tool_call(
             tool_args = json.loads(tool_args)
         tool_call_id = tool_call.get("id", "")
     elif "name" in tool_call:
-        # Anthropic 格式
+        # Anthropic format
         tool_name = tool_call["name"]
         tool_args = tool_call.get("input", {})
         tool_call_id = tool_call.get("id", "")
@@ -173,7 +171,7 @@ async def execute_tool_call(
             is_error=True
         )
 
-    # 执行工具
+    # Execute tool
     try:
         result = await tool_executor(tool_name, tool_args)
         return ToolExecutionResult(
@@ -197,28 +195,28 @@ async def run_tools_concurrently(
     max_concurrency: int = MAX_TOOL_USE_CONCURRENCY
 ) -> List[ToolExecutionResult]:
     """
-    并行执行工具
+    Execute tools in parallel
 
     Args:
-        tool_calls: 工具调用列表
-        tool_executor: 工具执行器
-        max_concurrency: 最大并发数
+        tool_calls: Tool call list
+        tool_executor: Tool executor
+        max_concurrency: Maximum concurrency
 
     Returns:
-        工具执行结果列表
+        Tool execution result list
     """
-    # 创建信号量限制并发数
+    # Create semaphore to limit concurrency
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def execute_with_semaphore(tool_call):
         async with semaphore:
             return await execute_tool_call(tool_call, tool_executor)
 
-    # 并行执行所有工具
+    # Execute all tools in parallel
     tasks = [execute_with_semaphore(tc) for tc in tool_calls]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 过滤异常
+    # Filter exceptions
     return [r for r in results if isinstance(r, ToolExecutionResult)]
 
 
@@ -227,14 +225,14 @@ async def run_tools_serially(
     tool_executor: Callable[[str, Dict[str, Any]], Awaitable[str]]
 ) -> List[ToolExecutionResult]:
     """
-    串行执行工具
+    Execute tools serially
 
     Args:
-        tool_calls: 工具调用列表
-        tool_executor: 工具执行器
+        tool_calls: Tool call list
+        tool_executor: Tool executor
 
     Returns:
-        工具执行结果列表
+        Tool execution result list
     """
     results = []
 
@@ -251,35 +249,33 @@ async def run_tools(
     context: Optional[Any] = None,
 ) -> AsyncGenerator[MessageUpdate, None]:
     """
-    执行工具编排（完整实现，包含 Context Modifier）
+    Execute tool calls with optional ContextModifier application.
 
-    参考 toolOrchestration.ts:19-82
-
-    自动将工具分批，并行执行只读工具，串行执行写入工具
+    Read-only batches run concurrently; mutating batches run serially.
 
     Args:
-        tool_calls: 工具调用列表
-        tool_executor: 工具执行器
-        context: 工具使用上下文（可选）
+        tool_calls: Tool call list
+        tool_executor: Tool executor
+        context: Tool use context (optional)
 
     Yields:
-        消息更新（包含 message, new_context, context_modifier）
+        Message updates (including message, new_context, context_modifier)
     """
     current_context = context
 
-    # 分区工具调用
+    # Partition tool calls
     batches = partition_tool_calls(tool_calls)
 
     for batch in batches:
         if batch.is_concurrency_safe:
-            # 并行执行只读工具
+            # Execute read-only tools in parallel
             queued_context_modifiers: Dict[str, List[Callable[[Any], Any]]] = {}
 
             async for update in run_tools_concurrently_with_modifiers(
                 batch.tool_calls,
                 tool_executor
             ):
-                # 收集 context modifiers
+                # Collect context modifiers
                 if update.context_modifier:
                     tool_id = update.context_modifier.tool_use_id
                     if tool_id not in queued_context_modifiers:
@@ -288,13 +284,13 @@ async def run_tools(
                         update.context_modifier.modify_context
                     )
 
-                # 返回消息更新（但不立即应用 context）
+                # Return message update (but don't apply context immediately)
                 yield MessageUpdate(
                     message=update.message,
                     new_context=current_context,
                 )
 
-            # 并行执行完成后，批量应用所有 context modifiers
+            # After parallel execution completes, batch apply all context modifiers
             for tool_call in batch.tool_calls:
                 tool_id = tool_call.get("id", "")
                 modifiers = queued_context_modifiers.get(tool_id, [])
@@ -302,22 +298,22 @@ async def run_tools(
                     if current_context is not None:
                         current_context = modifier(current_context)
 
-            # 返回更新后的 context
+            # Return updated context
             yield MessageUpdate(new_context=current_context)
 
         else:
-            # 串行执行写入工具
+            # Execute write tools serially
             async for update in run_tools_serially_with_modifiers(
                 batch.tool_calls,
                 tool_executor
             ):
-                # 立即应用 context modifier
+                # Apply context modifier immediately
                 if update.context_modifier and current_context is not None:
                     current_context = update.context_modifier.modify_context(
                         current_context
                     )
 
-                # 返回消息和更新后的 context
+                # Return message and updated context
                 yield MessageUpdate(
                     message=update.message,
                     new_context=current_context,
@@ -330,27 +326,27 @@ async def run_tools_concurrently_with_modifiers(
     max_concurrency: int = MAX_TOOL_USE_CONCURRENCY
 ) -> AsyncGenerator[MessageUpdate, None]:
     """
-    并行执行工具（支持 Context Modifier）
+    Execute tools in parallel (with Context Modifier support)
 
     Args:
-        tool_calls: 工具调用列表
-        tool_executor: 工具执行器
-        max_concurrency: 最大并发数
+        tool_calls: Tool call list
+        tool_executor: Tool executor
+        max_concurrency: Maximum concurrency
 
     Yields:
-        消息更新（包含 context_modifier）
+        Message updates (including context_modifier)
     """
-    # 创建信号量限制并发数
+    # Create semaphore to limit concurrency
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def execute_with_semaphore(tool_call):
         async with semaphore:
             result = await execute_tool_call(tool_call, tool_executor)
 
-            # 创建消息
+            # Create message
             message = tool_result_to_message(result)
 
-            # 创建 context modifier（如果需要）
+            # Create context modifier (if needed)
             context_modifier = None
             if _should_modify_context(result):
                 context_modifier = ContextModifier(
@@ -365,16 +361,16 @@ async def run_tools_concurrently_with_modifiers(
                 context_modifier=context_modifier,
             )
 
-    # 并行执行所有工具
+    # Execute all tools in parallel
     tasks = [execute_with_semaphore(tc) for tc in tool_calls]
 
-    # 使用 asyncio.as_completed 来逐个返回结果
+    # Use asyncio.as_completed to return results one by one
     for coro in asyncio.as_completed(tasks):
         try:
             update = await coro
             yield update
         except Exception as e:
-            # 错误处理
+            # Error handling
             pass
 
 
@@ -383,22 +379,22 @@ async def run_tools_serially_with_modifiers(
     tool_executor: Callable[[str, Dict[str, Any]], Awaitable[str]]
 ) -> AsyncGenerator[MessageUpdate, None]:
     """
-    串行执行工具（支持 Context Modifier）
+    Execute tools serially (with Context Modifier support)
 
     Args:
-        tool_calls: 工具调用列表
-        tool_executor: 工具执行器
+        tool_calls: Tool call list
+        tool_executor: Tool executor
 
     Yields:
-        消息更新（包含 context_modifier）
+        Message updates (including context_modifier)
     """
     for tool_call in tool_calls:
         result = await execute_tool_call(tool_call, tool_executor)
 
-        # 创建消息
+        # Create message
         message = tool_result_to_message(result)
 
-        # 创建 context modifier（如果需要）
+        # Create context modifier (if needed)
         context_modifier = None
         if _should_modify_context(result):
             context_modifier = ContextModifier(
@@ -416,35 +412,35 @@ async def run_tools_serially_with_modifiers(
 
 def _should_modify_context(result: ToolExecutionResult) -> bool:
     """
-    判断工具结果是否需要修改上下文
+    Determine if tool result should modify context
 
     Args:
-        result: 工具执行结果
+        result: Tool execution result
 
     Returns:
-        是否需要修改上下文
+        Whether context should be modified
     """
-    # 例如：Read 工具需要更新文件缓存
-    # Write/Edit 工具需要更新文件状态
+    # Example: Read tool needs to update file cache
+    # Write/Edit tools need to update file state
     return result.tool_name in ["Read", "Write", "Edit", "Bash"]
 
 
 def _apply_tool_result_to_context(context: Any, result: ToolExecutionResult) -> Any:
     """
-    将工具结果应用到上下文
+    Apply tool result to context
 
     Args:
-        context: 当前上下文
-        result: 工具执行结果
+        context: Current context
+        result: Tool execution result
 
     Returns:
-        更新后的上下文
+        Updated context
     """
-    # 这里是示例实现，实际应该根据具体的 context 类型来处理
+    # This is example implementation, should be handled based on specific context type
     if context is None:
         return None
 
-    # 例如：更新文件缓存
+    # Example: update file cache
     if result.tool_name == "Read" and hasattr(context, "file_cache"):
         # context.file_cache[file_path] = content
         pass
@@ -454,13 +450,13 @@ def _apply_tool_result_to_context(context: Any, result: ToolExecutionResult) -> 
 
 def tool_result_to_message(result: ToolExecutionResult) -> Dict[str, Any]:
     """
-    将工具执行结果转换为消息格式
+    Convert tool execution result to message format
 
     Args:
-        result: 工具执行结果
+        result: Tool execution result
 
     Returns:
-        消息字典
+        Message dictionary
     """
     message = {
         "role": "tool",
@@ -483,14 +479,14 @@ async def execute_tools_and_collect_messages(
     tool_executor: Callable[[str, Dict[str, Any]], Awaitable[str]]
 ) -> List[Dict[str, Any]]:
     """
-    执行工具并收集消息
+    Run tools via run_tools and return a flat list of tool messages.
 
     Args:
-        tool_calls: 工具调用列表
-        tool_executor: 工具执行器
+        tool_calls: Provider tool call objects
+        tool_executor: Callable invoked per tool
 
     Returns:
-        工具结果消息列表
+        List of tool-role message dicts
     """
     messages = []
 

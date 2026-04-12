@@ -1,11 +1,8 @@
 """
-存储层（SQLite）
+SQLite storage — sessions, layered messages, anchors, compaction history.
 
-负责：
-1. 会话管理
-2. 消息存储与查询
-3. Anchor Memory 管理
-4. 压缩历史记录
+Owns schema bootstrap plus CRUD helpers used by ``ContextManager`` and
+``Compactor``.
 """
 
 import sqlite3
@@ -20,18 +17,18 @@ from .models import (
 
 
 class Storage:
-    """存储层"""
+    """Thin async façade over sqlite3 for CktMem legacy mode."""
 
     def __init__(self, db_path: str = "cktclaw_sessions.db"):
         self.db_path = db_path
         self._init_db()
 
     def _init_db(self):
-        """初始化数据库"""
+        """Create tables and indexes when missing."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # sessions 表
+        # sessions
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT PRIMARY KEY,
@@ -51,7 +48,7 @@ class Storage:
             )
         """)
 
-        # messages 表
+        # messages
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +72,7 @@ class Storage:
             )
         """)
 
-        # 索引
+        # indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages(session_id, created_at)
@@ -89,7 +86,7 @@ class Storage:
                 ON messages(session_id, msg_type, created_at)
         """)
 
-        # compact_history 表
+        # compact_history
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS compact_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +101,7 @@ class Storage:
             )
         """)
 
-        # session_memories 表
+        # session_memories
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS session_memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,7 +121,7 @@ class Storage:
         conn.close()
 
     def _get_connection(self):
-        """获取数据库连接"""
+        """Open a new sqlite connection (callers must close)."""
         return sqlite3.connect(self.db_path)
 
     async def create_session(
@@ -134,7 +131,7 @@ class Storage:
         working_dir: Optional[str] = None,
         model_choice: str = "logicrt",
     ) -> str:
-        """创建会话"""
+        """Insert a sessions row."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -148,7 +145,7 @@ class Storage:
         return session_id
 
     async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """获取会话信息"""
+        """Return session metadata dict or None."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -169,7 +166,7 @@ class Storage:
         model_choice: Optional[str] = None,
         session_title: Optional[str] = None,
     ):
-        """更新会话信息"""
+        """Patch optional session columns."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -204,7 +201,7 @@ class Storage:
         conn.close()
 
     async def list_sessions(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """列出所有会话"""
+        """Recent sessions ordered by ``updated_at``."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -234,7 +231,7 @@ class Storage:
         verilog_code: str,
         analysis_report: str,
     ):
-        """存储 Anchor Memory"""
+        """Persist verilog + analysis snapshot on the session row."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -250,7 +247,7 @@ class Storage:
         conn.close()
 
     async def get_anchor_memory(self, session_id: str) -> Optional[AnchorMemory]:
-        """获取 Anchor Memory"""
+        """Hydrate ``AnchorMemory`` when anchor verilog exists."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -284,7 +281,7 @@ class Storage:
         tool_call_id: Optional[str] = None,
         name: Optional[str] = None,
     ) -> int:
-        """添加消息"""
+        """Insert a message row; returns sqlite ``lastrowid``."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -317,7 +314,7 @@ class Storage:
         msg_type: Optional[MessageType] = None,
         limit: Optional[int] = None,
     ) -> List[Message]:
-        """获取消息列表"""
+        """Ordered messages with optional layer/type filters."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -350,13 +347,12 @@ class Storage:
         max_rounds: int = 5,
         after_last_boundary: bool = True,
     ) -> List[Message]:
-        """获取最近 N 轮消息"""
+        """Recent turn-layer traffic, optionally after last compact boundary."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
         if after_last_boundary:
-            # 找到最后一个 boundary
             cursor.execute("""
                 SELECT id FROM messages
                 WHERE session_id = ? AND msg_type = 'compact_boundary'
@@ -391,22 +387,21 @@ class Storage:
 
         messages = [self._row_to_message(row) for row in rows]
 
-        # 限制轮数
         if not after_last_boundary:
             messages = messages[-max_rounds * 2:]
 
         return messages
 
     async def get_project_messages(self, session_id: str) -> List[Message]:
-        """获取 Project Layer 消息"""
+        """All ``project`` layer rows."""
         return await self.get_messages(session_id, layer=ContextLayer.PROJECT)
 
     async def get_core_contexts(self, session_id: str) -> List[Message]:
-        """获取 Core Context 消息"""
+        """Persisted circuit core-context blobs."""
         return await self.get_messages(session_id, msg_type=MessageType.CORE_CONTEXT)
 
     async def get_compact_summaries(self, session_id: str) -> List[Message]:
-        """获取压缩摘要"""
+        """Post-compaction summary messages."""
         return await self.get_messages(session_id, msg_type=MessageType.COMPACT_SUMMARY)
 
     async def add_core_context(
@@ -416,7 +411,7 @@ class Storage:
         verilog_code: str,
         analysis_report: str,
     ):
-        """添加 Core Context"""
+        """Store a formatted analysis block as ``CORE_CONTEXT``."""
         content = f"## Circuit Analysis: {aig_filename}\n\n"
         content += f"### Verilog Code\n```verilog\n{verilog_code}\n```\n\n"
         content += f"### Analysis Report\n{analysis_report}"
@@ -437,7 +432,7 @@ class Storage:
         pre_compact_tokens: int,
         post_compact_tokens: int,
     ):
-        """记录压缩历史"""
+        """Append compact_history and bump session counters."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -450,7 +445,7 @@ class Storage:
             ) VALUES (?, ?, ?, ?, ?)
         """, (session_id, compact_type, pre_compact_tokens, post_compact_tokens, tokens_saved))
 
-        # 更新 session
+        # bump session compaction stats
         cursor.execute("""
             UPDATE sessions
             SET total_compactions = total_compactions + 1,
@@ -467,7 +462,7 @@ class Storage:
         session_id: str,
         boundary_id: int,
     ):
-        """删除 boundary 之前的 turn 层消息"""
+        """Delete stale turn rows before a compaction boundary id."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -480,7 +475,7 @@ class Storage:
         conn.close()
 
     def _row_to_message(self, row: sqlite3.Row) -> Message:
-        """将数据库行转换为 Message 对象"""
+        """Map sqlite row -> ``Message`` model."""
         return Message(
             role=MessageRole(row["role"]),
             content=row["content"],
@@ -493,7 +488,7 @@ class Storage:
             name=row["name"],
         )
 
-    # ━━━━━━━━━━ Session Memory Methods ━━━━━━━━━━
+    # --- Session memory (SQLite) ---
 
     async def save_session_memory(
         self,
@@ -504,19 +499,19 @@ class Storage:
         memory_type: str = "general",
     ):
         """
-        保存 Session Memory
+        Upsert a keyed memory row for ``topic``.
 
         Args:
-            session_id: 会话 ID
-            topic: 语义主题（如 "circuit_adder", "project_requirements"）
-            summary: 一行摘要
-            content: 完整内容
-            memory_type: 记忆类型（general, circuit, requirement, decision）
+            session_id: Owning chat session.
+            topic: Stable slug (e.g. ``circuit_adder``).
+            summary: One-line index blurb.
+            content: Full markdown body.
+            memory_type: general | circuit | requirement | decision, etc.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # 使用 INSERT OR REPLACE 来更新已存在的主题
+        # upsert when UNIQUE(session_id, topic) exists (requires matching DDL)
         cursor.execute("""
             INSERT INTO session_memories (session_id, topic, summary, content, memory_type, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
@@ -532,12 +527,7 @@ class Storage:
         conn.close()
 
     async def get_session_memories(self, session_id: str) -> List[Dict[str, Any]]:
-        """
-        获取会话的所有 Session Memory
-
-        Returns:
-            记忆列表，按更新时间排序
-        """
+        """Return memory dicts newest-first."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -555,7 +545,7 @@ class Storage:
         return [dict(row) for row in rows]
 
     async def delete_session_memory(self, session_id: str, topic: str):
-        """删除指定主题的 Session Memory"""
+        """Delete a topic row."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -568,12 +558,7 @@ class Storage:
         conn.close()
 
     async def format_session_memory(self, session_id: str) -> str:
-        """
-        格式化 Session Memory 为可读文本（类似 MEMORY.md）
-
-        Returns:
-            格式化的 Session Memory 内容
-        """
+        """Render sqlite session memories as pseudo-MARKDOWN.md text."""
         memories = await self.get_session_memories(session_id)
 
         if not memories:
@@ -586,7 +571,6 @@ class Storage:
             "",
         ]
 
-        # 索引部分
         for mem in memories:
             lines.append(f"- [{mem['topic']}] {mem['summary']}")
 
@@ -594,7 +578,6 @@ class Storage:
         lines.append("---")
         lines.append("")
 
-        # 详细内容
         for mem in memories:
             lines.append(f"## {mem['topic']}")
             lines.append("")

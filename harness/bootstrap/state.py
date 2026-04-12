@@ -1,19 +1,17 @@
 """
-Bootstrap State - 全局状态根基
+Bootstrap state — minimal process-wide session and counters.
 
-参考 src/bootstrap/state.ts 实现 Python 版本的全局状态管理。
+Responsibilities:
+1. Hold shared fields (cwd, project root, session id, usage counters)
+2. Expose small atomic-style mutators (no ad-hoc global writes)
+3. Serialize access where needed (async locks on hot paths)
+4. Keep the surface area tiny — extend via services, not new globals
 
-核心职责：
-1. 管理全局状态（cwd, projectRoot, sessionId, modelUsage 等）
-2. 提供原子操作接口（状态读写、计数器更新）
-3. 线程安全的状态访问
-4. 状态最小化原则
-
-设计原则：
+Rules:
 - DO NOT ADD MORE STATE HERE - BE JUDICIOUS WITH GLOBAL STATE
-- 状态最小化，避免全局状态膨胀
-- 使用 Pydantic 进行数据校验
-- 使用 asyncio.Lock 保证线程安全
+- Prefer dedicated modules for new concerns
+- Validate with Pydantic models at the edges
+- asyncio.Lock serializes concurrent mutators
 """
 
 import asyncio
@@ -27,7 +25,7 @@ from pydantic import BaseModel, Field
 
 
 class ModelUsage(BaseModel):
-    """模型使用统计"""
+    """Per-model token usage aggregates."""
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_input_tokens: int = 0
@@ -35,25 +33,25 @@ class ModelUsage(BaseModel):
 
 
 class BootstrapState(BaseModel):
-    """全局状态（最小化原则）"""
+    """Minimal mutable process snapshot (keep this struct small)."""
 
-    # 工作目录
+    # Working directory
     original_cwd: str = Field(default_factory=lambda: os.getcwd())
     project_root: str = Field(default_factory=lambda: os.getcwd())
     cwd: str = Field(default_factory=lambda: os.getcwd())
 
-    # 会话信息
+    # Session
     session_id: str = Field(default_factory=lambda: uuid4().hex[:16])
     start_time: float = Field(default_factory=time.time)
     last_interaction_time: float = Field(default_factory=time.time)
 
-    # 成本统计
+    # Cost / latency totals
     total_cost_usd: float = 0.0
     total_api_duration: float = 0.0
     total_api_duration_without_retries: float = 0.0
     total_tool_duration: float = 0.0
 
-    # 轮次统计
+    # Per-turn counters (reset each turn)
     turn_hook_duration_ms: float = 0.0
     turn_tool_duration_ms: float = 0.0
     turn_classifier_duration_ms: float = 0.0
@@ -61,15 +59,15 @@ class BootstrapState(BaseModel):
     turn_hook_count: int = 0
     turn_classifier_count: int = 0
 
-    # 代码统计
+    # Code churn
     total_lines_added: int = 0
     total_lines_removed: int = 0
 
-    # 模型使用
+    # Model usage
     model_usage: Dict[str, ModelUsage] = Field(default_factory=dict)
     has_unknown_model_cost: bool = False
 
-    # 配置
+    # Misc flags
     is_interactive: bool = True
     strict_tool_result_pairing: bool = False
     client_type: str = "cli"
@@ -80,9 +78,9 @@ class BootstrapState(BaseModel):
 
 class StateManager:
     """
-    全局状态管理器（单例模式）
+    Process-wide state holder (singleton).
 
-    提供线程安全的状态访问和原子操作
+    All mutators run under an asyncio lock for consistency.
     """
 
     _instance: Optional['StateManager'] = None
@@ -97,31 +95,31 @@ class StateManager:
 
     @property
     def state(self) -> BootstrapState:
-        """获取当前状态（只读）"""
+        """Return the current snapshot (callers must not mutate fields in place)."""
         return self._state
 
     async def get_session_id(self) -> str:
-        """获取会话 ID"""
+        """Return the active session id."""
         async with self._state_lock:
             return self._state.session_id
 
     async def get_cwd(self) -> str:
-        """获取当前工作目录"""
+        """Return the resolved working directory."""
         async with self._state_lock:
             return self._state.cwd
 
     async def set_cwd(self, cwd: str) -> None:
-        """设置当前工作目录"""
+        """Update working directory to an absolute path."""
         async with self._state_lock:
             self._state.cwd = str(Path(cwd).resolve())
 
     async def get_project_root(self) -> str:
-        """获取项目根目录"""
+        """Return the configured project root."""
         async with self._state_lock:
             return self._state.project_root
 
     async def update_last_interaction_time(self) -> None:
-        """更新最后交互时间"""
+        """Bump last-interaction timestamp (wall clock)."""
         async with self._state_lock:
             self._state.last_interaction_time = time.time()
 
@@ -133,7 +131,7 @@ class StateManager:
         cache_creation_input_tokens: int = 0,
         cache_read_input_tokens: int = 0,
     ) -> None:
-        """添加模型使用统计"""
+        """Accumulate token usage for a named model."""
         async with self._state_lock:
             if model_name not in self._state.model_usage:
                 self._state.model_usage[model_name] = ModelUsage()
@@ -145,34 +143,34 @@ class StateManager:
             usage.cache_read_input_tokens += cache_read_input_tokens
 
     async def add_cost(self, cost_usd: float) -> None:
-        """添加成本"""
+        """Add billed USD to the running total."""
         async with self._state_lock:
             self._state.total_cost_usd += cost_usd
 
     async def add_api_duration(self, duration: float, with_retries: bool = True) -> None:
-        """添加 API 调用时长"""
+        """Record API wall time (optionally excluding retry overhead)."""
         async with self._state_lock:
             self._state.total_api_duration += duration
             if not with_retries:
                 self._state.total_api_duration_without_retries += duration
 
     async def add_tool_duration(self, duration: float) -> None:
-        """添加工具执行时长"""
+        """Record aggregate tool execution time."""
         async with self._state_lock:
             self._state.total_tool_duration += duration
 
     async def increment_turn_tool_count(self) -> None:
-        """增加轮次工具计数"""
+        """Increment per-turn tool-use counter."""
         async with self._state_lock:
             self._state.turn_tool_count += 1
 
     async def increment_turn_hook_count(self) -> None:
-        """增加轮次钩子计数"""
+        """Increment per-turn hook counter."""
         async with self._state_lock:
             self._state.turn_hook_count += 1
 
     async def reset_turn_counters(self) -> None:
-        """重置轮次计数器"""
+        """Clear per-turn latency and counters (new assistant turn)."""
         async with self._state_lock:
             self._state.turn_hook_duration_ms = 0.0
             self._state.turn_tool_duration_ms = 0.0
@@ -182,13 +180,13 @@ class StateManager:
             self._state.turn_classifier_count = 0
 
     async def add_lines_changed(self, added: int, removed: int) -> None:
-        """添加代码行数变更"""
+        """Track cumulative line add/remove totals."""
         async with self._state_lock:
             self._state.total_lines_added += added
             self._state.total_lines_removed += removed
 
     async def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Return a JSON-friendly stats dict for dashboards / logs."""
         async with self._state_lock:
             return {
                 "session_id": self._state.session_id,
@@ -205,38 +203,38 @@ class StateManager:
             }
 
     def reset(self) -> None:
-        """重置状态（仅用于测试）"""
+        """Replace state with a fresh BootstrapState (tests only)."""
         self._state = BootstrapState()
 
 
-# 全局单例
+# Module-level singleton handle
 _state_manager: Optional[StateManager] = None
 
 
 def get_state_manager() -> StateManager:
-    """获取全局状态管理器单例"""
+    """Lazily construct and return the shared StateManager."""
     global _state_manager
     if _state_manager is None:
         _state_manager = StateManager()
     return _state_manager
 
 
-# 便捷函数
+# Thin wrappers (async entrypoints for callers without direct manager access)
 async def get_session_id() -> str:
-    """获取会话 ID"""
+    """Session id for the active process."""
     return await get_state_manager().get_session_id()
 
 
 async def get_cwd() -> str:
-    """获取当前工作目录"""
+    """Current working directory."""
     return await get_state_manager().get_cwd()
 
 
 async def set_cwd(cwd: str) -> None:
-    """设置当前工作目录"""
+    """Update cwd for subprocesses / tools."""
     await get_state_manager().set_cwd(cwd)
 
 
 async def get_project_root() -> str:
-    """获取项目根目录"""
+    """Project root path."""
     return await get_state_manager().get_project_root()

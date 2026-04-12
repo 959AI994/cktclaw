@@ -1,25 +1,23 @@
 """
-Skill Registry - 技能注册与管理
+Skill registry — register, discover, and resolve EDA / tool skills.
 
-参考 src/skills/bundledSkills.ts 和 loadSkillsDir.ts 实现 Python 版本的技能注册系统。
+Responsibilities:
+1. register_skill / unregister helpers
+2. get_skill / list_skills queries
+3. Optional dynamic discovery hooks
+4. Conditional activation gates
+5. De-duplication and precedence rules
 
-核心职责：
-1. 技能注册（register_skill）
-2. 技能查询（get_skill, list_skills）
-3. 技能发现（动态加载）
-4. 技能激活（条件激活）
-5. 去重与优先级管理
-
-设计原则：
-- 单例模式（全局注册表）
-- 线程安全（asyncio.Lock）
-- 优先级管理（bundled < user < project）
-- 条件激活（基于路径模式）
+Design:
+- One process-wide registry instance
+- asyncio.Lock around concurrent registration
+- Precedence: bundled < user < project (caller-controlled via override)
+- Path-pattern gated skills activate when matching files appear
 """
 
 import asyncio
 import os
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 from pathlib import Path
 
 from .skill_types import (
@@ -31,15 +29,15 @@ from .skill_types import (
 
 
 class SkillNotFoundError(Exception):
-    """技能不存在错误"""
+    """Raised when a skill name or alias cannot be resolved."""
     pass
 
 
 class SkillRegistry:
     """
-    技能注册表（单例模式）
+    In-memory skill table (singleton).
 
-    管理所有技能的注册、查询、激活
+    Owns registration, lookup, aliases, and conditional activation.
     """
 
     _instance: Optional['SkillRegistry'] = None
@@ -57,7 +55,7 @@ class SkillRegistry:
 
     @property
     def skills(self) -> Dict[str, SkillDefinition]:
-        """获取所有技能（只读）"""
+        """Shallow copy of registered skills (read-only use)."""
         return self._skills.copy()
 
     async def register_skill(
@@ -66,50 +64,45 @@ class SkillRegistry:
         override: bool = False,
     ) -> None:
         """
-        注册技能
+        Register a skill definition.
 
         Args:
-            skill: 技能定义
-            override: 是否覆盖已存在的技能
+            skill: Parsed skill metadata + body.
+            override: Replace an existing registration when True.
 
         Raises:
-            ValueError: 技能已存在且 override=False
+            ValueError: Name already registered and override is False.
         """
         async with self._skill_lock:
-            # 检查是否已存在
             if skill.name in self._skills and not override:
                 raise ValueError(f"Skill '{skill.name}' already registered")
 
-            # 条件技能（有路径过滤）
+            # Path-gated skills stay dormant until activate_conditional_skills_for_paths
             if skill.paths and len(skill.paths) > 0:
                 self._conditional_skills[skill.name] = skill
                 return
 
-            # 注册技能
             self._skills[skill.name] = skill
 
-            # 注册别名
             for alias in skill.aliases:
                 self._aliases[alias] = skill.name
 
     async def get_skill(self, name_or_alias: str) -> SkillDefinition:
         """
-        获取技能
+        Resolve a skill by canonical name or alias.
 
         Args:
-            name_or_alias: 技能名称或别名
+            name_or_alias: Primary name or any registered alias.
 
         Returns:
-            技能定义
+            A defensive copy of the SkillDefinition.
 
         Raises:
-            SkillNotFoundError: 技能不存在
+            SkillNotFoundError: Missing name.
         """
         async with self._skill_lock:
-            # 尝试别名
             skill_name = self._aliases.get(name_or_alias, name_or_alias)
 
-            # 查找技能
             skill = self._skills.get(skill_name)
             if skill is None:
                 raise SkillNotFoundError(f"Skill '{name_or_alias}' not found")
@@ -123,15 +116,15 @@ class SkillRegistry:
         user_invocable_only: bool = False,
     ) -> List[SkillDefinition]:
         """
-        列出技能
+        Enumerate registered skills with optional filters.
 
         Args:
-            skill_type: 过滤技能类型（可选）
-            loaded_from: 过滤来源（可选）
-            user_invocable_only: 仅返回用户可调用的技能
+            skill_type: Restrict to a SkillType when set.
+            loaded_from: Restrict to a LoadedFrom bucket when set.
+            user_invocable_only: Only skills the user may invoke directly.
 
         Returns:
-            技能列表
+            Copied definitions (safe to mutate by callers).
         """
         async with self._skill_lock:
             skills = list(self._skills.values())
@@ -149,13 +142,13 @@ class SkillRegistry:
 
     async def unregister_skill(self, name: str) -> None:
         """
-        注销技能
+        Remove a skill and scrub its aliases.
 
         Args:
-            name: 技能名称
+            name: Canonical skill name.
 
         Raises:
-            SkillNotFoundError: 技能不存在
+            SkillNotFoundError: Unknown name.
         """
         async with self._skill_lock:
             if name not in self._skills:
@@ -163,12 +156,10 @@ class SkillRegistry:
 
             skill = self._skills[name]
 
-            # 删除别名
             for alias in skill.aliases:
                 if alias in self._aliases:
                     del self._aliases[alias]
 
-            # 删除技能
             del self._skills[name]
 
     async def activate_conditional_skills_for_paths(
@@ -177,14 +168,14 @@ class SkillRegistry:
         cwd: str,
     ) -> List[str]:
         """
-        激活条件技能（基于路径模式）
+        Promote path-gated skills into the active table when patterns match.
 
         Args:
-            file_paths: 文件路径列表
-            cwd: 当前工作目录
+            file_paths: Files touched or referenced this turn.
+            cwd: Anchor for turning absolute paths into project-relative paths.
 
         Returns:
-            激活的技能名称列表
+            Names of skills that transitioned from conditional to active.
         """
         async with self._skill_lock:
             if not self._conditional_skills:
@@ -196,23 +187,19 @@ class SkillRegistry:
                 if not skill.paths:
                     continue
 
-                # 检查是否匹配路径模式
                 for file_path in file_paths:
-                    # 转换为相对路径
                     if os.path.isabs(file_path):
                         rel_path = os.path.relpath(file_path, cwd)
                     else:
                         rel_path = file_path
 
-                    # 简单的通配符匹配（可以使用 pathspec 库实现更复杂的匹配）
+                    # Lightweight glob match; swap for pathspec if patterns grow complex
                     if self._matches_any_pattern(rel_path, skill.paths):
-                        # 激活技能
                         self._skills[name] = skill
                         del self._conditional_skills[name]
                         self._activated_skill_names.add(name)
                         activated.append(name)
 
-                        # 注册别名
                         for alias in skill.aliases:
                             self._aliases[alias] = name
 
@@ -222,14 +209,13 @@ class SkillRegistry:
 
     def _matches_any_pattern(self, path: str, patterns: List[str]) -> bool:
         """
-        检查路径是否匹配任意模式
+        True when path matches any glob-like pattern.
 
-        简单实现：支持 * 和 ** 通配符
+        Supports * and ** (collapsed to single-star semantics for fnmatch).
         """
         from fnmatch import fnmatch
 
         for pattern in patterns:
-            # ** 匹配任意层级
             if "**" in pattern:
                 pattern = pattern.replace("**", "*")
 
@@ -239,17 +225,12 @@ class SkillRegistry:
         return False
 
     async def get_conditional_skill_count(self) -> int:
-        """获取待激活的条件技能数量"""
+        """How many skills are still waiting on path matches."""
         async with self._skill_lock:
             return len(self._conditional_skills)
 
-    async def get_stats(self) -> Dict[str, any]:
-        """
-        获取技能统计信息
-
-        Returns:
-            统计信息字典
-        """
+    async def get_stats(self) -> Dict[str, Any]:
+        """Aggregate counts for diagnostics / UI."""
         async with self._skill_lock:
             stats = {
                 "total_skills": len(self._skills),
@@ -262,47 +243,42 @@ class SkillRegistry:
             }
 
             for skill in self._skills.values():
-                # 按类型统计
                 type_key = skill.skill_type if isinstance(skill.skill_type, str) else skill.skill_type.value
                 stats["by_type"][type_key] = stats["by_type"].get(type_key, 0) + 1
 
-                # 按来源统计
                 source_key = skill.loaded_from if isinstance(skill.loaded_from, str) else skill.loaded_from.value
                 stats["by_source"][source_key] = stats["by_source"].get(source_key, 0) + 1
 
-                # Token 估算
                 stats["total_tokens"] += estimate_skill_frontmatter_tokens(skill)
 
             return stats
 
     def reset(self) -> None:
-        """重置技能注册表（仅用于测试）"""
+        """Clear every table (unit tests only)."""
         self._skills.clear()
         self._aliases.clear()
         self._conditional_skills.clear()
         self._activated_skill_names.clear()
 
 
-# 全局单例
 _skill_registry: Optional[SkillRegistry] = None
 
 
 def get_skill_registry() -> SkillRegistry:
-    """获取全局技能注册表单例"""
+    """Shared SkillRegistry instance."""
     global _skill_registry
     if _skill_registry is None:
         _skill_registry = SkillRegistry()
     return _skill_registry
 
 
-# 便捷函数
 async def register_skill(skill: SkillDefinition, override: bool = False) -> None:
-    """注册技能"""
+    """Module-level register_skill."""
     await get_skill_registry().register_skill(skill, override)
 
 
 async def get_skill(name_or_alias: str) -> SkillDefinition:
-    """获取技能"""
+    """Module-level get_skill."""
     return await get_skill_registry().get_skill(name_or_alias)
 
 
@@ -311,7 +287,7 @@ async def list_skills(
     loaded_from: Optional[LoadedFrom] = None,
     user_invocable_only: bool = False,
 ) -> List[SkillDefinition]:
-    """列出技能"""
+    """Module-level list_skills."""
     return await get_skill_registry().list_skills(
         skill_type=skill_type,
         loaded_from=loaded_from,
@@ -320,7 +296,7 @@ async def list_skills(
 
 
 async def unregister_skill(name: str) -> None:
-    """注销技能"""
+    """Module-level unregister_skill."""
     await get_skill_registry().unregister_skill(name)
 
 
@@ -328,7 +304,7 @@ async def activate_conditional_skills_for_paths(
     file_paths: List[str],
     cwd: str,
 ) -> List[str]:
-    """激活条件技能"""
+    """Module-level conditional activation helper."""
     return await get_skill_registry().activate_conditional_skills_for_paths(
         file_paths, cwd
     )

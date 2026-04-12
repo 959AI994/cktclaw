@@ -1,19 +1,17 @@
 """
-Task Manager - 任务生命周期管理器
+Task manager — lifecycle, log files, and cleanup for background jobs.
 
-参考 src/tasks/ 实现 Python 版本的任务管理系统。
+Responsibilities:
+1. Register tasks and expose read-only snapshots
+2. Enforce pending -> running -> terminal transitions
+3. Stream stdout-style logs to per-task files
+4. Run optional cleanup hooks when tasks are killed
 
-核心职责：
-1. 任务注册与查询
-2. 任务状态转换（pending -> running -> completed/failed/killed）
-3. 任务输出管理
-4. 任务清理与终止
-
-设计原则：
-- 线程安全（asyncio.Lock）
-- 状态机严格（防止非法状态转换）
-- 输出持久化（文件系统）
-- 资源清理（终止状态自动清理）
+Design:
+- asyncio.Lock protects the in-memory tables
+- Illegal transitions raise TaskStateError
+- Output persists under ~/.cktclaw/tasks/<id>.txt
+- Terminal rows can be aged out via cleanup_terminal_tasks
 """
 
 import asyncio
@@ -33,20 +31,20 @@ from .task_types import (
 
 
 class TaskNotFoundError(Exception):
-    """任务不存在错误"""
+    """Raised when a task id is unknown."""
     pass
 
 
 class TaskStateError(Exception):
-    """任务状态错误"""
+    """Raised when a state transition violates the task lifecycle."""
     pass
 
 
 class TaskManager:
     """
-    任务生命周期管理器（单例模式）
+    Singleton registry for TaskStateBase rows.
 
-    管理所有任务的创建、状态转换、输出、清理
+    Owns handles, log offsets, and optional cleanup callbacks.
     """
 
     _instance: Optional['TaskManager'] = None
@@ -62,7 +60,7 @@ class TaskManager:
 
     @property
     def tasks(self) -> Dict[str, TaskStateBase]:
-        """获取所有任务（只读）"""
+        """Shallow copy of active tasks (read-only consumers)."""
         return self._tasks.copy()
 
     async def create_task(
@@ -72,21 +70,19 @@ class TaskManager:
         tool_use_id: Optional[str] = None,
     ) -> TaskHandle:
         """
-        创建新任务
+        Allocate a new task id, seed its log file, and return a handle.
 
         Args:
-            task_type: 任务类型
-            description: 任务描述
-            tool_use_id: 工具使用 ID（可选）
+            task_type: Discriminator for logging / policy.
+            description: Human-readable summary for the header block.
+            tool_use_id: Optional originating tool_use id.
 
         Returns:
-            TaskHandle 包含任务 ID 和清理函数
+            TaskHandle carrying the generated id (cleanup wired later).
         """
         async with self._task_lock:
-            # 生成任务 ID
             task_id = generate_task_id(task_type)
 
-            # 创建任务状态
             task_state = create_task_state_base(
                 task_id=task_id,
                 task_type=task_type,
@@ -94,10 +90,8 @@ class TaskManager:
                 tool_use_id=tool_use_id,
             )
 
-            # 注册任务
             self._tasks[task_id] = task_state
 
-            # 创建输出文件
             os.makedirs(os.path.dirname(task_state.output_file), exist_ok=True)
             with open(task_state.output_file, "w") as f:
                 f.write(f"Task {task_id} created at {datetime.now().isoformat()}\n")
@@ -108,16 +102,10 @@ class TaskManager:
 
     async def get_task(self, task_id: str) -> TaskStateBase:
         """
-        获取任务状态
-
-        Args:
-            task_id: 任务 ID
-
-        Returns:
-            TaskStateBase 实例
+        Return a defensive copy of the task row.
 
         Raises:
-            TaskNotFoundError: 任务不存在
+            TaskNotFoundError: Unknown id.
         """
         async with self._task_lock:
             task = self._tasks.get(task_id)
@@ -132,36 +120,27 @@ class TaskManager:
         end_time: Optional[float] = None,
     ) -> None:
         """
-        更新任务状态
-
-        Args:
-            task_id: 任务 ID
-            status: 新状态
-            end_time: 结束时间（可选）
+        Move a task along its lifecycle.
 
         Raises:
-            TaskNotFoundError: 任务不存在
-            TaskStateError: 非法状态转换
+            TaskNotFoundError: Unknown id.
+            TaskStateError: Task already terminal.
         """
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise TaskNotFoundError(f"Task {task_id} not found")
 
-            # 验证状态转换
             if is_terminal_task_status(task.status):
                 raise TaskStateError(
                     f"Cannot update task {task_id} in terminal state {task.status}"
                 )
 
-            # 更新状态
             task.status = status
 
-            # 如果是终止状态，记录结束时间
             if is_terminal_task_status(status):
                 task.end_time = end_time or datetime.now().timestamp()
 
-                # 写入输出文件
                 with open(task.output_file, "a") as f:
                     f.write("-" * 70 + "\n")
                     f.write(f"Task {status.value} at {datetime.fromtimestamp(task.end_time).isoformat()}\n")
@@ -171,26 +150,15 @@ class TaskManager:
         task_id: str,
         output: str,
     ) -> None:
-        """
-        追加任务输出
-
-        Args:
-            task_id: 任务 ID
-            output: 输出内容
-
-        Raises:
-            TaskNotFoundError: 任务不存在
-        """
+        """Append UTF-8 text to the task log and refresh output_offset."""
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise TaskNotFoundError(f"Task {task_id} not found")
 
-            # 追加到输出文件
             with open(task.output_file, "a") as f:
                 f.write(output)
 
-            # 更新偏移量
             task.output_offset = os.path.getsize(task.output_file)
 
     async def read_task_output(
@@ -200,25 +168,18 @@ class TaskManager:
         limit: Optional[int] = None,
     ) -> str:
         """
-        读取任务输出
+        Read log tail or slice.
 
         Args:
-            task_id: 任务 ID
-            offset: 起始偏移量（字节）
-            limit: 最大读取字节数
-
-        Returns:
-            输出内容
-
-        Raises:
-            TaskNotFoundError: 任务不存在
+            task_id: Target task.
+            offset: Byte offset into the log file.
+            limit: Max bytes to read (None == read remainder).
         """
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise TaskNotFoundError(f"Task {task_id} not found")
 
-            # 读取输出文件
             with open(task.output_file, "r") as f:
                 if offset is not None:
                     f.seek(offset)
@@ -227,15 +188,7 @@ class TaskManager:
                 return f.read()
 
     async def mark_task_notified(self, task_id: str) -> None:
-        """
-        标记任务已通知
-
-        Args:
-            task_id: 任务 ID
-
-        Raises:
-            TaskNotFoundError: 任务不存在
-        """
+        """Flip notified=True after the UI surfaced completion."""
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -244,14 +197,11 @@ class TaskManager:
 
     async def kill_task(self, task_id: str) -> None:
         """
-        终止任务
-
-        Args:
-            task_id: 任务 ID
+        Force a RUNNING task into KILLED and invoke its cleanup hook.
 
         Raises:
-            TaskNotFoundError: 任务不存在
-            TaskStateError: 任务不在运行状态
+            TaskNotFoundError: Unknown id.
+            TaskStateError: Task not RUNNING.
         """
         async with self._task_lock:
             task = self._tasks.get(task_id)
@@ -263,17 +213,14 @@ class TaskManager:
                     f"Cannot kill task {task_id} in state {task.status}"
                 )
 
-            # 执行清理函数
             cleanup = self._cleanup_handlers.get(task_id)
             if cleanup:
                 cleanup()
                 del self._cleanup_handlers[task_id]
 
-            # 更新状态
             task.status = TaskStatus.KILLED
             task.end_time = datetime.now().timestamp()
 
-            # 写入输出文件
             with open(task.output_file, "a") as f:
                 f.write("-" * 70 + "\n")
                 f.write(f"Task killed at {datetime.fromtimestamp(task.end_time).isoformat()}\n")
@@ -283,16 +230,7 @@ class TaskManager:
         task_id: str,
         cleanup: Callable[[], None],
     ) -> None:
-        """
-        注册任务清理函数
-
-        Args:
-            task_id: 任务 ID
-            cleanup: 清理函数
-
-        Raises:
-            TaskNotFoundError: 任务不存在
-        """
+        """Attach a synchronous cleanup callable (usually stops subprocesses)."""
         async with self._task_lock:
             if task_id not in self._tasks:
                 raise TaskNotFoundError(f"Task {task_id} not found")
@@ -303,16 +241,7 @@ class TaskManager:
         status: Optional[TaskStatus] = None,
         task_type: Optional[TaskType] = None,
     ) -> List[TaskStateBase]:
-        """
-        列出任务
-
-        Args:
-            status: 过滤状态（可选）
-            task_type: 过滤类型（可选）
-
-        Returns:
-            任务列表
-        """
+        """Enumerate tasks with optional filters."""
         async with self._task_lock:
             tasks = list(self._tasks.values())
 
@@ -326,11 +255,10 @@ class TaskManager:
 
     async def get_background_tasks(self) -> List[TaskStateBase]:
         """
-        获取后台任务
+        Tasks that still need UI attention (running or pending).
 
-        后台任务定义：
-        1. 状态为 running 或 pending
-        2. 未被标记为前台任务
+        Note: There is no separate foreground flag yet; this mirrors the
+        legacy heuristic (active non-terminal work).
         """
         async with self._task_lock:
             background_tasks = []
@@ -341,13 +269,10 @@ class TaskManager:
 
     async def cleanup_terminal_tasks(self, max_age_seconds: float = 3600) -> int:
         """
-        清理终止状态的任务
-
-        Args:
-            max_age_seconds: 最大保留时间（秒）
+        Drop terminal tasks older than ``max_age_seconds``.
 
         Returns:
-            清理的任务数量
+            Number of tasks removed from memory.
         """
         async with self._task_lock:
             now = datetime.now().timestamp()
@@ -358,22 +283,15 @@ class TaskManager:
                     if task.end_time and (now - task.end_time) > max_age_seconds:
                         to_remove.append(task_id)
 
-            # 删除任务
             for task_id in to_remove:
                 del self._tasks[task_id]
-                # 删除清理函数
                 if task_id in self._cleanup_handlers:
                     del self._cleanup_handlers[task_id]
 
             return len(to_remove)
 
     async def get_stats(self) -> Dict[str, Any]:
-        """
-        获取任务统计信息
-
-        Returns:
-            统计信息字典
-        """
+        """Lightweight histogram for dashboards."""
         async with self._task_lock:
             stats = {
                 "total_tasks": len(self._tasks),
@@ -382,28 +300,26 @@ class TaskManager:
             }
 
             for task in self._tasks.values():
-                # 按状态统计（Pydantic use_enum_values=True 已转为字符串）
+                # Pydantic may surface enum values as plain strings
                 status_key = task.status if isinstance(task.status, str) else task.status.value
                 stats["by_status"][status_key] = stats["by_status"].get(status_key, 0) + 1
 
-                # 按类型统计
                 type_key = task.type if isinstance(task.type, str) else task.type.value
                 stats["by_type"][type_key] = stats["by_type"].get(type_key, 0) + 1
 
             return stats
 
     def reset(self) -> None:
-        """重置任务管理器（仅用于测试）"""
+        """Wipe tables (unit tests only)."""
         self._tasks.clear()
         self._cleanup_handlers.clear()
 
 
-# 全局单例
 _task_manager: Optional[TaskManager] = None
 
 
 def get_task_manager() -> TaskManager:
-    """获取全局任务管理器单例"""
+    """Lazy singleton accessor."""
     global _task_manager
     if _task_manager is None:
         _task_manager = TaskManager()

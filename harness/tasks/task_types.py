@@ -1,19 +1,17 @@
 """
-Task Types - 任务状态类型定义
+Task types — enums, IDs, and shared fields for background work.
 
-参考 src/Task.ts 实现 Python 版本的任务类型系统。
+Covers:
+1. TaskType discriminator
+2. TaskStatus lifecycle values
+3. TaskStateBase shared columns
+4. Secure-ish random task id generator
+5. Helpers such as is_terminal_task_status
 
-核心职责：
-1. 定义任务类型枚举（TaskType）
-2. 定义任务状态枚举（TaskStatus）
-3. 定义任务状态基类（TaskStateBase）
-4. 提供任务 ID 生成器
-5. 提供任务状态判断函数
-
-设计原则：
-- 类型安全（使用 Enum）
-- 状态机清晰（pending -> running -> completed/failed/killed）
-- ID 生成安全（使用随机字节）
+Principles:
+- Prefer Enum for wire-stable values
+- Lifecycle: pending -> running -> terminal states
+- IDs mix type prefix + randomness (not cryptographic)
 """
 
 import os
@@ -25,7 +23,7 @@ from datetime import datetime
 
 
 class TaskType(str, Enum):
-    """任务类型"""
+    """Concrete background job kinds."""
     LOCAL_BASH = "local_bash"
     LOCAL_AGENT = "local_agent"
     REMOTE_AGENT = "remote_agent"
@@ -36,7 +34,7 @@ class TaskType(str, Enum):
 
 
 class TaskStatus(str, Enum):
-    """任务状态"""
+    """Lifecycle flags for a TaskHandle."""
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -46,26 +44,21 @@ class TaskStatus(str, Enum):
 
 def is_terminal_task_status(status: TaskStatus) -> bool:
     """
-    判断任务是否处于终止状态
+    Return True when no further messages should target this task.
 
-    终止状态：completed, failed, killed
-    用于防止向已终止的任务注入消息、清理任务等
+    Terminal == completed, failed, or killed (cleanup / GC helpers).
     """
     return status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.KILLED)
 
 
 class TaskHandle(BaseModel):
-    """任务句柄"""
+    """Lightweight reference to a running background task."""
     task_id: str
     cleanup: Optional[Callable[[], None]] = None
 
 
 class TaskStateBase(BaseModel):
-    """
-    任务状态基类
-
-    所有具体任务类型的共享字段
-    """
+    """Shared columns for every concrete task state model."""
     id: str
     type: TaskType
     status: TaskStatus = TaskStatus.PENDING
@@ -83,7 +76,7 @@ class TaskStateBase(BaseModel):
         use_enum_values = True
 
 
-# Task ID 前缀映射
+# Prefix letters encode task family for log readability
 TASK_ID_PREFIXES = {
     TaskType.LOCAL_BASH: "b",
     TaskType.LOCAL_AGENT: "a",
@@ -94,22 +87,18 @@ TASK_ID_PREFIXES = {
     TaskType.DREAM: "d",
 }
 
-# 任务 ID 字母表（36 进制，不区分大小写）
-# 36^8 ≈ 2.8 万亿组合，足以抵抗暴力攻击
+# 36-character alphabet for suffix randomness (not a security boundary)
 TASK_ID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 
 def get_task_id_prefix(task_type: TaskType) -> str:
-    """获取任务 ID 前缀"""
+    """Return the single-letter prefix for a task type."""
     return TASK_ID_PREFIXES.get(task_type, "x")
 
 
 def generate_task_id(task_type: TaskType) -> str:
     """
-    生成任务 ID
-
-    格式：<prefix><8位随机字符>
-    例如：b3a7f2e1, a9c4d8b2
+    Build `<prefix><8 random chars>` identifiers (base-36 digits).
     """
     prefix = get_task_id_prefix(task_type)
     random_bytes = secrets.token_bytes(8)
@@ -122,12 +111,7 @@ def generate_task_id(task_type: TaskType) -> str:
 
 
 def get_task_output_path(task_id: str) -> str:
-    """
-    获取任务输出文件路径
-
-    参考 src/utils/task/diskOutput.ts
-    """
-    # 使用临时目录存储任务输出
+    """Return ~/.cktclaw/tasks/<task_id>.txt for streaming logs."""
     temp_dir = os.path.join(os.path.expanduser("~"), ".cktclaw", "tasks")
     os.makedirs(temp_dir, exist_ok=True)
     return os.path.join(temp_dir, f"{task_id}.txt")
@@ -140,16 +124,16 @@ def create_task_state_base(
     tool_use_id: Optional[str] = None,
 ) -> TaskStateBase:
     """
-    创建任务状态基类实例
+    Factory for a pending TaskStateBase row.
 
     Args:
-        task_id: 任务 ID
-        task_type: 任务类型
-        description: 任务描述
-        tool_use_id: 工具使用 ID（可选）
+        task_id: Stable task identifier.
+        task_type: TaskType discriminator.
+        description: Human-readable summary.
+        tool_use_id: Optional originating tool_use id.
 
     Returns:
-        TaskStateBase 实例
+        Fresh TaskStateBase in PENDING status.
     """
     return TaskStateBase(
         id=task_id,

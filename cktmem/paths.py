@@ -1,8 +1,8 @@
 """
-CktMem Paths - 记忆路径管理
+CktMem paths — resolve on-disk memory locations and validate containment.
 
-参考 Claude Code 的 paths.ts 实现
-负责确定记忆存储位置、路径安全检查
+Resolves per-project memory roots, honors env overrides, and performs basic
+path safety checks before reads or writes.
 """
 
 import os
@@ -14,13 +14,13 @@ import subprocess
 
 def get_project_root() -> Optional[str]:
     """
-    获取项目根目录（Git 仓库根）
+    Return the Git repository root when available.
 
     Returns:
-        Git 仓库根目录的绝对路径，如果不在 Git 仓库中则返回当前工作目录
+        Absolute path to ``git rev-parse --show-toplevel``, or ``os.getcwd()``
+        when Git is unavailable.
     """
     try:
-        # 尝试获取 Git 根目录
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
@@ -29,35 +29,31 @@ def get_project_root() -> Optional[str]:
         )
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # 不在 Git 仓库中，使用当前工作目录
         return os.getcwd()
 
 
 def sanitize_path(path: str) -> str:
     """
-    清理路径，移除不安全字符
+    Turn an arbitrary path string into a single filesystem-safe directory token.
 
     Args:
-        path: 原始路径
+        path: Raw path fragment (often a project root).
 
     Returns:
-        清理后的路径（适合作为目录名）
+        Sanitized token containing only ``[A-Za-z0-9_-]`` with stable underscores.
     """
-    # 移除不安全字符，保留字母、数字、下划线、连字符
     sanitized = re.sub(r'[^\w\-]', '_', path)
-    # 移除连续的下划线
     sanitized = re.sub(r'_+', '_', sanitized)
-    # 移除首尾下划线
     sanitized = sanitized.strip('_')
     return sanitized
 
 
 def get_memory_base_dir() -> str:
     """
-    获取记忆基础目录
+    Shared parent directory for all project-scoped memory folders.
 
     Returns:
-        ~/.cktclaw/projects/
+        ``~/.cktclaw/projects`` (created if missing).
     """
     home = Path.home()
     base_dir = home / ".cktclaw" / "projects"
@@ -67,30 +63,25 @@ def get_memory_base_dir() -> str:
 
 def get_auto_mem_path(project_root: Optional[str] = None) -> str:
     """
-    获取自动记忆路径
+    Absolute path to the auto-memory directory for a project.
 
     Args:
-        project_root: 项目根目录（可选，默认自动检测）
+        project_root: Optional override; defaults to ``get_project_root()``.
 
     Returns:
-        记忆目录的绝对路径
-        例如：~/.cktclaw/projects/my_project_home_user_code/memory/
+        Path shaped like ``~/.cktclaw/projects/<sanitized_root>/memory/``.
     """
-    # 环境变量覆盖
     override = os.environ.get("CKTCLAW_MEMORY_PATH_OVERRIDE")
     if override:
         path = Path(override)
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
 
-    # 获取项目根目录
     if project_root is None:
         project_root = get_project_root()
 
-    # 清理项目路径作为目录名
     sanitized_project = sanitize_path(project_root or "default")
 
-    # 构造记忆路径
     memory_dir = Path(get_memory_base_dir()) / sanitized_project / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
 
@@ -99,33 +90,26 @@ def get_auto_mem_path(project_root: Optional[str] = None) -> str:
 
 def is_auto_memory_enabled() -> bool:
     """
-    检查自动记忆是否启用
+    Return False when auto-memory should be skipped entirely.
 
-    Returns:
-        True 如果启用，False 如果禁用
+    Honours ``CKTCLAW_DISABLE_AUTO_MEMORY`` and ``CKTCLAW_SIMPLE`` flags.
     """
-    # 环境变量禁用
     if os.environ.get("CKTCLAW_DISABLE_AUTO_MEMORY", "").lower() in ["1", "true", "yes"]:
         return False
 
-    # 简化模式禁用
     if os.environ.get("CKTCLAW_SIMPLE", "").lower() in ["1", "true", "yes"]:
         return False
 
-    # 默认启用
     return True
 
 
 def is_auto_mem_path(path: str, memory_root: Optional[str] = None) -> bool:
     """
-    检查路径是否在允许的记忆根目录下
+    True when ``path`` resolves inside the configured memory root.
 
     Args:
-        path: 要检查的路径
-        memory_root: 记忆根目录（可选，默认使用 get_auto_mem_path()）
-
-    Returns:
-        True 如果路径在记忆根目录下
+        path: Candidate file or directory.
+        memory_root: Optional explicit root; defaults to ``get_auto_mem_path()``.
     """
     if memory_root is None:
         memory_root = get_auto_mem_path()
@@ -138,19 +122,17 @@ def is_auto_mem_path(path: str, memory_root: Optional[str] = None) -> bool:
         return False
 
 
-# 常量
 ENTRYPOINT_NAME = "MEMORY.md"
 MAX_ENTRYPOINT_LINES = 200
 MAX_ENTRYPOINT_BYTES = 25_000
 
 
 if __name__ == "__main__":
-    # 测试路径功能
-    print("CktMem Paths 测试")
+    print("CktMem paths smoke test")
     print("=" * 60)
-    print(f"项目根目录: {get_project_root()}")
-    print(f"记忆基础目录: {get_memory_base_dir()}")
-    print(f"自动记忆路径: {get_auto_mem_path()}")
-    print(f"自动记忆启用: {is_auto_memory_enabled()}")
-    print(f"入口文件名: {ENTRYPOINT_NAME}")
+    print(f"project_root={get_project_root()}")
+    print(f"memory_base_dir={get_memory_base_dir()}")
+    print(f"auto_mem_path={get_auto_mem_path()}")
+    print(f"auto_memory_enabled={is_auto_memory_enabled()}")
+    print(f"entrypoint={ENTRYPOINT_NAME}")
     print("=" * 60)

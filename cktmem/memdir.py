@@ -1,8 +1,8 @@
 """
-CktMem Memory Directory - 记忆目录管理
+CktMem memory directory — load, truncate, and format the MEMORY.md index.
 
-参考 Claude Code 的 memdir.ts 实现
-负责加载、格式化、截断记忆内容
+Ensures the on-disk tree exists, stitches guidelines with the live index, and
+applies byte/line caps so prompts stay bounded.
 """
 
 import os
@@ -21,13 +21,13 @@ from .memory_types import build_memory_guidelines
 
 def truncate_entrypoint_content(raw: str) -> Tuple[str, int, int, bool, bool]:
     """
-    截断 MEMORY.md 内容到行数和字节限制
+    Clamp MEMORY.md to ``MAX_ENTRYPOINT_LINES`` and ``MAX_ENTRYPOINT_BYTES``.
 
     Args:
-        raw: 原始内容
+        raw: Full index file contents.
 
     Returns:
-        (截断后内容, 行数, 字节数, 是否行截断, 是否字节截断)
+        Tuple of ``(truncated_text, line_count, byte_count, line_truncated, byte_truncated)``.
     """
     trimmed = raw.strip()
     content_lines = trimmed.split('\n')
@@ -40,23 +40,18 @@ def truncate_entrypoint_content(raw: str) -> Tuple[str, int, int, bool, bool]:
     if not was_line_truncated and not was_byte_truncated:
         return trimmed, line_count, byte_count, False, False
 
-    # 先按行截断
     truncated = '\n'.join(content_lines[:MAX_ENTRYPOINT_LINES]) if was_line_truncated else trimmed
 
-    # 再按字节截断
     if len(truncated.encode('utf-8')) > MAX_ENTRYPOINT_BYTES:
-        # 找到最后一个换行符，避免截断到行中间
         truncated_bytes = truncated.encode('utf-8')[:MAX_ENTRYPOINT_BYTES]
         try:
             truncated = truncated_bytes.decode('utf-8', errors='ignore')
             last_newline = truncated.rfind('\n')
             if last_newline > 0:
                 truncated = truncated[:last_newline]
-        except:
+        except Exception:
             pass
 
-    # 添加警告
-    reason = ""
     if was_byte_truncated and not was_line_truncated:
         reason = f"{byte_count} bytes (limit: {MAX_ENTRYPOINT_BYTES}) — index entries are too long"
     elif was_line_truncated and not was_byte_truncated:
@@ -70,25 +65,20 @@ def truncate_entrypoint_content(raw: str) -> Tuple[str, int, int, bool, bool]:
 
 
 def ensure_memory_dir_exists(memory_dir: str):
-    """
-    确保记忆目录存在
-
-    Args:
-        memory_dir: 记忆目录路径
-    """
+    """Create ``memory_dir`` (and parents) when missing."""
     Path(memory_dir).mkdir(parents=True, exist_ok=True)
 
 
 def load_memory_prompt(project_root: Optional[str] = None, skip_index: bool = False) -> Optional[str]:
     """
-    加载记忆提示词
+    Build the system-prompt block describing file-backed memories.
 
     Args:
-        project_root: 项目根目录（可选）
-        skip_index: 是否跳过索引模式
+        project_root: Optional override passed to ``get_auto_mem_path``.
+        skip_index: Forwarded to ``build_memory_guidelines`` (simplified mode).
 
     Returns:
-        记忆提示词文本，如果禁用则返回 None
+        Combined guideline + index text, or None when auto-memory is disabled.
     """
     if not is_auto_memory_enabled():
         return None
@@ -96,10 +86,8 @@ def load_memory_prompt(project_root: Optional[str] = None, skip_index: bool = Fa
     memory_dir = get_auto_mem_path(project_root)
     ensure_memory_dir_exists(memory_dir)
 
-    # 构建指南
     guidelines = build_memory_guidelines(memory_dir, skip_index)
 
-    # 读取 MEMORY.md（如果存在）
     entrypoint_path = Path(memory_dir) / ENTRYPOINT_NAME
     entrypoint_content = ""
 
@@ -110,7 +98,6 @@ def load_memory_prompt(project_root: Optional[str] = None, skip_index: bool = Fa
         except Exception as e:
             print(f"Warning: Failed to read {ENTRYPOINT_NAME}: {e}")
 
-    # 如果有内容，截断并添加
     if entrypoint_content.strip():
         truncated, line_count, byte_count, was_line_truncated, was_byte_truncated = \
             truncate_entrypoint_content(entrypoint_content)
@@ -122,7 +109,6 @@ def load_memory_prompt(project_root: Optional[str] = None, skip_index: bool = Fa
             truncated,
         ])
 
-        # 日志记录（可选）
         if was_line_truncated or was_byte_truncated:
             print(f"Memory index truncated: {line_count} lines, {byte_count} bytes")
 
@@ -130,15 +116,7 @@ def load_memory_prompt(project_root: Optional[str] = None, skip_index: bool = Fa
 
 
 def format_memory_size(size_bytes: int) -> str:
-    """
-    格式化文件大小
-
-    Args:
-        size_bytes: 字节数
-
-    Returns:
-        格式化的大小字符串
-    """
+    """Human-readable byte size (B / KB / MB)."""
     if size_bytes < 1024:
         return f"{size_bytes}B"
     elif size_bytes < 1024 * 1024:
@@ -148,17 +126,14 @@ def format_memory_size(size_bytes: int) -> str:
 
 
 if __name__ == "__main__":
-    # 测试记忆加载
-    print("CktMem Memory Directory 测试")
+    print("CktMem memdir smoke test")
     print("=" * 60)
 
     memory_dir = get_auto_mem_path()
-    print(f"记忆目录: {memory_dir}")
+    print(f"memory_dir={memory_dir}")
 
-    # 确保目录存在
     ensure_memory_dir_exists(memory_dir)
 
-    # 创建测试 MEMORY.md
     test_content = """# Memory Index
 
 - [User Background](user_background.md) — EDA engineer focusing on ASAP7
@@ -170,15 +145,14 @@ if __name__ == "__main__":
     with open(entrypoint_path, 'w', encoding='utf-8') as f:
         f.write(test_content)
 
-    print(f"✓ 创建测试 {ENTRYPOINT_NAME}")
+    print(f"wrote test {ENTRYPOINT_NAME}")
 
-    # 加载记忆提示词
     prompt = load_memory_prompt()
     if prompt:
-        print(f"\n记忆提示词长度: {len(prompt)} 字符")
-        print("\n前 500 字符:")
+        print(f"\nprompt_chars={len(prompt)}")
+        print("\nfirst_500_chars:")
         print(prompt[:500])
     else:
-        print("记忆系统已禁用")
+        print("auto-memory disabled")
 
     print("\n" + "=" * 60)

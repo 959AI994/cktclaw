@@ -1,17 +1,15 @@
 """
-Coordinator Types - 调度器类型定义
+Coordinator types — enums and payloads for multi-worker flows.
 
-参考 src/coordinator/coordinatorMode.ts 实现 Python 版本的调度系统。
+Includes:
+1. Coordinator mode flags
+2. Worker notification envelopes
+3. Coordinator-scoped configuration
 
-核心职责：
-1. 定义 Coordinator 模式枚举
-2. 定义 Worker 通知结构
-3. 定义调度配置
-
-设计原则：
-- 模式隔离（Coordinator vs Worker）
-- 工具隔离（不同角色有不同工具集）
-- 通知标准化（XML 格式解析）
+Principles:
+- Coordinator vs worker roles stay isolated
+- Tool allowlists differ per role
+- Notifications use a stable structured wire format
 """
 
 from enum import Enum
@@ -21,31 +19,27 @@ from datetime import datetime
 
 
 class CoordinatorMode(str, Enum):
-    """Coordinator 模式"""
-    COORDINATOR = "coordinator"  # 调度模式
-    NORMAL = "normal"            # 普通模式
+    """High-level routing mode for the harness."""
+    COORDINATOR = "coordinator"  # multi-worker coordinator
+    NORMAL = "normal"            # single-agent REPL
 
 
 class NotificationStatus(str, Enum):
-    """Worker 通知状态"""
+    """Terminal states reported inside <task-notification>."""
     COMPLETED = "completed"
     FAILED = "failed"
     KILLED = "killed"
 
 
 class WorkerUsage(BaseModel):
-    """Worker 使用统计"""
+    """Token / tool / duration counters for a finished worker."""
     total_tokens: int = 0
     tool_uses: int = 0
     duration_ms: int = 0
 
 
 class WorkerNotification(BaseModel):
-    """
-    Worker 通知结构
-
-    对应 <task-notification> XML 格式
-    """
+    """Structured view of <task-notification> worker XML."""
     task_id: str
     status: NotificationStatus
     summary: str
@@ -55,44 +49,38 @@ class WorkerNotification(BaseModel):
 
 
 class CoordinatorConfig(BaseModel):
-    """Coordinator 配置"""
-    # 模式配置
+    """Mutable coordinator knobs (copied per read)."""
     mode: CoordinatorMode = CoordinatorMode.NORMAL
 
-    # Worker 工具配置
     worker_tools: List[str] = Field(default_factory=lambda: [
         "Bash",
         "Read",
         "Edit",
     ])
 
-    # Coordinator 工具配置
     coordinator_tools: List[str] = Field(default_factory=lambda: [
         "Agent",
         "SendMessage",
         "TaskStop",
     ])
 
-    # 内部工具（Worker 不可见）
     internal_tools: List[str] = Field(default_factory=lambda: [
         "TeamCreate",
         "TeamDelete",
         "SyntheticOutput",
     ])
 
-    # Scratchpad 配置
     scratchpad_enabled: bool = False
     scratchpad_dir: Optional[str] = None
 
-    # MCP 服务器
     mcp_servers: List[str] = Field(default_factory=list)
 
 
 def parse_worker_notification(xml_content: str) -> Optional[WorkerNotification]:
     """
-    解析 Worker 通知 XML
+    Parse worker XML envelopes.
 
-    格式：
+    Example:
     <task-notification>
     <task-id>agent-a1b</task-id>
     <status>completed</status>
@@ -113,7 +101,6 @@ def parse_worker_notification(xml_content: str) -> Optional[WorkerNotification]:
         if root.tag != "task-notification":
             return None
 
-        # 提取字段
         task_id = root.find("task-id")
         status = root.find("status")
         summary = root.find("summary")
@@ -123,7 +110,6 @@ def parse_worker_notification(xml_content: str) -> Optional[WorkerNotification]:
         if task_id is None or status is None or summary is None:
             return None
 
-        # 解析 usage
         usage = None
         if usage_elem is not None:
             total_tokens = usage_elem.find("total_tokens")
@@ -148,11 +134,7 @@ def parse_worker_notification(xml_content: str) -> Optional[WorkerNotification]:
 
 
 def format_worker_notification(notification: WorkerNotification) -> str:
-    """
-    格式化 Worker 通知为 XML
-
-    用于测试和调试
-    """
+    """Serialize WorkerNotification back to XML (tests / debugging)."""
     lines = ["<task-notification>"]
     lines.append(f"<task-id>{notification.task_id}</task-id>")
     lines.append(f"<status>{notification.status.value}</status>")

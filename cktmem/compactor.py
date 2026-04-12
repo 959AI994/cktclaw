@@ -1,10 +1,8 @@
 """
-上下文压缩器
+Context compactor — ordered strategies to shrink overflowing transcripts.
 
-支持多种压缩策略：
-1. Session Memory Compact
-2. Micro Compact
-3. Full Compact
+Tries session-memory style tail retention first, then micro tool-output trimming,
+then a lightweight deterministic “full” summary placeholder.
 """
 
 from typing import Optional, List
@@ -18,7 +16,7 @@ from .storage import Storage
 
 
 class Compactor:
-    """上下文压缩器"""
+    """Applies compaction policies backed by ``Storage``."""
 
     def __init__(self, storage: Storage, config: CompactConfig):
         self.storage = storage
@@ -31,20 +29,18 @@ class Compactor:
         messages: List[Message],
     ) -> Optional[CompactionResult]:
         """
-        自动压缩入口
+        Run the cheapest successful strategy.
 
-        策略优先级：
-        1. Session Memory Compact（最轻量）
-        2. Micro Compact（中等）
-        3. Full Compact（最重）
+        Order:
+        1. Session-memory style retention window
+        2. Micro compaction (truncate huge tool payloads)
+        3. Full compaction stub (deterministic summary text)
         """
-        # 获取最后一个 boundary 之后的消息
         messages_to_compact = self._get_messages_after_last_boundary(messages)
 
         if not messages_to_compact:
             return None
 
-        # 尝试 Session Memory Compact
         result = await self._try_session_memory_compact(
             session_id,
             messages_to_compact,
@@ -52,7 +48,6 @@ class Compactor:
         if result:
             return result
 
-        # 尝试 Micro Compact
         result = await self._try_micro_compact(
             session_id,
             messages_to_compact,
@@ -60,7 +55,6 @@ class Compactor:
         if result:
             return result
 
-        # Full Compact
         return await self._full_compact(
             session_id,
             messages_to_compact,
@@ -70,8 +64,7 @@ class Compactor:
         self,
         messages: List[Message],
     ) -> List[Message]:
-        """获取最后一个 boundary 之后的消息"""
-        # 找到最后一个 compact_boundary
+        """Slice to traffic after the latest ``COMPACT_BOUNDARY`` (else turn layer only)."""
         last_boundary_idx = -1
         for i in range(len(messages) - 1, -1, -1):
             if messages[i].msg_type == MessageType.COMPACT_BOUNDARY:
@@ -80,9 +73,7 @@ class Compactor:
 
         if last_boundary_idx >= 0:
             return messages[last_boundary_idx + 1:]
-        else:
-            # 只压缩 turn 层消息
-            return [m for m in messages if m.layer == ContextLayer.TURN]
+        return [m for m in messages if m.layer == ContextLayer.TURN]
 
     async def _try_session_memory_compact(
         self,
@@ -90,33 +81,27 @@ class Compactor:
         messages: List[Message],
     ) -> Optional[CompactionResult]:
         """
-        Session Memory 压缩
+        Keep a suffix that satisfies ``min_tokens`` + ``min_text_messages``.
 
-        策略：
-        - 保留后缀消息（满足 min_tokens + min_text_messages）
-        - 前缀消息不生成摘要，依赖 session layer 语义
+        Older prefix rows are dropped logically via boundary + retained tail.
         """
         config = self.config.session_memory
 
-        # 计算保留起点
         keep_index = self._calculate_keep_index(messages, config)
 
         if keep_index <= 0:
-            return None  # 无法压缩
+            return None
 
-        # 创建 boundary
         boundary = self._create_boundary(
             messages,
             compact_type="session_memory",
         )
 
-        # 保留的消息
         messages_to_keep = messages[keep_index:]
 
         pre_tokens = self.token_counter.estimate_messages(messages)
         post_tokens = self.token_counter.estimate_messages([boundary] + messages_to_keep)
 
-        # 记录压缩历史
         await self.storage.record_compaction(
             session_id=session_id,
             compact_type="session_memory",
@@ -126,7 +111,7 @@ class Compactor:
 
         return CompactionResult(
             boundary_marker=boundary,
-            summary_messages=[],  # Session Memory 不生成摘要
+            summary_messages=[],
             messages_to_keep=messages_to_keep,
             pre_compact_token_count=pre_tokens,
             post_compact_token_count=post_tokens,
@@ -137,8 +122,7 @@ class Compactor:
         messages: List[Message],
         config,
     ) -> int:
-        """计算保留起点索引"""
-        # 从后往前累计 token 和文本消息数
+        """Walk from the end until retention thresholds are met."""
         accumulated_tokens = 0
         text_message_count = 0
         keep_index = len(messages)
@@ -151,13 +135,11 @@ class Compactor:
             if msg.role in [MessageRole.USER, MessageRole.ASSISTANT]:
                 text_message_count += 1
 
-            # 检查是否满足条件
             if (accumulated_tokens >= config.min_tokens and
                 text_message_count >= config.min_text_messages):
                 keep_index = i
                 break
 
-            # 防止保留过多
             if accumulated_tokens >= config.max_tokens:
                 keep_index = i
                 break
@@ -170,19 +152,15 @@ class Compactor:
         messages: List[Message],
     ) -> Optional[CompactionResult]:
         """
-        Micro 压缩
+        Truncate oversized ``TOOL`` rows while preserving call metadata.
 
-        策略：
-        - 清理工具结果中的冗长输出
-        - 保留工具调用本身
-        - 不生成 LLM 摘要
+        No LLM call — purely structural edits.
         """
         cleaned_messages = []
         tokens_saved = 0
 
         for msg in messages:
             if self._should_clear_tool_result(msg):
-                # 清理工具结果
                 cleaned = self._clear_tool_result(msg)
                 cleaned_messages.append(cleaned)
                 tokens_saved += (
@@ -192,7 +170,7 @@ class Compactor:
             else:
                 cleaned_messages.append(msg)
 
-        if tokens_saved < 5000:  # 阈值
+        if tokens_saved < 5000:
             return None
 
         boundary = self._create_boundary(messages, compact_type="micro")
@@ -200,7 +178,6 @@ class Compactor:
         pre_tokens = self.token_counter.estimate_messages(messages)
         post_tokens = self.token_counter.estimate_messages([boundary] + cleaned_messages)
 
-        # 记录压缩历史
         await self.storage.record_compaction(
             session_id=session_id,
             compact_type="micro",
@@ -217,19 +194,17 @@ class Compactor:
         )
 
     def _should_clear_tool_result(self, msg: Message) -> bool:
-        """判断是否应该清理工具结果"""
+        """True for long tool bodies that are safe to shrink heuristically."""
         if msg.role != MessageRole.TOOL:
             return False
 
-        # 检查内容长度
         if len(msg.content) < 1000:
             return False
 
         return True
 
     def _clear_tool_result(self, msg: Message) -> Message:
-        """清理工具结果"""
-        # 保留前 200 字符
+        """Keep the first 200 characters plus a compaction notice."""
         truncated_content = msg.content[:200] + "\n... [truncated for compaction]"
 
         return Message(
@@ -250,20 +225,14 @@ class Compactor:
         messages: List[Message],
     ) -> CompactionResult:
         """
-        完整压缩（LLM 总结）
+        Deterministic placeholder for LLM-grade summarization.
 
-        策略：
-        - 调用 LLM 生成摘要
-        - 保留核心决策
-        - 丢弃冗长的工具输出
+        (``_build_compact_prompt`` is ready for a future model-backed pass.)
         """
-        # 构造压缩 prompt
-        compact_prompt = self._build_compact_prompt(messages)
+        _ = self._build_compact_prompt(messages)  # reserved for future LLM-backed compaction
 
-        # 创建摘要（简化版，不实际调用 LLM）
         summary = self._generate_simple_summary(messages)
 
-        # 创建 boundary 和 summary
         boundary = self._create_boundary(messages, compact_type="auto")
         summary_message = Message(
             role=MessageRole.USER,
@@ -276,7 +245,6 @@ class Compactor:
         pre_tokens = self.token_counter.estimate_messages(messages)
         post_tokens = self.token_counter.estimate_messages([boundary, summary_message])
 
-        # 记录压缩历史
         await self.storage.record_compaction(
             session_id=session_id,
             compact_type="auto",
@@ -293,7 +261,7 @@ class Compactor:
         )
 
     def _build_compact_prompt(self, messages: List[Message]) -> str:
-        """构造压缩 prompt"""
+        """Template prompt for a future summarizer model."""
         prompt = "Please summarize the following conversation, focusing on:\n"
         prompt += "1. Key decisions made\n"
         prompt += "2. Important circuit analysis results\n"
@@ -306,7 +274,7 @@ class Compactor:
         return prompt
 
     def _generate_simple_summary(self, messages: List[Message]) -> str:
-        """生成简单摘要（不调用 LLM）"""
+        """Cheap summary without calling an LLM."""
         user_messages = [m for m in messages if m.role == MessageRole.USER]
         assistant_messages = [m for m in messages if m.role == MessageRole.ASSISTANT]
 
@@ -315,7 +283,6 @@ class Compactor:
         summary += f"User messages: {len(user_messages)}\n"
         summary += f"Assistant messages: {len(assistant_messages)}\n\n"
 
-        # 提取关键用户问题
         if user_messages:
             summary += "### Key User Questions:\n"
             for i, msg in enumerate(user_messages[:3], 1):
@@ -328,7 +295,7 @@ class Compactor:
         messages: List[Message],
         compact_type: str,
     ) -> Message:
-        """创建压缩边界标记"""
+        """System message marking the compaction cut."""
         pre_tokens = self.token_counter.estimate_messages(messages)
 
         boundary_data = CompactBoundary(

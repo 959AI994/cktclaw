@@ -1,11 +1,8 @@
 """
-四层上下文管理器
+Layered context manager — system / project / session / turn assembly + compaction.
 
-职责：
-1. 组装四层上下文
-2. 触发自动压缩
-3. 管理边界标记
-4. 集成文件系统记忆（CktMem 2.0）
+Loads SQLite-backed slices, injects optional file-backed memory prompts, estimates
+tokens, and may invoke ``Compactor.auto_compact`` when over budget.
 """
 
 from typing import List, Optional
@@ -20,7 +17,7 @@ from .memdir import load_memory_prompt
 
 
 class ContextManager:
-    """四层上下文管理器"""
+    """Builds the multi-layer message list passed to the LLM."""
 
     def __init__(
         self,
@@ -43,25 +40,20 @@ class ContextManager:
         auto_compact: bool = True,
     ) -> List[Message]:
         """
-        构建完整上下文
+        Compose system + optional memory + project + session + recent turns + user.
 
-        流程：
-        1. 加载四层消息（包括文件系统记忆）
-        2. 估算 Token
-        3. 触发压缩（如果需要）
-        4. 返回最终消息列表
+        When ``auto_compact`` is enabled and the estimate exceeds the configured
+        threshold, ``Compactor.auto_compact`` runs and this method rebuilds from
+        the compaction result.
         """
-        # 1. 加载各层消息
         messages = []
 
-        # System Layer - 基础系统提示词
         messages.append(Message(
             role=MessageRole.SYSTEM,
             content=self.system_prompt,
             layer=ContextLayer.SYSTEM,
         ))
 
-        # System Layer - 文件系统记忆提示词（CktMem 2.0）
         memory_prompt = load_memory_prompt(self.project_root)
         if memory_prompt:
             messages.append(Message(
@@ -71,15 +63,12 @@ class ContextManager:
                 metadata={"type": "filesystem_memory"},
             ))
 
-        # Project Layer（如果有）
         project_messages = await self.storage.get_project_messages(session_id)
         messages.extend(project_messages)
 
-        # Session Layer
         session_messages = await self._load_session_layer(session_id)
         messages.extend(session_messages)
 
-        # Turn Layer（最近 N 轮）
         turn_messages = await self.storage.get_recent_messages(
             session_id,
             max_rounds=5,
@@ -87,7 +76,6 @@ class ContextManager:
         )
         messages.extend(turn_messages)
 
-        # 2. 添加当前用户输入
         current_message = Message(
             role=MessageRole.USER,
             content=user_message,
@@ -95,17 +83,14 @@ class ContextManager:
         )
         messages.append(current_message)
 
-        # 3. Token 估算
         total_tokens = self.token_counter.estimate_messages(messages)
 
-        # 4. 自动压缩判断
         if auto_compact and total_tokens > self.config.auto_compact_threshold:
             compaction_result = await self.compactor.auto_compact(
                 session_id,
                 messages,
             )
             if compaction_result:
-                # 重建上下文
                 messages = await self._rebuild_after_compact(
                     session_id,
                     compaction_result,
@@ -115,10 +100,9 @@ class ContextManager:
         return messages
 
     async def _load_session_layer(self, session_id: str) -> List[Message]:
-        """加载 Session Layer"""
+        """Session-layer system snippets (memory index, cores, summaries)."""
         messages = []
 
-        # Session Memory（自动加载）
         session_memory = await self.storage.format_session_memory(session_id)
         if session_memory:
             messages.append(Message(
@@ -129,11 +113,9 @@ class ContextManager:
                 metadata={"type": "session_memory"},
             ))
 
-        # Core Contexts（电路分析）
         core_contexts = await self.storage.get_core_contexts(session_id)
         messages.extend(core_contexts)
 
-        # Compact Summaries（压缩摘要）
         summaries = await self.storage.get_compact_summaries(session_id)
         messages.extend(summaries)
 
@@ -145,25 +127,21 @@ class ContextManager:
         compaction_result: CompactionResult,
         current_message: Message,
     ) -> List[Message]:
-        """压缩后重建上下文"""
+        """Reconstruct messages after a successful compaction pass."""
         messages = []
 
-        # System Layer
         messages.append(Message(
             role=MessageRole.SYSTEM,
             content=self.system_prompt,
             layer=ContextLayer.SYSTEM,
         ))
 
-        # Project Layer
         project_messages = await self.storage.get_project_messages(session_id)
         messages.extend(project_messages)
 
-        # Session Layer
         session_messages = await self._load_session_layer(session_id)
         messages.extend(session_messages)
 
-        # 添加 boundary 和 summary
         await self.storage.add_message(
             session_id=session_id,
             role=compaction_result.boundary_marker.role,
@@ -185,10 +163,8 @@ class ContextManager:
             )
             messages.append(summary_msg)
 
-        # 保留的消息
         messages.extend(compaction_result.messages_to_keep)
 
-        # 当前用户输入
         messages.append(current_message)
 
         return messages
@@ -199,7 +175,7 @@ class ContextManager:
         content: str,
         tool_calls: Optional[List] = None,
     ):
-        """添加助手消息"""
+        """Persist an assistant turn."""
         await self.storage.add_message(
             session_id=session_id,
             role=MessageRole.ASSISTANT,
@@ -216,7 +192,7 @@ class ContextManager:
         content: str,
         name: str,
     ):
-        """添加工具结果"""
+        """Persist a tool result row."""
         await self.storage.add_message(
             session_id=session_id,
             role=MessageRole.TOOL,
@@ -228,7 +204,7 @@ class ContextManager:
         )
 
     async def get_context_stats(self, session_id: str) -> dict:
-        """获取上下文统计信息"""
+        """Token estimate + compaction counters for dashboards."""
         all_messages = await self.storage.get_messages(session_id)
         total_tokens = self.token_counter.estimate_messages(all_messages)
 

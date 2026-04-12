@@ -1,16 +1,14 @@
 """
-Enhanced Query Loop - 完整的查询循环实现
+Enhanced query loop — multi-turn LLM, tools, compaction, and budget.
 
-参考 Claude Code 的 query.ts (1729行) 实现完整的查询循环逻辑。
-
-核心功能：
-1. ✅ 实际的 LLM 调用逻辑
-2. ✅ 工具执行编排
-3. ✅ 流式结果处理
-4. ✅ Token 预算管理
-5. ✅ 错误重试机制
-6. ✅ 自动压缩触发
-7. ✅ Tool-Result 配对验证
+Provides:
+1. LLM calls with retries
+2. Tool execution (parallel where safe)
+3. Streaming-oriented step yields
+4. Token budget tracking
+5. Backoff on transient failures
+6. Auto-compaction when over threshold
+7. Tool / tool_result pairing repair
 """
 
 import asyncio
@@ -35,33 +33,31 @@ from .query_types import (
 
 @dataclass
 class TokenBudget:
-    """Token 预算管理"""
+    """Soft cap on tokens and estimated cost for one session."""
     max_tokens: int = 500_000
     max_cost: float = 10.0
     used_tokens: int = 0
     used_cost: float = 0.0
 
     def check_budget(self) -> bool:
-        """检查是否超预算"""
+        """True if still under both caps."""
         return (self.used_tokens < self.max_tokens and
                 self.used_cost < self.max_cost)
 
     def record_usage(self, tokens: int, cost: float):
-        """记录使用量"""
         self.used_tokens += tokens
         self.used_cost += cost
 
     def get_remaining_tokens(self) -> int:
-        """获取剩余 Token"""
         return max(0, self.max_tokens - self.used_tokens)
 
 
 @dataclass
 class LoopState:
     """
-    内部循环状态
+    Internal mutable state for one run() invocation.
 
-    跟踪循环内部的可变状态
+    Separate from QueryStateEnum (orchestration labels).
     """
     messages: List[Dict[str, Any]]
     turn_count: int = 1
@@ -75,9 +71,7 @@ class LoopState:
 
 class EnhancedQueryLoop:
     """
-    增强版查询循环管理器
-
-    完整实现 Claude Code 的查询循环逻辑
+    Extended loop: budget, compaction, pairing, parallel tools.
     """
 
     def __init__(
@@ -88,53 +82,47 @@ class EnhancedQueryLoop:
         initial_messages: Optional[List[Dict[str, Any]]] = None,
     ):
         """
-        初始化增强版查询循环
-
         Args:
-            llm_func: LLM 调用函数
-            tool_executor: 工具执行函数
-            config: 查询配置
-            initial_messages: 初始消息列表
+            llm_func: async (messages) -> provider response dict
+            tool_executor: async (tool_name, args) -> string result
+            config: QueryConfig thresholds and flags
+            initial_messages: optional seed (reserved)
         """
         self.llm_func = llm_func
         self.tool_executor = tool_executor
         self.config = config
 
-        # 统计信息
         self.total_tokens = 0
         self.total_cost = 0.0
         self.tool_calls = 0
         self.compactions = 0
 
-        # Token 预算管理
         self.budget = TokenBudget(
             max_tokens=config.token_budget if hasattr(config, 'token_budget') else 500_000,
             max_cost=config.max_budget_usd if hasattr(config, 'max_budget_usd') else 10.0,
         )
 
-        # 错误重试配置
         self.max_retries = 3
-        self.retry_delay = 1.0  # 秒
+        self.retry_delay = 1.0
 
     async def run(
         self,
         messages: List[Dict[str, Any]]
     ) -> AsyncGenerator[QueryResult, None]:
         """
-        运行增强版查询循环
+        Run until terminal or error.
 
         Args:
-            messages: 输入消息列表
+            messages: starting transcript
 
         Yields:
-            查询结果（包含中间状态和最终结果）
+            QueryResult for each major phase
         """
-        # 初始化内部状态
         state = LoopState(messages=messages.copy())
 
         try:
             while True:
-                # ━━━━━━━━━━ 1. 检查终止条件 ━━━━━━━━━━
+                # 1) Stop if policy says terminal (turn cap, etc.)
                 terminal = self._check_terminal_conditions(state)
                 if terminal:
                     yield QueryResult(
@@ -148,7 +136,7 @@ class EnhancedQueryLoop:
                     )
                     return
 
-                # ━━━━━━━━━━ 2. 检查 Token 预算 ━━━━━━━━━━
+                # 2) Budget guard
                 if not self.budget.check_budget():
                     yield QueryResult(
                         state=QueryStateEnum.TERMINAL,
@@ -161,7 +149,7 @@ class EnhancedQueryLoop:
                     )
                     return
 
-                # ━━━━━━━━━━ 3. 自动压缩检查 ━━━━━━━━━━
+                # 3) Optional auto-compact
                 if self._should_auto_compact(state):
                     yield QueryResult(
                         state=QueryStateEnum.CONTINUING,
@@ -174,46 +162,43 @@ class EnhancedQueryLoop:
                     self.compactions += 1
                     continue
 
-                # ━━━━━━━━━━ 4. Tool-Result 配对验证 ━━━━━━━━━━
+                # 4) Repair missing tool_result rows
                 missing_tool_ids = validate_tool_result_pairing(state.messages)
                 if missing_tool_ids:
-                    # 自动补全缺失的 tool_result
                     error_results = create_missing_tool_results(
                         missing_tool_ids,
                         "Tool execution was interrupted",
                     )
                     state.messages.extend(error_results)
 
-                # ━━━━━━━━━━ 5. 调用 LLM（带重试） ━━━━━━━━━━
+                # 5) LLM with retries
                 llm_response = await self._call_llm_with_retry(state.messages)
 
                 if llm_response is None:
                     yield QueryResult(
                         state=QueryStateEnum.TERMINAL,
                         terminal_reason=TerminalReason.ERROR,
-                        error_message="LLM 调用失败",
+                        error_message="LLM call failed",
                         messages=state.messages,
                         total_tokens=self.total_tokens,
                     )
                     return
 
-                # ━━━━━━━━━━ 6. 处理 LLM 响应 ━━━━━━━━━━
+                # 6) Normalize assistant message
                 assistant_message = self._process_llm_response(llm_response)
                 state.messages.append(assistant_message)
                 state.assistant_messages.append(assistant_message)
 
-                # 更新统计信息
                 if "usage" in llm_response:
                     usage = llm_response["usage"]
                     tokens = usage.get("total_tokens", 0)
                     self.total_tokens += tokens
-                    self.budget.record_usage(tokens, tokens * 0.000001)  # 估算成本
+                    self.budget.record_usage(tokens, tokens * 0.000001)
 
-                # ━━━━━━━━━━ 7. 检查工具调用 ━━━━━━━━━━
+                # 7) Tools?
                 tool_calls = self._extract_tool_calls(assistant_message)
 
                 if not tool_calls:
-                    # 没有工具调用，正常结束
                     yield QueryResult(
                         state=QueryStateEnum.TERMINAL,
                         terminal_reason=TerminalReason.END_TURN,
@@ -226,7 +211,7 @@ class EnhancedQueryLoop:
                     )
                     return
 
-                # ━━━━━━━━━━ 8. 执行工具（并行） ━━━━━━━━━━
+                # 8) Run tools (parallel gather)
                 yield QueryResult(
                     state=QueryStateEnum.CONTINUING,
                     continue_reason=ContinueReason.TOOL_USE,
@@ -237,13 +222,12 @@ class EnhancedQueryLoop:
 
                 tool_results = await self._execute_tools_parallel(tool_calls)
 
-                # 添加工具结果到消息列表
                 for result in tool_results:
                     state.messages.append(result)
 
                 self.tool_calls += len(tool_calls)
 
-                # ━━━━━━━━━━ 9. 更新状态并继续循环 ━━━━━━━━━━
+                # 9) Next turn
                 state.turn_count += 1
                 state.transition = ContinueReason.TOOL_USE
 
@@ -258,33 +242,28 @@ class EnhancedQueryLoop:
             return
 
     def _check_terminal_conditions(self, state: LoopState) -> Optional[TerminalReason]:
-        """检查终止条件"""
-        # 检查最大轮次
-        if state.turn_count > self.config.max_turns:
+        """Max turns and similar hard stops."""
+        if self.config.max_turns is not None and state.turn_count > self.config.max_turns:
             return TerminalReason.MAX_TURNS
 
-        # 检查预算
         if not self.budget.check_budget():
             return TerminalReason.BUDGET_EXCEEDED
 
         return None
 
     def _should_auto_compact(self, state: LoopState) -> bool:
-        """检查是否需要自动压缩"""
+        """True when estimated prompt size exceeds threshold."""
         if not self.config.auto_compact_enabled:
             return False
 
-        # 估算当前 Token 数
         estimated_tokens = self._estimate_tokens(state.messages)
 
         return estimated_tokens > self.config.auto_compact_threshold
 
     async def _perform_auto_compact(self, state: LoopState):
-        """执行自动压缩"""
-        # 简化版压缩：保留最近的消息
+        """Tail-keep strategy: drop oldest non-boundary messages until under target."""
         target_tokens = self.config.target_tokens
 
-        # 从后往前保留消息，直到达到目标 Token 数
         kept_messages = []
         current_tokens = 0
 
@@ -295,7 +274,6 @@ class EnhancedQueryLoop:
             kept_messages.insert(0, msg)
             current_tokens += msg_tokens
 
-        # 添加压缩边界标记
         boundary_message = {
             "role": "system",
             "content": f"━━━ COMPACT BOUNDARY ━━━\nPrevious conversation has been summarized.\nPre-compact tokens: {self.total_tokens}\nTimestamp: {datetime.now().isoformat()}",
@@ -307,49 +285,40 @@ class EnhancedQueryLoop:
         self,
         messages: List[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """调用 LLM（带重试机制）"""
+        """Call llm_func with linear backoff between failures."""
         for attempt in range(self.max_retries):
             try:
                 response = await self.llm_func(messages)
                 return response
-            except Exception as e:
+            except Exception:
                 if attempt < self.max_retries - 1:
-                    # 等待后重试
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                     continue
-                else:
-                    # 最后一次尝试失败
-                    return None
+                return None
 
         return None
 
     def _process_llm_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
-        """处理 LLM 响应"""
-        # 标准化响应格式
+        """Ensure an assistant-shaped dict."""
         if isinstance(response, dict):
             if "role" in response:
                 return response
-            else:
-                # 包装成标准消息格式
-                return {
-                    "role": "assistant",
-                    "content": response.get("content", str(response)),
-                }
-        else:
             return {
                 "role": "assistant",
-                "content": str(response),
+                "content": response.get("content", str(response)),
             }
+        return {
+            "role": "assistant",
+            "content": str(response),
+        }
 
     def _extract_tool_calls(self, message: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """从消息中提取工具调用"""
+        """Read tool_calls or Anthropic tool_use blocks."""
         tool_calls = message.get("tool_calls", [])
 
-        # 如果没有 tool_calls 字段，尝试从 content 中解析
         if not tool_calls:
             content = message.get("content", "")
             if isinstance(content, list):
-                # Anthropic 格式
                 tool_calls = [
                     block for block in content
                     if isinstance(block, dict) and block.get("type") == "tool_use"
@@ -361,29 +330,24 @@ class EnhancedQueryLoop:
         self,
         tool_calls: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """并行执行工具"""
+        """Run all tools in one asyncio.gather (best-effort)."""
         tasks = []
 
         for tool_call in tool_calls:
-            # 提取工具名称和参数
             if "function" in tool_call:
-                # OpenAI 格式
                 tool_name = tool_call["function"]["name"]
                 tool_args = json.loads(tool_call["function"]["arguments"])
                 tool_call_id = tool_call.get("id", "")
             elif "type" in tool_call and tool_call["type"] == "tool_use":
-                # Anthropic 格式
                 tool_name = tool_call["name"]
                 tool_args = tool_call.get("input", {})
                 tool_call_id = tool_call.get("id", "")
             else:
                 continue
 
-            # 创建异步任务
             task = self._execute_single_tool(tool_name, tool_args, tool_call_id)
             tasks.append(task)
 
-        # 并行执行所有工具
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         return [r for r in results if not isinstance(r, Exception)]
@@ -394,7 +358,7 @@ class EnhancedQueryLoop:
         tool_args: Dict[str, Any],
         tool_call_id: str
     ) -> Dict[str, Any]:
-        """执行单个工具"""
+        """Invoke one tool and wrap as tool message."""
         try:
             result = await self.tool_executor(tool_name, tool_args)
 
@@ -414,12 +378,11 @@ class EnhancedQueryLoop:
             }
 
     def _estimate_tokens(self, messages: List[Dict[str, Any]]) -> int:
-        """估算消息的 Token 数"""
+        """Heuristic token estimate with conservative multiplier."""
         total = 0
         for msg in messages:
             content = msg.get("content", "")
             if isinstance(content, str):
-                # 粗估：1 token ≈ 4 chars
                 total += len(content) // 4
             elif isinstance(content, list):
                 for block in content:
@@ -427,5 +390,4 @@ class EnhancedQueryLoop:
                         text = block.get("text", "") or block.get("content", "")
                         total += len(str(text)) // 4
 
-        # 保守系数
         return int(total * 4 / 3)

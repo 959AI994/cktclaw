@@ -1,10 +1,8 @@
 """
-Token 估算器
+Token estimator for compaction heuristics.
 
-策略：
-- 文本：使用 tiktoken 或粗估（1 token ≈ 4 chars）
-- 工具调用：name + input JSON
-- 最后乘以 4/3 保守系数
+Uses ``tiktoken`` when installed, otherwise char-length heuristics, then applies
+a conservative 4/3 multiplier to avoid under-budgeting.
 """
 
 from typing import List
@@ -12,7 +10,7 @@ from .models import Message
 
 
 class TokenCounter:
-    """Token 估算器"""
+    """Rough token accounting for ``Message`` lists."""
 
     def __init__(self):
         self.use_tiktoken = False
@@ -26,21 +24,19 @@ class TokenCounter:
             pass
 
     def estimate_messages(self, messages: List[Message]) -> int:
-        """估算消息列表的 token 数"""
+        """Sum per-message estimates with a safety multiplier."""
         total = 0
         for msg in messages:
             total += self.estimate_message(msg)
-        return int(total * 4 / 3)  # 保守系数
+        return int(total * 4 / 3)
 
     def estimate_message(self, message: Message) -> int:
-        """估算单条消息的 token 数"""
+        """Content tokens plus serialized tool call payloads."""
         tokens = 0
 
-        # 内容
         if message.content:
             tokens += self._estimate_text(message.content)
 
-        # 工具调用
         if message.tool_calls:
             for tool_call in message.tool_calls:
                 tokens += self._estimate_text(
@@ -51,9 +47,7 @@ class TokenCounter:
         return tokens
 
     def _estimate_text(self, text: str) -> int:
-        """估算文本 token 数"""
+        """Character- or tiktoken-based estimate."""
         if self.use_tiktoken and self.encoder:
             return len(self.encoder.encode(text))
-        else:
-            # 粗估：1 token ≈ 4 chars
-            return len(text) // 4
+        return len(text) // 4

@@ -1,14 +1,14 @@
 """
-File Tools - 文件操作工具
+File Tools - File Operation Tools
 
-参考 Claude Code 的文件工具实现。
+Implements file tools.
 
-核心功能：
-1. FileReadTool - 文件读取
-2. FileWriteTool - 文件写入
-3. FileEditTool - 文件编辑
-4. GlobTool - 文件搜索
-5. GrepTool - 内容搜索
+Core features:
+1. FileReadTool - File reading
+2. FileWriteTool - File writing
+3. FileEditTool - File editing
+4. GlobTool - File search
+5. GrepTool - Content search
 """
 
 import os
@@ -21,7 +21,7 @@ import re
 
 @dataclass
 class FileReadResult:
-    """文件读取结果"""
+    """File read result"""
     content: str
     line_count: int
     file_size: int
@@ -30,7 +30,7 @@ class FileReadResult:
 
 @dataclass
 class FileWriteResult:
-    """文件写入结果"""
+    """File write result"""
     success: bool
     bytes_written: int
     message: str
@@ -38,7 +38,7 @@ class FileWriteResult:
 
 @dataclass
 class FileEditResult:
-    """文件编辑结果"""
+    """File edit result"""
     success: bool
     lines_changed: int
     message: str
@@ -46,20 +46,20 @@ class FileEditResult:
 
 @dataclass
 class GlobResult:
-    """文件搜索结果"""
+    """File search result"""
     files: List[str]
     count: int
 
 
 @dataclass
 class GrepResult:
-    """内容搜索结果"""
+    """Content search result"""
     matches: List[Dict[str, Any]]
     count: int
 
 
 class FileReadTool:
-    """文件读取工具"""
+    """File read tool"""
 
     @staticmethod
     def read(
@@ -69,16 +69,16 @@ class FileReadTool:
         encoding: str = "utf-8"
     ) -> FileReadResult:
         """
-        读取文件
+        Read file
 
         Args:
-            file_path: 文件路径
-            offset: 起始行号
-            limit: 读取行数限制
-            encoding: 文件编码
+            file_path: File path
+            offset: Starting line number
+            limit: Line read limit
+            encoding: File encoding
 
         Returns:
-            文件读取结果
+            File read result
         """
         path = Path(file_path).expanduser().resolve()
 
@@ -88,11 +88,11 @@ class FileReadTool:
         if not path.is_file():
             raise ValueError(f"Not a file: {file_path}")
 
-        # 读取文件
+        # Read file
         with open(path, 'r', encoding=encoding) as f:
             lines = f.readlines()
 
-        # 应用偏移和限制
+        # Apply offset and limit
         if offset > 0:
             lines = lines[offset:]
 
@@ -111,7 +111,7 @@ class FileReadTool:
 
 
 class FileWriteTool:
-    """文件写入工具"""
+    """File write tool"""
 
     @staticmethod
     def write(
@@ -121,24 +121,24 @@ class FileWriteTool:
         create_dirs: bool = True
     ) -> FileWriteResult:
         """
-        写入文件
+        Write file
 
         Args:
-            file_path: 文件路径
-            content: 文件内容
-            encoding: 文件编码
-            create_dirs: 是否创建目录
+            file_path: File path
+            content: File content
+            encoding: File encoding
+            create_dirs: Whether to create directories
 
         Returns:
-            文件写入结果
+            File write result
         """
         path = Path(file_path).expanduser().resolve()
 
-        # 创建目录
+        # Create directories
         if create_dirs:
             path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 写入文件
+        # Write file
         with open(path, 'w', encoding=encoding) as f:
             bytes_written = f.write(content)
 
@@ -150,7 +150,7 @@ class FileWriteTool:
 
 
 class FileEditTool:
-    """文件编辑工具"""
+    """File edit tool"""
 
     @staticmethod
     def edit(
@@ -160,32 +160,32 @@ class FileEditTool:
         replace_all: bool = False
     ) -> FileEditResult:
         """
-        编辑文件（字符串替换）
+        Edit file (string replacement)
 
         Args:
-            file_path: 文件路径
-            old_string: 要替换的字符串
-            new_string: 新字符串
-            replace_all: 是否替换所有匹配
+            file_path: File path
+            old_string: String to replace
+            new_string: New string
+            replace_all: Whether to replace all matches
 
         Returns:
-            文件编辑结果
+            File edit result
         """
         path = Path(file_path).expanduser().resolve()
 
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # 读取文件
+        # Read file
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # 替换
+        # Replace
         if replace_all:
             new_content = content.replace(old_string, new_string)
             count = content.count(old_string)
         else:
-            # 只替换第一个匹配
+            # Only replace first match
             new_content = content.replace(old_string, new_string, 1)
             count = 1 if old_string in content else 0
 
@@ -196,7 +196,7 @@ class FileEditTool:
                 message=f"String not found: {old_string[:50]}..."
             )
 
-        # 写回文件
+        # Write back to file
         with open(path, 'w', encoding='utf-8') as f:
             f.write(new_content)
 
@@ -208,7 +208,7 @@ class FileEditTool:
 
 
 class GlobTool:
-    """文件搜索工具"""
+    """File search tool"""
 
     @staticmethod
     def glob(
@@ -217,15 +217,15 @@ class GlobTool:
         recursive: bool = True
     ) -> GlobResult:
         """
-        搜索文件
+        Search files
 
         Args:
-            pattern: Glob 模式
-            path: 搜索路径
-            recursive: 是否递归搜索
+            pattern: Glob pattern
+            path: Search path
+            recursive: Whether to search recursively
 
         Returns:
-            文件搜索结果
+            File search result
         """
         if path is None:
             path = os.getcwd()
@@ -235,7 +235,7 @@ class GlobTool:
         if not search_path.exists():
             raise FileNotFoundError(f"Path not found: {path}")
 
-        # 执行搜索
+        # Execute search
         if recursive:
             full_pattern = str(search_path / "**" / pattern)
             files = glob.glob(full_pattern, recursive=True)
@@ -243,10 +243,10 @@ class GlobTool:
             full_pattern = str(search_path / pattern)
             files = glob.glob(full_pattern, recursive=False)
 
-        # 过滤掉目录
+        # Filter out directories
         files = [f for f in files if os.path.isfile(f)]
 
-        # 排序
+        # Sort
         files.sort()
 
         return GlobResult(
@@ -256,7 +256,7 @@ class GlobTool:
 
 
 class GrepTool:
-    """内容搜索工具"""
+    """Content search tool"""
 
     @staticmethod
     def grep(
@@ -267,17 +267,17 @@ class GrepTool:
         max_results: int = 100
     ) -> GrepResult:
         """
-        搜索文件内容
+        Search file content
 
         Args:
-            pattern: 搜索模式（正则表达式）
-            path: 搜索路径
-            file_pattern: 文件模式
-            case_sensitive: 是否区分大小写
-            max_results: 最大结果数
+            pattern: Search pattern (regular expression)
+            path: Search path
+            file_pattern: File pattern
+            case_sensitive: Whether case sensitive
+            max_results: Maximum result count
 
         Returns:
-            内容搜索结果
+            Content search result
         """
         if path is None:
             path = os.getcwd()
@@ -287,20 +287,20 @@ class GrepTool:
         if not search_path.exists():
             raise FileNotFoundError(f"Path not found: {path}")
 
-        # 编译正则表达式
+        # Compile regular expression
         flags = 0 if case_sensitive else re.IGNORECASE
         regex = re.compile(pattern, flags)
 
-        # 获取要搜索的文件
+        # Get files to search
         if file_pattern:
             glob_result = GlobTool.glob(file_pattern, str(search_path))
             files = glob_result.files
         else:
-            # 搜索所有文本文件
+            # Search all text files
             glob_result = GlobTool.glob("*", str(search_path))
             files = glob_result.files
 
-        # 搜索内容
+        # Search content
         matches = []
 
         for file_path in files:
@@ -320,7 +320,7 @@ class GrepTool:
                                 "content": line.rstrip(),
                             })
             except Exception:
-                # 跳过无法读取的文件
+                # Skip files that cannot be read
                 continue
 
         return GrepResult(
@@ -329,7 +329,7 @@ class GrepTool:
         )
 
 
-# 工具注册
+# Tool registration
 FILE_TOOLS = {
     "Read": FileReadTool,
     "Write": FileWriteTool,
