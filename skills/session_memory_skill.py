@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # 确保可以导入 harness
-_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -16,7 +16,7 @@ import asyncio
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 
-from harness import (
+from cktclaw.harness import (
     SkillDefinition,
     SkillType,
     LoadedFrom,

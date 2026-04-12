@@ -133,24 +133,9 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
             }
             tools.append(tool_spec)
 
-    # 添加通用的 execute_cktclaw_command 作为 fallback
-    tools.append({
-        "type": "function",
-        "function": {
-            "name": "execute_cktclaw_command",
-            "description": "执行通用 CktClaw 命令（仅在没有专门技能时使用）",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "命令字符串"
-                    }
-                },
-                "required": ["command"],
-            },
-        },
-    })
+    # 不再添加 execute_cktclaw_command fallback
+    # 强制 LLM 只使用注册的专有 EDA Skills
+
 
     # ━━━━━━━━━━ 3. Create QueryLoop ━━━━━━━━━━
     start_time = time.time()
@@ -159,9 +144,10 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     system_prompt = cli_state.context_manager.system_prompt
 
     # Configure QueryLoop
+    # 工具链场景下模型常多轮只返回 tool_calls；max_turns 过小会在产出正文前被截断 →「无响应」
     config = QueryConfig(
         system_prompt=system_prompt,
-        max_turns=5,
+        max_turns=12,
         auto_compact_enabled=True,
         auto_compact_threshold=150_000,
         target_tokens=40_000,
@@ -356,12 +342,12 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
 
             # Extract final response
             if result.state == QueryStateEnum.TERMINAL:
-                response = result.final_response or "无响应"
+                response = result.final_response
             else:
                 response = f"Query loop stopped in state: {result.state.value}"
 
-            # Ensure response is not None or empty
-            if not response or response.strip() == "":
+            # Ensure response is not None or empty（避免仅显示「无响应」而掩盖已有工具输出）
+            if not response or str(response).strip() == "":
                 response = "抱歉，未能生成有效响应。"
 
             elapsed = time.time() - start_time

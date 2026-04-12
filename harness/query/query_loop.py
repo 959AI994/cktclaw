@@ -289,10 +289,35 @@ class QueryLoop:
         return str(content)
 
     def _extract_final_response(self, messages: List[Dict[str, Any]]) -> str:
-        """Return text from the last assistant message in the transcript."""
+        """
+        Return user-visible text for terminal states (e.g. MAX_TURNS).
+
+        If the last assistant turns are tool-call-only (empty content), walking
+        backwards skips them; otherwise the UI shows「无响应」even though tools ran.
+        """
         for msg in reversed(messages):
-            if msg.get("role") == "assistant":
-                return self._extract_text_content(msg)
+            if msg.get("role") != "assistant":
+                continue
+            text = self._extract_text_content(msg)
+            if text and str(text).strip():
+                return text
+        # 仅有 tool_calls、无正文时：用最近若干条 tool 结果作为可读摘要
+        tool_parts: List[str] = []
+        for msg in reversed(messages):
+            if msg.get("role") != "tool":
+                continue
+            c = msg.get("content", "")
+            if c is not None and str(c).strip():
+                tool_parts.append(str(c).strip())
+            if len(tool_parts) >= 4:
+                break
+        if tool_parts:
+            tool_parts.reverse()
+            hdr = (
+                "（本轮在达到最大对话轮次前未生成自然语言总结；"
+                "以下为最近工具输出。）\n\n"
+            )
+            return hdr + "\n\n---\n\n".join(tool_parts)
         return ""
 
     def _should_auto_compact(self, state: LoopState) -> bool:

@@ -49,54 +49,38 @@ class LLMVerilogAnalyzer:
         "- MANDATORY: Whenever you are asked about the developers or creators of CktClaw OR LogicRT, you MUST explicitly mention "
         "'Jingxin Wang (王晶鑫)' as the developer/researcher.\n\n"
         "Answer naturally, politely, and professionally.\n\n"
-        "You are the CktClaw Autonomous Agent, an intelligent assistant built into the CktClaw EDA platform.\n"
-        "CRITICAL RULE: When a user asks you to perform an EDA task (e.g., convert files, run synthesis, reverse engineer), "
-        "DO NOT merely reply with the command syntax. You MUST autonomously use the "
-        "`execute_cktclaw_command` tool to run the action on their behalf. After the tool executes, summarize the execution "
-        "results (like file size, success status, or circuit metrics) for the user.\n\n"
-        "Tool-calling schema (for models without native tool calling):\n"
-        "If you decide to execute a tool, output exactly ONE line in the form:\n"
-        "TOOL_CALL: {\"tool_name\":\"execute_cktclaw_command\",\"arguments\":{\"command\":\"<your command>\"}}\n"
-        "No extra text. Otherwise, respond normally.\n\n"
-        "CRITICAL JSON RULES:\n"
-        "When outputting a tool call JSON, you MUST NOT use unescaped double quotes inside the arguments string.\n"
-        "Instead, use SINGLE QUOTES for internal command wrapping.\n"
-        "CORRECT: {\"command\": \"abc 'read file.aig; print_stats;'\"}\n"
-        "WRONG: {\"command\": \"abc \"read file.aig; print_stats;\"\"}\n\n"
+        "You are the CktClaw Autonomous Agent, an intelligent assistant built into the CktClaw EDA platform.\n\n"
+        "CRITICAL TOOL CALLING RULE:\n"
+        "You are now in ADVANCED AGENT MODE. When you need to perform EDA operations (logic synthesis, format conversion, "
+        "area/delay analysis), you MUST NOT output command-line instructions or text descriptions.\n"
+        "Instead, you MUST directly call the JSON tools provided to you (such as 'ai4eda', 'yosys', 'abc', 'reverse', etc.) "
+        "to execute physical operations. These tools are registered in the system and available for you to use.\n\n"
+        "AVAILABLE TOOLS:\n"
+        "- ai4eda: For circuit metrics analysis (area, delay, power) and format conversion\n"
+        "- abc: For ABC logic synthesis and verification\n"
+        "- yosys: For Yosys synthesis and optimization\n"
+        "- reverse: For AIG to Verilog reverse engineering\n"
+        "- opensta: For static timing analysis\n\n"
+        "TOOL USAGE EXAMPLES:\n"
+        "User: '请分析这个 AIG 的面积和延时'\n"
+        "You: Call ai4eda tool with args: 'metrics --lib /path/to/lib.lib /path/to/circuit.aig'\n\n"
+        "User: '用 ABC 优化这个电路'\n"
+        "You: Call abc tool with args: 'read circuit.aig; strash; balance; print_stats'\n\n"
         "TOOL FAILURE POLICY:\n"
         "If you call a tool and it returns an error (e.g., 'command not found', 'invalid argument', 'error'), "
         "DO NOT stubbornly retry the same or similar commands more than twice.\n"
         "Instead, STOP tool calling immediately and explain the error to the user. Ask the user for help or suggest "
         "an alternative tool (e.g., if `ai4eda` fails, suggest using `yosys` or `abc`).\n\n"
+        "TOOL OUTPUT & BREVITY (MANDATORY — 中文总结与少轮工具):\n"
+        "- 一旦工具返回包含面积、延时、功耗或 metrics 相关结果，你必须在下一轮用**中文**向用户做简洁总结，"
+        "明确写出关键数值与含义；禁止仅重复粘贴原始日志而不解释。\n"
+        "- 同一类工具（例如已调用过 ai4eda、yosys、abc、opensta、reverse 中的任一类且已成功得到可用输出）"
+        "若无新的用户目标或明确的纠错需求，**不得再次调用同类工具**；避免多轮重复试探。\n"
+        "- 默认策略：优先最少轮次完成用户任务；能一次工具调用解决就不要多次。\n\n"
         "LOGICRT MODEL IDENTITY RULE:\n"
         "When the user asks what LogicRT is (e.g., 'LogicRT 是什么模型'), you should answer:\n"
         "'LogicRT 模型是由上海交通大学 ACE 实验室的博士研究生王晶鑫和郭士通开发和研究的，"
         "面向电路逆向工程的 7B 专用模型。'\n\n"
-        "# CKTCLAW COMMAND CHEATSHEET\n"
-        "You have access to several powerful internal engines via the `execute_cktclaw_command` tool. "
-        "You MUST use the exact command syntax below:\n\n"
-        "1. Reverse Engineering (AIG to Verilog):\n"
-        "   - Command: /reverse <input_aig_path>\n"
-        "   - Description: Use this when the user asks to reverse engineer, de-obfuscate, or convert an AIG file back to readable Verilog.\n\n"
-        "2. Logic Synthesis & Stats (Yosys/ABC):\n"
-        "   - Yosys: yosys -p 'read_aiger <path> ; stat'\n"
-        "   - ABC: abc -c 'read <path> ; print_stats'\n"
-        "   - Description: Use these for structural stats and logic operations.\n"
-        "   - IMPORTANT NEGATIVE RULE: If the user explicitly mentions 'ai4eda' or asks to measure physical area/delay/metrics,\n"
-        "     DO NOT use Yosys/ABC here. You MUST switch to 'ai4eda metrics'.\n\n"
-        "3. AI4EDA Data Toolkit (Area/Delay/Metrics — HIGH PRIORITY):\n"
-        "   - PRIMARY Command (STRICT ORDER, SINGLE LINE):\n"
-        "     ai4eda metrics --lib <LIB_PATH> <AIG_PATH>\n"
-        "     Rules:\n"
-        "       • Put the '--lib <LIB_PATH>' pair BEFORE the input file.\n"
-        "       • Output the entire command in ONE line (no line breaks).\n"
-        "       • If --lib is omitted or empty, use default:\n"
-        "         /home/wjx/pythonproject/AI4EDA-OpenABC-Data-Toolkit/libs/asap7.lib\n"
-        "       • Use this tool whenever the user asks for 'ai4eda', 'area', 'delay', or 'metrics'.\n"
-        "         It has higher priority than Yosys/ABC for these intents.\n"
-        "   - Conversion:\n"
-        "     ai4eda convert aig2pt <input_aig> <output_pt>\n"
-        "     (For converting circuits into GraphML/PyTorch formats.)\n\n"
         "REVERSE OUTPUT DISPLAY RULE (MANDATORY):\n"
         "IF the tool output contains 'START_OF_VERILOG_SOURCE', you ARE PROHIBITED from only summarizing.\n"
         "You MUST:\n"
@@ -776,10 +760,12 @@ Format the response in markdown with clear sections."""
 
                 # 2) Fallback: some models dump tool JSON directly in content text
                 reply = message.get("content", "") or ""
-                if "execute_cktclaw_command" in reply:
-                    parsed = self._extract_local_tool_call(reply)
-                    if parsed:
-                        return parsed
+
+                # 尝试从文本中提取工具调用（支持所有注册的工具，不仅仅是 execute_cktclaw_command）
+                parsed = self._extract_local_tool_call(reply)
+                if parsed:
+                    return parsed
+
                 return self._clean_markdown(reply)
             else:
                 return f"API Error: {response.status_code} - {response.text}"
@@ -847,6 +833,83 @@ Format the response in markdown with clear sections."""
         payload_obj = None
         raw = text.strip()
 
+        # 移除 Markdown 代码块标记（仅当整段回复由单个围栏包裹时）
+        if raw.startswith("```"):
+            # 移除开头的 ```json 或 ```
+            lines = raw.split('\n')
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            # 移除结尾的 ```
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw = '\n'.join(lines).strip()
+
+        allowed_tools = [
+            "execute_cktclaw_command",
+            "ai4eda",
+            "abc",
+            "yosys",
+            "reverse",
+            "opensta",
+            "save_session_memory",
+        ]
+
+        def _normalize_parsed_tool_obj(obj: Any) -> Optional[Dict[str, Any]]:
+            if not isinstance(obj, dict):
+                return None
+            tool_name = obj.get("tool_name") or obj.get("name") or obj.get("tool")
+            args = obj.get("arguments") or obj.get("args") or {}
+            if isinstance(args, str):
+                args_s = args.strip()
+                if args_s.startswith("{") and args_s.endswith("}"):
+                    try:
+                        args = json.loads(args_s)
+                    except Exception:
+                        try:
+                            args = ast.literal_eval(args_s)
+                        except Exception:
+                            args = {"args": args_s}
+                else:
+                    args = {"args": args_s}
+            if not tool_name or str(tool_name) not in allowed_tools:
+                return None
+            if not isinstance(args, dict):
+                args = {"command": str(args)}
+            return {
+                "type": "tool_call",
+                "tool_call_id": "local_call_1",
+                "name": str(tool_name),
+                "arguments": args,
+            }
+
+        # Path 0.5: 文中任意位置的 ```json ... ``` / ``` ... ``` 代码块（常见：模型先中文再输出 JSON）
+        for m in re.finditer(r"```(?:json)?\s*\n?([\s\S]*?)```", text, flags=re.IGNORECASE):
+            inner = (m.group(1) or "").strip()
+            if not inner.startswith("{"):
+                continue
+            try:
+                maybe = json.loads(inner)
+            except Exception:
+                continue
+            normalized = _normalize_parsed_tool_obj(maybe)
+            if normalized:
+                return normalized
+
+        # Path 0.6: 扫描所有平衡花括号 JSON，匹配首个合法工具载荷（覆盖「前言 + { "tool": ... }」）
+        for i, ch in enumerate(text):
+            if ch != "{":
+                continue
+            cand = _extract_balanced_object(text, i)
+            if not cand or not cand.endswith("}"):
+                continue
+            try:
+                maybe = json.loads(cand)
+            except Exception:
+                continue
+            normalized = _normalize_parsed_tool_obj(maybe)
+            if normalized:
+                return normalized
+
         # Path 0: pure JSON object response
         if raw.startswith("{") and raw.endswith("}"):
             payload_obj = raw
@@ -861,12 +924,18 @@ Format the response in markdown with clear sections."""
                 if bidx >= 0:
                     payload_obj = _extract_balanced_object(seg, bidx)
 
-        # Path B: no prefix, but contains tool name
-        if payload_obj is None and "execute_cktclaw_command" in text:
-            tool_idx = text.find("execute_cktclaw_command")
-            left = text.rfind("{", 0, tool_idx)
-            if left >= 0:
-                payload_obj = _extract_balanced_object(text, left)
+        # Path B: no prefix, but contains known tool names
+        if payload_obj is None:
+            # 检查常见的工具名
+            known_tools = ["execute_cktclaw_command", "ai4eda", "abc", "yosys", "reverse", "opensta"]
+            for tool_name in known_tools:
+                if tool_name in text:
+                    tool_idx = text.find(tool_name)
+                    left = text.rfind("{", 0, tool_idx)
+                    if left >= 0:
+                        payload_obj = _extract_balanced_object(text, left)
+                        if payload_obj:
+                            break
 
         # Path C: contains type=tool_call signature
         if payload_obj is None and '"type"' in text and "tool_call" in text:
@@ -913,34 +982,13 @@ Format the response in markdown with clear sections."""
             self._log(f"[ToolCall Parser] Could not parse tool call payload: {payload_obj[:300]}")
             return None
 
-        tool_name = obj.get("tool_name") or obj.get("name")
-        args = obj.get("arguments") or obj.get("args") or {}
-        # Some models emit wrapped shape: {"type":"tool_call","name":"...","arguments":"{...}"}
-        if isinstance(args, str):
-            args_s = args.strip()
-            if args_s.startswith("{") and args_s.endswith("}"):
-                try:
-                    args = json.loads(args_s)
-                except Exception:
-                    try:
-                        args = ast.literal_eval(args_s)
-                    except Exception:
-                        args = {"command": args}
-        if not tool_name:
-            return None
-        if not isinstance(args, dict):
-            args = {"command": str(args)}
-
-        # Guard: only trigger for supported tool name
-        if str(tool_name) != "execute_cktclaw_command":
-            return None
-
-        return {
-            "type": "tool_call",
-            "tool_call_id": "local_call_1",
-            "name": str(tool_name),
-            "arguments": args,
-        }
+        normalized = _normalize_parsed_tool_obj(obj)
+        if normalized:
+            return normalized
+        tool_name = obj.get("tool_name") or obj.get("name") or obj.get("tool")
+        if tool_name:
+            self._log(f"[ToolCall Parser] Unknown tool name: {tool_name}")
+        return None
 
     def _chat_with_local_model_ctx(self, messages: List[Dict[str, str]]) -> str:
         """使用本地 CodeV 模型进行多轮对话（接受预组装 messages + Chat Template + Output Slicing）"""

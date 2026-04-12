@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # 确保可以导入 harness
-_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -21,7 +21,7 @@ import subprocess
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 
-from harness import (
+from cktclaw.harness import (
     SkillDefinition,
     SkillType,
     LoadedFrom,
@@ -170,9 +170,17 @@ async def ai4eda_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, 
 AI4EDA_SKILL = SkillDefinition(
     name="ai4eda",
     skill_type=SkillType.TOOL,
-    description="AI4EDA 数据处理工具集",
+    description="AI4EDA 数据处理工具集，支持电路格式转换和指标分析",
     display_name="AI4EDA Data Toolkit",
     aliases=["ai4eda-toolkit", "ai4eda-tool"],
+    when_to_use=(
+        "当需要进行电路格式转换（如 AIG 转 PyTorch、Verilog 转 AIG）或计算电路物理指标（面积、延时、功耗）时使用此技能。"
+        "支持的主要命令：metrics（指标分析）、convert（格式转换）。"
+    ),
+    argument_hint="AI4EDA 子命令，例如: metrics --lib /path/to/lib.lib circuit.aig 或 convert aig2pt input.aig output.pt",
+    argument_names=["command"],
+    allowed_tools=["Bash", "Read", "Write"],
+    user_invocable=True,
     executor=ai4eda_executor,
     loaded_from=LoadedFrom.BUNDLED,
     version="1.0.0",
