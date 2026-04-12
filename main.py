@@ -114,7 +114,7 @@ except ImportError:
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cktclaw.models import LLMVerilogAnalyzer
-    from webapp.backend.models.logicrt_inferencer import LogicRTInferencer
+    from cktclaw.models.logicrt_inferencer import LogicRTInferencer
 
 
 # ━━━━━━━━━━ Global State Management ━━━━━━━━━━

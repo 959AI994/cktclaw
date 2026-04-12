@@ -39,16 +39,6 @@ from ..ui import (
     format_time,
 )
 
-# Import webapp utilities
-try:
-    from webapp.backend.utils.aig_converter import convert_aig_to_pt
-    from webapp.backend.utils.verilog_validator import VerilogValidator
-    from cktclaw.models import LLMVerilogAnalyzer
-    from webapp.backend.models.logicrt_inferencer import LogicRTInferencer
-except ImportError as e:
-    raise ImportError(f"Failed to import webapp utils: {e}")
-
-
 def _suppress_warnings():
     """Suppress unwanted warnings from transformers and torch"""
     os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
@@ -116,6 +106,9 @@ async def process_aig(aig_path: str, cli_state) -> None:
     with render_spinner(console, f"{Icons.LOADING} 转换 AIG 文件..."):
         start = time.time()
         try:
+            # Lazy import to avoid loading heavy modules at startup
+            from cktclaw.utils.aig_converter import convert_aig_to_pt
+
             pt_file = aig_file_path.with_suffix(".pt")
             success, msg = await asyncio.to_thread(
                 convert_aig_to_pt,
@@ -138,6 +131,9 @@ async def process_aig(aig_path: str, cli_state) -> None:
     with render_spinner(console, f"{Icons.LOADING} 生成 Verilog 代码..."):
         start = time.time()
         try:
+            # Lazy import to avoid loading heavy modules at startup
+            from cktclaw.models.logicrt_inferencer import LogicRTInferencer
+
             if cli_state.logicrt_inferencer is None:
                 cli_state.logicrt_inferencer = await asyncio.to_thread(
                     _suppress_output,
@@ -172,6 +168,9 @@ async def process_aig(aig_path: str, cli_state) -> None:
         validation_results = []
 
         try:
+            # Lazy import to avoid loading heavy modules at startup
+            from cktclaw.utils.verilog_validator import VerilogValidator
+
             # Syntax validation
             is_valid, syntax_error = await asyncio.to_thread(
                 VerilogValidator.validate_with_iverilog,
@@ -206,6 +205,9 @@ async def process_aig(aig_path: str, cli_state) -> None:
     with render_spinner(console, f"{Icons.CIRCUIT} 分析电路..."):
         start = time.time()
         try:
+            # Lazy import to avoid loading heavy modules at startup
+            from cktclaw.models import LLMVerilogAnalyzer
+
             if cli_state.llm_analyzer is None:
                 cli_state.llm_analyzer = await asyncio.to_thread(
                     lambda: LLMVerilogAnalyzer(verbose=False),
