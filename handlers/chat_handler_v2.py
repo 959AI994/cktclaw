@@ -174,8 +174,6 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
                 "role": "assistant",
                 "content": "抱歉，LLM 未返回有效响应。",
             }
-                "content": "抱歉，LLM 未返回有效响应。",
-            }
 
         # Convert response to standard format
         if isinstance(llm_resp, str):

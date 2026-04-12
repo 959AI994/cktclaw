@@ -28,7 +28,6 @@ from cktclaw.harness import (
     TaskType,
     TaskStatus,
 )
-from cktclaw.workflows.rltf import RLTFCoordinator, RLTFConfig
 
 
 class RLTFInput(BaseModel):
@@ -101,6 +100,9 @@ async def rltf_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, An
             f"   文件: {rltf_input.aig_file}\n"
             f"   最大迭代: {rltf_input.max_iterations}\n"
         )
+
+        # 延迟导入 RLTF 模块（避免启动时加载）
+        from cktclaw.workflows.rltf import RLTFCoordinator, RLTFConfig
 
         # 配置 RLTF
         config = RLTFConfig(
@@ -213,7 +215,6 @@ RLTF_SKILL = SkillDefinition(
 async def register_rltf_skill():
     """注册 RLTF 技能"""
     await register_skill(RLTF_SKILL)
-    print("✅ RLTF Skill 已注册")
 
 
 # 不要在模块导入时自动注册，由 main.py 统一注册
