@@ -85,6 +85,11 @@
 - **ASAP7 库支持**：面积/时延精确估计
 - **静态时序分析**：OpenSTA 集成
 
+### 6. 学术创新工作流 · Academic Innovation Workflows
+- **RLTF (Reinforcement Learning from Tool Feedback)**：基于工具反馈的强化学习综合序列优化
+- **Pareto Multi-Agent Negotiation**：驱动帕累托最优 PPA 的博弈论多智能体协商协议
+- **自主综合配方**：基于 ASAP7 的面积/时延估计，驱动 ABC/Yosys 的自主演化优化序列
+
 ---
 
 ## ✨ 功能特性 · Features
@@ -155,6 +160,12 @@
 - **LogicRT**: 本地推理引擎（默认）
 - **DeepSeek**: 云端 API 增强分析
 - 运行时动态切换
+- **Provider 架构**：BaseLLMProvider 抽象接口，支持热插拔新引擎
+
+### 🔬 学术创新工作流 · Innovation Workflows
+- **RLTF**: 基于工具反馈的强化学习综合序列（`/rltf`）
+- **Pareto Negotiation**: 多智能体博弈论协商优化 PPA（`/pareto`）
+- 通过 SkillRegistry 注册，完全解耦于核心系统
 
 ---
 
@@ -568,12 +579,70 @@ def run_with_retry(self, command: str, max_retries: int = 3) -> Tuple[bool, str]
 
 ## 🏗️ 架构设计 · Architecture
 
+### 核心架构改进（2026-04-12）
+
+**Provider 架构重构** - 将原 1039 行的 God Object 解耦为清晰的分层架构：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  LLMVerilogAnalyzer (Facade - 133 lines)                    │
+│  ├─ 路由请求到对应 Provider                                  │
+│  └─ 保持向后兼容的公共 API                                   │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+        ┌─────────────────┴─────────────────┐
+        ↓                                   ↓
+┌──────────────────────┐      ┌──────────────────────────┐
+│ DeepSeekProvider     │      │ LocalCodeVProvider       │
+│ (206 lines)          │      │ (362 lines)              │
+├──────────────────────┤      ├──────────────────────────┤
+│ • HTTP API 通信      │      │ • PyTorch 模型加载       │
+│ • 原生工具调用解析   │      │ • GPU 内存扫描与选择     │
+│ • 速率限制处理       │      │ • 懒加载策略             │
+│ • 错误重试机制       │      │ • 多策略工具调用解析     │
+└──────────────────────┘      └──────────────────────────┘
+                          ↓
+        ┌─────────────────┴─────────────────┐
+        ↓                                   ↓
+┌──────────────────────┐      ┌──────────────────────────┐
+│ VerilogMetricsExtractor│    │ ToolCallParser           │
+│ (107 lines)          │      │ (228 lines)              │
+├──────────────────────┤      ├──────────────────────────┤
+│ • 度量提取（正则）   │      │ • 7 层降级解析策略       │
+│ • 分析提示生成       │      │ • JSON/ChatML/正则       │
+│ • 降级分析           │      │ • 弱模型容错             │
+└──────────────────────┘      └──────────────────────────┘
+```
+
+**架构优势**：
+- ✅ **单一职责**：每个类只负责一个明确的功能
+- ✅ **开闭原则**：易于添加新 Provider（OpenAI、Gemini 等）
+- ✅ **依赖注入**：配置和凭证通过构造函数注入
+- ✅ **可测试性**：每个组件可独立测试
+- ✅ **安全性**：API 密钥移至环境变量
+- ✅ **可扩展性**：新增 LLM 提供商无需修改现有代码
+
 ### 项目结构 · Project Structure
 
 ```
 cktclaw/
 ├── main.py                          # REPL 主循环
-├── config.py                        # 配置设置
+├── config.py                        # 配置设置（含系统提示词）
+│
+├── models/                          # LLM 模型层（Provider 架构）
+│   ├── llm_analyzer.py              # 薄门面层（133 行，原 1039 行）
+│   ├── providers/
+│   │   ├── base.py                  # BaseLLMProvider 抽象接口
+│   │   ├── deepseek_provider.py     # DeepSeek 云端 API 通信
+│   │   └── local_codev_provider.py  # 本地 GPU 推理 + 懒加载
+│   └── logicrt_inferencer.py        # LogicRT 逆向推理引擎
+│
+├── utils/                           # 独立工具模块
+│   ├── verilog_parser.py            # Verilog 度量提取与分析
+│   ├── tool_call_parser.py          # 多策略工具调用解析器
+│   ├── aig_converter.py             # AIG 格式转换
+│   └── verilog_validator.py         # Verilog 语法验证
+│
 ├── cktmem/                          # 记忆管理系统
 │   ├── manager.py                   # 上下文管理器
 │   ├── compactor.py                 # 压缩器
@@ -629,9 +698,15 @@ Compactor.auto_compact()
     ↓
 RateLimiter.acquire() → 速率检查
     ↓
-LLM 调用 (LogicRT/DeepSeek)
+LLMVerilogAnalyzer (Facade)
+    ├─ model_choice == "deepseek" → DeepSeekProvider
+    │   └─ HTTP API → DeepSeek Cloud
+    └─ model_choice == "local"   → LocalCodeVProvider
+        └─ GPU 推理 → 本地 CodeV 模型
     ↓
 工具编排 (Tool Orchestration)
+    ├─ SkillRegistry 动态注入工具列表
+    ├─ ToolCallParser 解析工具调用
     ├─ 并行执行独立工具
     └─ 串行执行依赖工具
     ↓
@@ -663,6 +738,13 @@ LLM 调用 (LogicRT/DeepSeek)
 ```bash
 /model                 # 交互式模型选择
 /engine <name>         # 切换分析引擎
+```
+
+### 学术工作流 · Innovation Workflows
+```bash
+/rltf [aig] [max_iter]           # RLTF 强化学习综合序列优化
+/pareto-negotiate [aig] [rounds] # Pareto 多智能体协商优化 PPA
+/pareto [aig] [rounds]           # 同 /pareto-negotiate（别名）
 ```
 
 ### 会话管理 · Session Management

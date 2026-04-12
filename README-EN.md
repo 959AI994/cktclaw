@@ -69,6 +69,8 @@
 - 🤖 **Multi-Engine AI Support**: Local LogicRT inference + Cloud DeepSeek enhancement
 - 🔧 **Extensible EDA Integration**: Easy-to-add custom EDA tools and skills
 - 📊 **AI4EDA Data Pipeline**: Large-scale dataset processing with PyG/GraphML support
+- 🏗️ **Provider Architecture**: Clean BaseLLMProvider abstraction for hot-swappable LLM backends
+- 🔬 **Innovation Workflows**: RLTF synthesis optimization + Pareto multi-agent PPA negotiation
 
 ---
 
@@ -211,6 +213,13 @@ CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 /model                 # Interactive model selection menu
 /engine <name>         # Switch analysis engine
                        # Options: logicrt (local), deepseek (cloud)
+```
+
+#### Innovation Workflows
+```bash
+/rltf [aig] [max_iter]           # RLTF reinforcement learning synthesis optimization
+/pareto-negotiate [aig] [rounds] # Pareto multi-agent PPA negotiation
+/pareto [aig] [rounds]           # Alias for /pareto-negotiate
 ```
 
 #### Session Management
@@ -490,12 +499,69 @@ class GenusHandler:
 
 ## 🏗️ Architecture
 
+### Core Architecture Improvements (2026-04-12)
+
+**Provider Architecture Refactoring** - Decoupled the 1039-line God Object into a clean layered architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  LLMVerilogAnalyzer (Facade - 133 lines)                    │
+│  ├─ Routes requests to appropriate Provider                 │
+│  └─ Maintains backward-compatible public API                │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+        ┌─────────────────┴─────────────────┐
+        ↓                                   ↓
+┌──────────────────────┐      ┌──────────────────────────┐
+│ DeepSeekProvider     │      │ LocalCodeVProvider       │
+│ (206 lines)          │      │ (362 lines)              │
+├──────────────────────┤      ├──────────────────────────┤
+│ • HTTP API comm      │      │ • PyTorch model loading  │
+│ • Native tool parsing│      │ • GPU memory scanning    │
+│ • Rate limit handling│      │ • Lazy loading strategy  │
+│ • Retry mechanism    │      │ • Multi-strategy parsing │
+└──────────────────────┘      └──────────────────────────┘
+                          ↓
+        ┌─────────────────┴─────────────────┐
+        ↓                                   ↓
+┌──────────────────────┐      ┌──────────────────────────┐
+│ VerilogMetricsExtractor│    │ ToolCallParser           │
+│ (107 lines)          │      │ (228 lines)              │
+├──────────────────────┤      ├──────────────────────────┤
+│ • Metrics extraction │      │ • 7-tier fallback parsing│
+│ • Prompt generation  │      │ • JSON/ChatML/regex      │
+│ • Fallback analysis  │      │ • Weak model tolerance   │
+└──────────────────────┘      └──────────────────────────┘
+```
+
+**Architecture Benefits**:
+- ✅ **Single Responsibility**: Each class has one clear purpose
+- ✅ **Open/Closed Principle**: Easy to add new Providers (OpenAI, Gemini, etc.)
+- ✅ **Dependency Injection**: Config and credentials injected via constructor
+- ✅ **Testability**: Each component can be tested in isolation
+- ✅ **Security**: API keys moved to environment variables
+- ✅ **Extensibility**: Add new LLM providers without modifying existing code
+
 ### Project Structure
 
 ```
 cktclaw/
 ├── main.py                          # Main REPL loop
-├── config.py                        # Configuration
+├── config.py                        # Configuration (with system prompts)
+│
+├── models/                          # LLM Model Layer (Provider Architecture)
+│   ├── llm_analyzer.py              # Thin facade (133 lines, was 1039)
+│   ├── providers/
+│   │   ├── base.py                  # BaseLLMProvider abstract interface
+│   │   ├── deepseek_provider.py     # DeepSeek cloud API communication
+│   │   └── local_codev_provider.py  # Local GPU inference + lazy loading
+│   └── logicrt_inferencer.py        # LogicRT reverse inference engine
+│
+├── utils/                           # Standalone Utility Modules
+│   ├── verilog_parser.py            # Verilog metrics extraction & analysis
+│   ├── tool_call_parser.py          # Multi-strategy tool call parser
+│   ├── aig_converter.py             # AIG format conversion
+│   └── verilog_validator.py         # Verilog syntax validation
 │
 ├── cktmem/                          # Memory Management System
 │   ├── manager.py                   # Context manager (4-layer)
@@ -566,13 +632,17 @@ RateLimiter.acquire()
     ├─ Check request/token limits
     └─ Wait if necessary
     ↓
-LLM Call (LogicRT/DeepSeek)
+LLMVerilogAnalyzer (Facade)
+    ├─ model_choice == "deepseek" → DeepSeekProvider
+    │   └─ HTTP API → DeepSeek Cloud
+    └─ model_choice == "local"   → LocalCodeVProvider
+        └─ GPU Inference → Local CodeV Model
     ↓
 Tool Orchestration (if tool calls)
-    ├─ Partition into batches
+    ├─ SkillRegistry dynamically injects tool list
+    ├─ ToolCallParser extracts tool calls
     ├─ Execute parallel tools concurrently
-    ├─ Execute serial tools sequentially
-    └─ Apply Context Modifiers
+    └─ Execute serial tools sequentially
     ↓
 Store Response → SQLite
     ↓
