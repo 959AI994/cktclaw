@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cktclaw"
+version = "1.0.0"
+description = "The Autonomous Multi-Agent Ecosystem for Intelligent EDA"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Jingxin Wang", email = "jingxin.wang@sjtu.edu.cn"},
+]
+keywords = ["eda", "chip-design", "circuit", "verilog", "ai", "multi-agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+
+dependencies = [
+    "prompt_toolkit>=3.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+local = ["torch>=2.0", "transformers>=4.30"]
+full = ["torch>=2.0", "transformers>=4.30", "anthropic>=0.20"]
+
+[project.urls]
+Homepage = "https://github.com/959AI994/cktclaw"
+Issues = "https://github.com/959AI994/cktclaw/issues"
+
+[project.scripts]
+cktclaw = "cktclaw.main:main"
+
+[tool.setuptools.packages.find]
+include = ["cktclaw*"]
