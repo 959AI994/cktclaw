@@ -232,5 +232,42 @@ TIPS 提示:
   • /abc、/yosys 和 /opensta 需要系统 PATH 中有对应工具
   • OpenSTA 支持环境变量 OPENSTA_PATH 指定可执行文件路径
 
+CHIP DESIGN DOMAINS 芯片设计领域 (digital-chip-design-agents):
+  /chip-design-skills         进入芯片设计子终端（提示符 [chip-design-skills] / [chip-*]；.. 回主界面）
+  /chip-architecture [task]   微架构探索、PPA 估算、风险评估
+  /chip-rtl [task]            SystemVerilog RTL 设计、lint、CDC 检查
+  /chip-verification [task]   UVM 验证、覆盖率收敛、回归测试
+  /chip-formal [task]         形式验证 FPV、等价性检查 LEC
+  /chip-synthesis [task]      逻辑综合、SDC 约束、网表 QC
+  /chip-dft [task]            可测性设计、扫描插入、ATPG
+  /chip-sta [task]            静态时序分析、多角分析、ECO 指导
+  /chip-hls [task]            高层次综合 C/C++ → RTL
+  /chip-pd [task]             物理设计：布图→布线→签核
+  /chip-soc [task]            SoC IP 集成、总线结构、芯片级仿真
+  /chip-compiler [task]       编译器工具链 LLVM/GCC 后端
+  /chip-firmware [task]       嵌入式固件 BSP、驱动、RTOS
+  /chip-fpga [task]           FPGA 仿真移植、分区、上板验证
+  /chip-infrastructure [task] EDA 工具检测、wrapper 部署、MCP 配置
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
+
+# 与 main.parse_input 中的 chip-* 名称一致（仅全称，无短别名）
+CHIP_DESIGN_SLASH_ROWS: list[tuple[str, str]] = [
+    ("chip-architecture", "微架构、PPA、风险评估"),
+    ("chip-rtl", "RTL 设计、lint、CDC"),
+    ("chip-verification", "UVM、覆盖率、回归"),
+    ("chip-formal", "形式验证 FPV、LEC"),
+    ("chip-synthesis", "逻辑综合、SDC、网表 QC"),
+    ("chip-dft", "DFT、扫描、ATPG"),
+    ("chip-sta", "静态时序 STA、多角、ECO"),
+    ("chip-hls", "高层次综合 HLS"),
+    ("chip-pd", "物理设计 PD"),
+    ("chip-soc", "SoC 集成"),
+    ("chip-compiler", "编译器工具链"),
+    ("chip-firmware", "固件、BSP、RTOS"),
+    ("chip-fpga", "FPGA 移植与验证"),
+    ("chip-infrastructure", "EDA 检测、wrapper、MCP"),
+]
+
+CHIP_DESIGN_SKILL_NAMES: frozenset[str] = frozenset(p for p, _ in CHIP_DESIGN_SLASH_ROWS)

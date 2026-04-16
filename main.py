@@ -317,6 +317,7 @@ class CLIState:
                 "/rltf": "🔁 RLTF：PPA 反馈驱动的 ABC 优化序列搜索（workflows/rltf）",
                 "/pareto-negotiate": "⚖️ Pareto 多智能体协商，博弈驱动 PPA（workflows/pareto_negotiation）",
                 "/pareto": "⚖️ 同 /pareto-negotiate（别名）",
+                "/chip-design-skills": "🔷 芯片设计子终端（提示符 [chip-design-skills]；.. 回主界面）",
                 "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
                 "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek)",
@@ -394,6 +395,22 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "pareto": "pareto-negotiate",
             "negotiate": "pareto-negotiate",
             "multi-agent": "pareto-negotiate",
+            # Chip design domain skills（仅全称 /chip-*）
+            "chip-architecture": "chip-architecture",
+            "chip-rtl": "chip-rtl",
+            "chip-verification": "chip-verification",
+            "chip-formal": "chip-formal",
+            "chip-synthesis": "chip-synthesis",
+            "chip-dft": "chip-dft",
+            "chip-sta": "chip-sta",
+            "chip-hls": "chip-hls",
+            "chip-pd": "chip-pd",
+            "chip-soc": "chip-soc",
+            "chip-compiler": "chip-compiler",
+            "chip-firmware": "chip-firmware",
+            "chip-fpga": "chip-fpga",
+            "chip-infrastructure": "chip-infrastructure",
+            "chip-design-skills": "chip-design-skills",
             "about": "about",
             "clear": "clear",
             "session": "session",
@@ -436,6 +453,7 @@ class LogicRTCLI:
                 register_opensta_skill,
                 register_ai4eda_skill,
                 register_session_memory_skill,
+                register_chip_design_skills,
             )
             # Register innovation skills
             from .skills.rltf_skill import register_rltf_skill
@@ -451,6 +469,7 @@ class LogicRTCLI:
                 asyncio.run(register_session_memory_skill())
                 asyncio.run(register_rltf_skill())
                 asyncio.run(register_pareto_negotiation_skill())
+                asyncio.run(register_chip_design_skills())
             except RuntimeError:
                 # Already in async context
                 import concurrent.futures
@@ -463,6 +482,7 @@ class LogicRTCLI:
                     future6 = executor.submit(asyncio.run, register_session_memory_skill())
                     future7 = executor.submit(asyncio.run, register_rltf_skill())
                     future8 = executor.submit(asyncio.run, register_pareto_negotiation_skill())
+                    future9 = executor.submit(asyncio.run, register_chip_design_skills())
                     future1.result()
                     future2.result()
                     future3.result()
@@ -471,6 +491,7 @@ class LogicRTCLI:
                     future6.result()
                     future7.result()
                     future8.result()
+                    future9.result()
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
@@ -646,6 +667,18 @@ class LogicRTCLI:
             self._run_async_handler(
                 process_workflow_skill("pareto-negotiate", args, self.state)
             )
+
+        elif cmd_type in (
+            "chip-architecture", "chip-rtl", "chip-verification", "chip-formal",
+            "chip-synthesis", "chip-dft", "chip-sta", "chip-hls", "chip-pd",
+            "chip-soc", "chip-compiler", "chip-firmware", "chip-fpga", "chip-infrastructure",
+        ):
+            from .handlers.chip_design_handler import handle_chip_design
+            self._run_async_handler(handle_chip_design(cmd_type, args, self.state))
+
+        elif cmd_type == "chip-design-skills":
+            from .handlers.chip_design_handler import handle_chip_design_skills
+            handle_chip_design_skills(args, self.state)
 
         elif cmd_type == "clear":
             from .handlers.session_handler import create_new_session
