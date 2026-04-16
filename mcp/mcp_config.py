@@ -5,15 +5,22 @@ based on the current machine's tool manifest.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
 from ..eda_tools.tool_detection import ToolManifest
 
-_TEMPLATES_DIR = Path("/root/digital-chip-design-agents/plugins/infrastructure/mcp")
-_ADAPTER_PATH = Path("/root/cktclaw/mcp/mcp-adapter.py")
-_SESSION_ADAPTER_PATH = Path("/root/cktclaw/mcp/mcp-session-adapter.py")
-_WRAPPERS_DIR = Path("/root/cktclaw/eda_tools/wrappers")
+_CKTCLAW_DIR = Path(__file__).parent.parent.resolve()
+_PROJECT_ROOT = _CKTCLAW_DIR.parent
+
+_TEMPLATES_DIR = Path(os.environ.get(
+    "CHIP_AGENTS_ROOT",
+    str(_PROJECT_ROOT / "digital-chip-design-agents" / "plugins"),
+)) / "infrastructure" / "mcp"
+_ADAPTER_PATH = _CKTCLAW_DIR / "mcp" / "mcp-adapter.py"
+_SESSION_ADAPTER_PATH = _CKTCLAW_DIR / "mcp" / "mcp-session-adapter.py"
+_WRAPPERS_DIR = _CKTCLAW_DIR / "eda_tools" / "wrappers"
 
 _PLACEHOLDER = "/absolute/path/to"
 
@@ -53,7 +60,7 @@ def _resolve_paths(raw: str) -> str:
         placeholder_wrapper = f"{_PLACEHOLDER}/plugins/infrastructure/tools/{wrapper.name}"
         result = result.replace(placeholder_wrapper, str(wrapper))
     # Catch any remaining placeholders
-    result = result.replace(_PLACEHOLDER, str(Path("/root/cktclaw")))
+    result = result.replace(_PLACEHOLDER, str(_CKTCLAW_DIR))
     return result
 
 

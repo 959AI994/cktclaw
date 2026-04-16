@@ -24,7 +24,11 @@ from cktclaw.harness import (
     TaskStatus,
 )
 
-_AGENTS_ROOT = Path("/root/digital-chip-design-agents/plugins")
+import os as _os
+_AGENTS_ROOT = Path(_os.environ.get(
+    "CHIP_AGENTS_ROOT",
+    str(Path(__file__).parent.parent.parent.resolve() / "digital-chip-design-agents" / "plugins"),
+))
 
 # (domain_dir, skill_subdir, orchestrator_file, skill_name, display_name, aliases, description, when_to_use)
 _DOMAINS = [

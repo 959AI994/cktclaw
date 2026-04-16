@@ -53,9 +53,28 @@ pip install -e ".[full]"
 
 ### Option 2: Docker (batteries included)
 
+The image ships with Yosys, ABC, Verilator, OpenSTA, SymbiYosys, nextpnr, AI4EDA Toolkit, and all 14-domain orchestrators pre-installed.
+
 ```bash
-docker pull 959ai994/cktclaw:latest
-docker run -it --rm 959ai994/cktclaw
+# Build from source (first build ~20-30 min, cached afterwards)
+git clone git@github.com:959AI994/cktclaw.git && cd cktclaw
+docker build -t cktclaw .
+
+# Launch (pass your DeepSeek API key)
+docker run -it --rm -e DEEPSEEK_API_KEY="sk-xxx" cktclaw
+
+# Mount local design files into the container
+docker run -it --rm \
+  -e DEEPSEEK_API_KEY="sk-xxx" \
+  -v $(pwd)/designs:/workspace \
+  cktclaw
+```
+
+Or use Docker Compose:
+
+```bash
+# Set DEEPSEEK_API_KEY=sk-xxx in a .env file
+docker compose up
 ```
 
 ### Launch

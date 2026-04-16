@@ -8,6 +8,7 @@ AI4EDA Skill - AI4EDA 数据工具技能
 - 错误自愈
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +32,11 @@ from cktclaw.harness import (
     TaskStatus,
 )
 
-AI4EDA_BIN = "/home/wjx/pythonproject/AI4EDA-OpenABC-Data-Toolkit/ai4eda-toolkit"
+AI4EDA_BIN = os.environ.get(
+    "AI4EDA_BIN",
+    str(Path(__file__).parent.parent.parent.resolve() / "AI4EDA-OpenABC-Data-Toolkit" / "ai4eda-toolkit"),
+)
+
 
 
 class AI4EDAInput(BaseModel):

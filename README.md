@@ -53,9 +53,28 @@ pip install -e ".[full]"
 
 ### 方式二：Docker（开箱即用）
 
+镜像内置 Yosys、ABC、Verilator、OpenSTA、SymbiYosys、nextpnr 等 EDA 工具链，以及 AI4EDA Toolkit 和 14 域 Orchestrator，无需额外安装。
+
 ```bash
-docker pull 959ai994/cktclaw:latest
-docker run -it --rm 959ai994/cktclaw
+# 从源码构建镜像（首次约 20-30 分钟，后续有缓存）
+git clone git@github.com:959AI994/cktclaw.git && cd cktclaw
+docker build -t cktclaw .
+
+# 启动（传入你的 DeepSeek API Key）
+docker run -it --rm -e DEEPSEEK_API_KEY="sk-xxx" cktclaw
+
+# 如需挂载本地设计文件到容器
+docker run -it --rm \
+  -e DEEPSEEK_API_KEY="sk-xxx" \
+  -v $(pwd)/designs:/workspace \
+  cktclaw
+```
+
+也可以用 Docker Compose：
+
+```bash
+# 在 .env 文件中设置 DEEPSEEK_API_KEY=sk-xxx
+docker compose up
 ```
 
 ### 启动
