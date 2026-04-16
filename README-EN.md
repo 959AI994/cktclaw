@@ -77,9 +77,20 @@ Or use Docker Compose:
 docker compose up
 ```
 
+### Option 3: One-Click Script (auto-installs EDA tools + dependencies)
+
+```bash
+git clone git@github.com:959AI994/cktclaw.git && cd cktclaw
+bash setup.sh            # Full install (Yosys/ABC/Verilator/OpenSTA etc.)
+bash setup.sh --minimal  # Python deps only, skip EDA tools
+```
+
+The script handles: Conda env → `pip install -e .` → download oss-cad-suite → build OpenSTA → clone digital-chip-design-agents + AI4EDA Toolkit → generate `.env` + `activate.sh`.
+
 ### Launch
 
 ```bash
+source activate.sh  # Activate env (first time; can skip afterwards)
 cktclaw
 ```
 

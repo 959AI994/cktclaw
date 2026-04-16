@@ -77,9 +77,20 @@ docker run -it --rm \
 docker compose up
 ```
 
+### 方式三：一键脚本（自动安装 EDA 工具链 + 依赖仓库）
+
+```bash
+git clone git@github.com:959AI994/cktclaw.git && cd cktclaw
+bash setup.sh            # 完整安装（含 Yosys/ABC/Verilator/OpenSTA 等）
+bash setup.sh --minimal  # 仅 Python 依赖，跳过 EDA 工具
+```
+
+脚本自动完成：Conda 环境创建 → `pip install -e .` → 下载 oss-cad-suite → 编译 OpenSTA → 克隆 digital-chip-design-agents + AI4EDA Toolkit → 生成 `.env` + `activate.sh`。
+
 ### 启动
 
 ```bash
+source activate.sh  # 首次激活环境（之后可省略）
 cktclaw
 ```
 
