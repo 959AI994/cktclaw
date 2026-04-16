@@ -30,8 +30,9 @@ CktClaw 是一个面向芯片设计的**多智能体 AI 终端**。你只需用�
 - **智能上下文管理** — 四层记忆架构 + 自动压缩，长对话不丢失关键信息
 - **电路逆向工程** — AIG → Verilog 语义恢复，支持 AI 问答分析
 - **多引擎支持** — LogicRT 本地推理 + DeepSeek 云端增强，运行时一键切换
-
 ---
+
+<img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
 
 ## 🚀 一键部署
 
