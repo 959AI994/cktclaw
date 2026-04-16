@@ -495,6 +495,37 @@ class LogicRTCLI:
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
+        # ━━━━━━━━━━ EDA Tool Detection + MCP Config ━━━━━━━━━━
+        try:
+            from .eda_tools.tool_detection import detect_all_tools, write_tool_manifest
+            from .mcp.mcp_config import generate_mcp_configs, write_internal_mcp_config, write_claude_settings
+            from .mcp.mcp_manager import MCPServerManager
+            from pathlib import Path as _Path
+
+            manifest = detect_all_tools()
+            self.state._tool_manifest = manifest
+
+            _manifest_path = _Path(__file__).parent / "tool-manifest.json"
+            write_tool_manifest(manifest, _manifest_path)
+
+            servers = generate_mcp_configs(manifest)
+            _mcp_cfg = _Path(__file__).parent / "mcp" / "mcp-servers.json"
+            write_internal_mcp_config(servers, _mcp_cfg)
+
+            _claude_cfg = _Path(__file__).parent / ".claude" / "settings.json"
+            write_claude_settings(servers, _claude_cfg)
+
+            self.state._mcp_manager = MCPServerManager(_mcp_cfg)
+
+            _found = len(manifest.found_tools())
+            _mcp_n = len(servers)
+            console.print(
+                f"[dim]🔍 EDA tools: {_found} found, "
+                f"{_mcp_n} MCP servers configured[/dim]"
+            )
+        except Exception as e:
+            console.print(f"[dim]⚠️ Tool detection: {e}[/dim]")
+
         # ━━━━━━━━━━ Load Project Behavior (.cktclaw/) ━━━━━━━━━━
         try:
             from .bootstrap import WorkspaceParser, inject_project_behavior

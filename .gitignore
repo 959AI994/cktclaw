@@ -55,3 +55,8 @@ verify_integration.py
 innovation_todo.md
 data
 todo
+
+# Generated runtime artifacts
+tool-manifest.json
+mcp/mcp-servers.json
+.claude/settings.json

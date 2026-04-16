@@ -90,6 +90,21 @@
 - **Pareto Multi-Agent Negotiation**：驱动帕累托最优 PPA 的博弈论多智能体协商协议
 - **自主综合配方**：基于 ASAP7 的面积/时延估计，驱动 ABC/Yosys 的自主演化优化序列
 
+### 7. Orchestrator 状态机 · Multi-Stage Orchestrator
+- **14 域 Orchestrator 解析**：从 Markdown 自动提取 Stage Sequence、Loop-Back Rules、Sign-off Criteria
+- **LLM 驱动的阶段执行**：每个 stage 构建专属 prompt，通过 QueryLoop 调用 LLM + 工具
+- **Loop-Back 与 Escalation**：stage 失败时按规则自动回退重试，超限自动升级处理
+
+### 8. MCP Server 集成 · MCP Server Integration
+- **模板驱动配置**：从 `digital-chip-design-agents` 读取 10 个 MCP 模板，自动解析为绝对路径
+- **按需生命周期管理**：`MCPServerManager` 管理 MCP 进程启停，orchestrator 按需启动
+- **三级执行优先级**：MCP server > Wrapper script > Direct execution
+
+### 9. EDA 工具自动检测 · EDA Tool Auto-Detection
+- **20+ 开源 + 7 商业工具**：通过 `shutil.which` + `--version` 自动检测工具可用性
+- **Wrapper 可执行性检查**：验证 8 个 wrapper 脚本的存在性和权限
+- **启动时自动运行**：结果缓存到 `CLIState`，写入 `tool-manifest.json`
+
 ---
 
 ## ✨ 功能特性 · Features
@@ -155,6 +170,12 @@
 - **Yosys**: 开源综合框架
 - **OpenSTA**: 静态时序分析
 - 所有工具支持交互式终端
+
+### 🔗 芯片设计全流程 Orchestrator · Chip Design Orchestrator
+- **14 个芯片设计领域**：architecture / RTL / verification / formal / synthesis / DFT / STA / HLS / PD / SoC / compiler / firmware / FPGA / infrastructure
+- **多阶段状态机**：从 orchestrator markdown 解析 stage pipeline，自动流转、loop-back、sign-off
+- **MCP + Wrapper + Direct 三级调用**：按工具可用性自动选择执行路径
+- **工具自动检测**：启动时扫描 20+ 开源 + 7 商业 EDA 工具，生成 tool-manifest.json
 
 ### 🤖 多引擎支持 · Multi-Engine Support
 - **LogicRT**: 本地推理引擎（默认）
@@ -674,7 +695,32 @@ cktclaw/
 │   └── session_handler.py           # 会话管理
 ├── eda_tools/                       # EDA 工具运行器
 │   ├── abc_runner.py                # ABC 包装器
-│   └── yosys_runner.py              # Yosys 包装器
+│   ├── yosys_runner.py              # Yosys 包装器
+│   ├── opensta_runner.py            # OpenSTA 包装器
+│   ├── wrapper_runner.py            # Wrapper 脚本通用运行器
+│   ├── tool_detection.py            # 工具自动检测（20+ 开源 + 7 商业）
+│   └── wrappers/                    # EDA 工具 wrapper 脚本
+│       ├── wrap-yosys.sh
+│       ├── wrap-opensta.sh
+│       ├── wrap-openroad.sh
+│       ├── wrap-verilator-sim.sh
+│       ├── wrap-klayout.sh
+│       ├── wrap-bambu.sh
+│       ├── wrap-gem5.sh
+│       └── wrap-symbiflow.sh
+│
+├── mcp/                             # MCP Server 管理
+│   ├── mcp-adapter.py              # 通用 MCP adapter（无状态）
+│   ├── mcp-session-adapter.py      # Tcl 会话 MCP adapter（有状态）
+│   ├── mcp_config.py               # MCP 配置生成（从模板 + 检测结果）
+│   └── mcp_manager.py              # MCP server 生命周期管理
+│
+├── orchestrator/                    # Orchestrator 状态机引擎
+│   ├── parser.py                   # Orchestrator markdown 解析器
+│   ├── state_machine.py            # 多阶段状态机（stage 流转 / loop-back / sign-off）
+│   ├── engine.py                   # 执行引擎（状态机 + LLM 驱动）
+│   └── prompt_builder.py           # 按 stage 构建 LLM prompt
+│
 └── ui/                              # 用户界面
     ├── colors.py                    # 颜色方案
     └── renderer.py                  # Rich 组件
@@ -710,6 +756,12 @@ LLMVerilogAnalyzer (Facade)
     ├─ 并行执行独立工具
     └─ 串行执行依赖工具
     ↓
+Orchestrator 状态机（芯片设计技能）
+    ├─ 解析 orchestrator markdown → OrchestratorSpec
+    ├─ 逐 stage 构建 prompt → 调用 LLM
+    ├─ 评估 QoR → proceed / loop_back / escalate
+    └─ MCP / Wrapper / Direct 三级调用 EDA 工具
+    ↓
 响应存储 → SQLite
 ```
 
@@ -738,6 +790,17 @@ LLMVerilogAnalyzer (Facade)
 ```bash
 /model                 # 交互式模型选择
 /engine <name>         # 切换分析引擎
+```
+
+### 芯片设计全流程 · Chip Design Orchestrator
+```bash
+/chip-design-skills              # 进入芯片设计子 REPL
+                                 # 提示符：CktClaw[chip-design-skills]>
+  /chip-synthesis                # 进入逻辑综合领域
+  /chip-verification             # 进入功能验证领域
+  /chip-rtl                      # 进入 RTL 设计领域
+  /chip-sta                      # 进入静态时序分析领域
+  ..                             # 返回上一级 / 主界面
 ```
 
 ### 学术工作流 · Innovation Workflows

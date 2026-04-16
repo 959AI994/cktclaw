@@ -71,6 +71,9 @@
 - 📊 **AI4EDA Data Pipeline**: Large-scale dataset processing with PyG/GraphML support
 - 🏗️ **Provider Architecture**: Clean BaseLLMProvider abstraction for hot-swappable LLM backends
 - 🔬 **Innovation Workflows**: RLTF synthesis optimization + Pareto multi-agent PPA negotiation
+- 🎛️ **Multi-Stage Orchestrator**: LLM-driven stage execution with loop-back rules and sign-off criteria across 14 chip design domains
+- 🔗 **MCP Server Integration**: Template-driven config generation with lifecycle management and MCP > Wrapper > Direct preference hierarchy
+- 🔍 **EDA Tool Auto-Detection**: Scans 20+ open-source and 7 proprietary tools at startup, generates `tool-manifest.json`
 
 ---
 
@@ -124,6 +127,13 @@ Transform gate-level AIG files into readable, structured Verilog RTL code with A
 - **Yosys**: Open-source synthesis framework
 - **OpenSTA**: Static timing analysis
 - **Custom Tools**: Easy integration via skill system
+
+### 🎛️ Chip Design Orchestrator
+
+- **14 Design Domains**: Architecture / RTL / Verification / Formal / Synthesis / DFT / STA / HLS / Physical Design / SoC / Compiler / Firmware / FPGA / Infrastructure
+- **Multi-Stage State Machine**: Parses orchestrator markdown into stage pipelines with automatic progression, loop-back, and sign-off
+- **MCP + Wrapper + Direct**: Three-tier execution hierarchy, automatically selected based on tool availability
+- **Tool Auto-Detection**: Scans 20+ open-source and 7 proprietary EDA tools at startup, generates `tool-manifest.json`
 
 ---
 
@@ -213,6 +223,17 @@ CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 /model                 # Interactive model selection menu
 /engine <name>         # Switch analysis engine
                        # Options: logicrt (local), deepseek (cloud)
+```
+
+#### Chip Design Orchestrator
+```bash
+/chip-design-skills              # Enter chip design sub-REPL
+                                 # Prompt: CktClaw[chip-design-skills]>
+  /chip-synthesis                # Enter logic synthesis domain
+  /chip-verification             # Enter functional verification domain
+  /chip-rtl                      # Enter RTL design domain
+  /chip-sta                      # Enter static timing analysis domain
+  ..                             # Go back to parent / main REPL
 ```
 
 #### Innovation Workflows
@@ -601,7 +622,28 @@ cktclaw/
 ├── eda_tools/                       # EDA Tool Runners
 │   ├── abc_runner.py                # ABC wrapper
 │   ├── yosys_runner.py              # Yosys wrapper
-│   └── tool_dicts.py                # Tool configurations
+│   ├── opensta_runner.py            # OpenSTA wrapper
+│   ├── wrapper_runner.py            # Generic wrapper script runner
+│   ├── tool_detection.py            # Auto-detection (20+ open-source + 7 proprietary)
+│   ├── tool_dicts.py                # Tool configurations
+│   └── wrappers/                    # EDA tool wrapper scripts
+│       ├── wrap-yosys.sh
+│       ├── wrap-opensta.sh
+│       ├── wrap-openroad.sh
+│       ├── wrap-verilator-sim.sh
+│       └── ... (8 wrappers total)
+│
+├── mcp/                             # MCP Server Management
+│   ├── mcp-adapter.py              # Generic MCP adapter (stateless)
+│   ├── mcp-session-adapter.py      # Tcl session MCP adapter (stateful)
+│   ├── mcp_config.py               # Config generator (templates + detection)
+│   └── mcp_manager.py              # Server lifecycle management
+│
+├── orchestrator/                    # Orchestrator State Machine Engine
+│   ├── parser.py                   # Orchestrator markdown parser
+│   ├── state_machine.py            # Multi-stage FSM (progression / loop-back / sign-off)
+│   ├── engine.py                   # Execution engine (FSM + LLM-driven)
+│   └── prompt_builder.py           # Per-stage LLM prompt construction
 │
 └── ui/                              # User Interface
     ├── colors.py                    # Color schemes
@@ -643,6 +685,12 @@ Tool Orchestration (if tool calls)
     ├─ ToolCallParser extracts tool calls
     ├─ Execute parallel tools concurrently
     └─ Execute serial tools sequentially
+    ↓
+Orchestrator State Machine (chip design skills)
+    ├─ Parse orchestrator markdown → OrchestratorSpec
+    ├─ Per-stage prompt construction → LLM call
+    ├─ Evaluate QoR → proceed / loop_back / escalate
+    └─ MCP / Wrapper / Direct three-tier EDA tool invocation
     ↓
 Store Response → SQLite
     ↓

@@ -129,24 +129,83 @@ _DOMAINS = [
 ]
 
 
-def _make_executor(skill_path: Path, orchestrator_path: Path, display_name: str):
-    """Factory: returns an async executor that serves skill content."""
+def _make_executor(
+    skill_path: Path,
+    orchestrator_path: Path,
+    display_name: str,
+    skill_name: str,
+):
+    """Factory: returns an async executor.
+
+    - Without args: returns SKILL.md + orchestrator markdown (documentation mode).
+    - With args: runs the full orchestrator state-machine flow via LLM.
+    """
     async def executor(args: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         task_manager = get_task_manager()
         task = await task_manager.create_task(TaskType.LOCAL_BASH, f"{display_name} skill")
+
         try:
             content = skill_path.read_text() if skill_path.exists() else f"Skill file not found: {skill_path}"
             orch_content = orchestrator_path.read_text() if orchestrator_path.exists() else ""
 
-            text = f"# {display_name}\n\n{content}"
-            if orch_content:
-                text += f"\n\n---\n\n## Orchestrator\n\n{orch_content}"
+            # ── Documentation mode (no user task) ──────────────────────
+            if not args.strip():
+                text = f"# {display_name}\n\n{content}"
+                if orch_content:
+                    text += f"\n\n---\n\n## Orchestrator\n\n{orch_content}"
+                await task_manager.update_task_status(task.task_id, TaskStatus.COMPLETED)
+                return [{"type": "text", "text": text}]
+
+            # ── Orchestrator execution mode ────────────────────────────
+            if not orch_content or not orchestrator_path.exists():
+                await task_manager.update_task_status(task.task_id, TaskStatus.COMPLETED)
+                return [{"type": "text", "text": f"No orchestrator found for {display_name}; showing skill docs.\n\n{content}"}]
+
+            cli_state = context.get("cli_state")
+            if cli_state is None:
+                await task_manager.update_task_status(task.task_id, TaskStatus.FAILED)
+                return [{"type": "text", "text": "Error: cli_state not available in context."}]
+
+            from cktclaw.orchestrator import parse_orchestrator, OrchestratorEngine
+            from cktclaw.eda_tools.tool_detection import detect_all_tools
+            from cktclaw.mcp.mcp_config import generate_mcp_configs, write_internal_mcp_config
+            from cktclaw.mcp.mcp_manager import MCPServerManager
+
+            spec = parse_orchestrator(orchestrator_path)
+
+            # Lazy-init tool manifest (cached on cli_state)
+            manifest = getattr(cli_state, '_tool_manifest', None)
+            if manifest is None:
+                manifest = detect_all_tools()
+                cli_state._tool_manifest = manifest
+
+            # Lazy-init MCP manager (cached on cli_state)
+            mcp_mgr = getattr(cli_state, '_mcp_manager', None)
+            if mcp_mgr is None:
+                servers = generate_mcp_configs(manifest)
+                mcp_cfg_path = Path(__file__).parent.parent / "mcp" / "mcp-servers.json"
+                write_internal_mcp_config(servers, mcp_cfg_path)
+                mcp_mgr = MCPServerManager(mcp_cfg_path)
+                cli_state._mcp_manager = mcp_mgr
+
+            engine = OrchestratorEngine(
+                spec=spec,
+                skill_md=content,
+                cli_state=cli_state,
+                manifest=manifest,
+                mcp_manager=mcp_mgr,
+            )
+
+            snapshot = await engine.run(args.strip())
 
             await task_manager.update_task_status(task.task_id, TaskStatus.COMPLETED)
-            return [{"type": "text", "text": text}]
+            import json
+            return [{"type": "text", "text": f"## Orchestrator Complete\n\n```json\n{json.dumps(snapshot, indent=2)}\n```"}]
+
         except Exception as e:
             await task_manager.update_task_status(task.task_id, TaskStatus.FAILED)
-            return [{"type": "text", "text": f"Error loading {display_name} skill: {e}"}]
+            return [{"type": "text", "text": f"Error in {display_name}: {e}"}]
+
     return executor
 
 
@@ -167,7 +226,7 @@ def _build_skill(domain_dir, skill_subdir, orchestrator_file,
         user_invocable=True,
         loaded_from=LoadedFrom.PLUGIN,
         source="digital-chip-design-agents",
-        executor=_make_executor(skill_path, orch_path, display_name),
+        executor=_make_executor(skill_path, orch_path, display_name, name),
     )
 
 
