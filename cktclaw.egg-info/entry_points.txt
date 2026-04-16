@@ -1,2 +1,0 @@
-[console_scripts]
-cktclaw = cktclaw.main:main
