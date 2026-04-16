@@ -18,7 +18,7 @@
 
 ---
 
-## 🎯 What is CktClaw?
+## 🎯 CktClaw
 
 CktClaw is a **multi-agent AI terminal for chip design**. Describe your task in natural language, and CktClaw automatically identifies the design domain, orchestrates EDA tools, drives multi-stage workflows, and delivers complete analysis results.
 
