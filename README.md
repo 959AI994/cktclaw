@@ -30,8 +30,9 @@ CktClaw is a **multi-agent AI terminal for chip design**. Describe your task in 
 - **Intelligent context management** — 4-layer memory + automatic compression keeps critical info across long sessions
 - **Circuit reverse engineering** — AIG → Verilog semantic recovery with AI-powered Q&A
 - **Multi-engine support** — Local LogicRT + Cloud DeepSeek, switchable at runtime
-
 ---
+
+<img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
 
 ## 🚀 Quick Start
 
