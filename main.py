@@ -663,9 +663,19 @@ class LogicRTCLI:
             self._run_async_handler(process_reverse(args, self.state))
 
         elif cmd_type == "chat":
-            from .handlers.chat_handler_v2 import process_chat_v2
-            # Run async handler - create new event loop if needed
-            self._run_async_handler(process_chat_v2(user_input, self.state))
+            from .handlers.intent_router import detect_chip_design_intent
+            routed_skill = detect_chip_design_intent(user_input)
+            if routed_skill:
+                console.print(
+                    f"[dim]→ Auto-routed to [bold]{routed_skill}[/bold][/dim]"
+                )
+                from .handlers.chip_design_handler import handle_chip_design
+                self._run_async_handler(
+                    handle_chip_design(routed_skill, user_input, self.state)
+                )
+            else:
+                from .handlers.chat_handler_v2 import process_chat_v2
+                self._run_async_handler(process_chat_v2(user_input, self.state))
 
         elif cmd_type == "model":
             from .handlers.model_handler import select_model_interactive
