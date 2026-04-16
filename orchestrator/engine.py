@@ -42,8 +42,8 @@ def _extract_stage_result(response: str) -> Optional[dict]:
                 return data
         except json.JSONDecodeError:
             continue
-    # Fallback: try to find inline JSON with stage/status
-    m = re.search(r'\{[^{}]*"status"\s*:\s*"(PASS|FAIL|WARN)"[^{}]*\}', response)
+    # Fallback: try to find inline JSON with status (supports one level of nesting)
+    m = re.search(r'\{(?:[^{}]|\{[^{}]*\})*"status"\s*:\s*"(PASS|FAIL|WARN)"(?:[^{}]|\{[^{}]*\})*\}', response)
     if m:
         try:
             return json.loads(m.group(0))

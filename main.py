@@ -517,12 +517,13 @@ class LogicRTCLI:
 
             self.state._mcp_manager = MCPServerManager(_mcp_cfg)
 
-            _found = len(manifest.found_tools())
-            _mcp_n = len(servers)
-            console.print(
-                f"[dim]🔍 EDA tools: {_found} found, "
-                f"{_mcp_n} MCP servers configured[/dim]"
-            )
+            if config.VERBOSE:
+                _found = len(manifest.found_tools())
+                _mcp_n = len(servers)
+                console.print(
+                    f"[dim]🔍 EDA tools: {_found} found, "
+                    f"{_mcp_n} MCP servers configured[/dim]"
+                )
         except Exception as e:
             console.print(f"[dim]⚠️ Tool detection: {e}[/dim]")
 
