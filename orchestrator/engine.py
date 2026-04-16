@@ -204,7 +204,8 @@ class OrchestratorEngine:
         all_skills = await skill_registry.list_skills()
         tools = []
         for skill in all_skills:
-            if skill.user_invocable:
+            # Exclude chip-* orchestrator skills to prevent recursive nesting
+            if skill.user_invocable and not skill.name.startswith("chip-"):
                 tools.append({
                     "type": "function",
                     "function": {
