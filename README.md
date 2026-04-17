@@ -141,6 +141,14 @@ CktClaw > synthesize a 4-bit adder with Yosys, minimize area
 ╰──────────────────────────────────────────────────────────────╯
 ```
 
+Real-world runs — the `chip-rtl` orchestrator analysing an adder through `module_planning → rtl_coding → lint_check → cdc_rdc_analysis → synth_check → rtl_signoff`, driving Yosys / ABC / AI4EDA along the way:
+
+<img src="figure/chip_design_skills.png" alt="Chip design orchestrator walkthrough (1/3)" width="100%" />
+
+<img src="figure/chip_design_skills_2.png" alt="Chip design orchestrator walkthrough (2/3)" width="100%" />
+
+<img src="figure/chip_design_skills_3.png" alt="Chip design orchestrator walkthrough (3/3)" width="100%" />
+
 More examples:
 
 ```bash

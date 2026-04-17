@@ -141,6 +141,14 @@ CktClaw > 用 Yosys 综合一个 4-bit adder，优化目标为最小面积
 ╰──────────────────────────────────────────────────────────────╯
 ```
 
+实际运行截图 — `chip-rtl` orchestrator 分析一个 adder，逐阶段执行 `module_planning → rtl_coding → lint_check → cdc_rdc_analysis → synth_check → rtl_signoff`，过程中自动调用 Yosys / ABC / AI4EDA：
+
+<img src="figure/chip_design_skills.png" alt="芯片设计 orchestrator 实战示例 (1/3)" width="100%" />
+
+<img src="figure/chip_design_skills_2.png" alt="芯片设计 orchestrator 实战示例 (2/3)" width="100%" />
+
+<img src="figure/chip_design_skills_3.png" alt="芯片设计 orchestrator 实战示例 (3/3)" width="100%" />
+
 更多示例：
 
 ```bash
