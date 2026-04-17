@@ -13,6 +13,7 @@ Chat Handler V2 - QueryLoop Integration
 import time
 import asyncio
 import json
+import re
 from typing import Optional, List, Dict, Any
 from rich.console import Console
 
@@ -103,6 +104,25 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
             error_type="error",
         )
         return
+
+    # ━━━━━━━━━━ 1.5. Augment user message with exact file paths ━━━━━━━━━━
+    # Local models (e.g. Qwen 3B) tend to hallucinate paths; pinning them
+    # in the message dramatically reduces wrong-path tool failures.
+    _FILE_PATH_RE = re.compile(
+        r"(/[\w./-]+\.(?:aig|aiger|v|sv|verilog|lib|lef|def|spef|pt|graphml))",
+        re.IGNORECASE,
+    )
+    _paths_in_msg = _FILE_PATH_RE.findall(user_message)
+    if _paths_in_msg and cli_state.current_engine not in ("deepseek",):
+        _path_hint = "、".join(_paths_in_msg)
+        # Append hint to the last user message only (don't touch history)
+        for _msg in reversed(messages_dict):
+            if _msg["role"] == "user":
+                _msg["content"] += (
+                    f"\n\n[重要提示] 本次涉及的文件路径如下，调用工具时必须原样使用，"
+                    f"不得修改或猜测：{_path_hint}"
+                )
+                break
 
     # ━━━━━━━━━━ 2. Initialize LLM analyzer ━━━━━━━━━━
     if cli_state.llm_analyzer is None:

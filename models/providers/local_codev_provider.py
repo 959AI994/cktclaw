@@ -281,8 +281,17 @@ class LocalCodeVProvider(BaseLLMProvider):
 
     # ── Chat Template ──
 
-    def _apply_chat_template_safe(self, messages: List[Dict[str, str]]):
-        """Convert structured messages to model-specific token tensors."""
+    def _apply_chat_template_safe(
+        self,
+        messages: List[Dict[str, str]],
+        tools: Optional[List[Dict]] = None,
+    ):
+        """Convert structured messages to model-specific token tensors.
+
+        When tools is provided, passes them to apply_chat_template so the model
+        uses native function-calling format (e.g. Qwen2.5-Instruct <tool_call> tags).
+        Falls back to plain ChatML if the tokenizer does not support tools parameter.
+        """
         import torch
 
         tokenizer = self._tokenizer
@@ -294,6 +303,23 @@ class LocalCodeVProvider(BaseLLMProvider):
         )
 
         if has_chat_template:
+            # Try with tools first (Qwen2.5-Instruct supports this)
+            if tools:
+                try:
+                    result = tokenizer.apply_chat_template(
+                        messages,
+                        tools=tools,
+                        tokenize=True,
+                        add_generation_prompt=True,
+                        return_tensors="pt",
+                    )
+                    if hasattr(result, 'input_ids'):
+                        return result.input_ids.to(model.device)
+                    return result.to(model.device)
+                except Exception as e:
+                    self._log(f"  [ChatTemplate] apply_chat_template with tools failed: {e}, retrying without tools")
+
+            # Without tools
             try:
                 result = tokenizer.apply_chat_template(
                     messages,
@@ -301,16 +327,13 @@ class LocalCodeVProvider(BaseLLMProvider):
                     add_generation_prompt=True,
                     return_tensors="pt",
                 )
-                # transformers ≥5.x may return BatchEncoding instead of a raw tensor
                 if hasattr(result, 'input_ids'):
-                    prompt_tensor = result.input_ids.to(model.device)
-                else:
-                    prompt_tensor = result.to(model.device)
-                return prompt_tensor
+                    return result.input_ids.to(model.device)
+                return result.to(model.device)
             except Exception as e:
                 self._log(f"  [ChatTemplate] apply_chat_template failed: {e}, falling back to manual ChatML")
 
-        # Fallback: manual ChatML format
+        # Fallback: manual ChatML format (no tool support)
         chatml_text = ""
         for msg in messages:
             chatml_text += f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>\n"
@@ -373,7 +396,7 @@ class LocalCodeVProvider(BaseLLMProvider):
         try:
             import torch
 
-            prompt_tensor = self._apply_chat_template_safe(messages)
+            prompt_tensor = self._apply_chat_template_safe(messages, tools=tools)
             input_len = prompt_tensor.shape[1]
 
             eos_ids = self._get_eos_token_ids()

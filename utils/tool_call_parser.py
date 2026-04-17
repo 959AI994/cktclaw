@@ -44,6 +44,36 @@ class ToolCallParser:
         if self.verbose:
             print(msg)
 
+    # ── Tool name normalization ──
+
+    def _normalize_tool_name(self, name: str) -> str:
+        """Map variant tool names to canonical names.
+
+        Handles:
+          - Leading prefixes: "main._ai4eda" → "ai4eda", "main.yosys" → "yosys"
+          - Leading underscore: "_reverse" → "reverse"
+          - Hyphen/underscore suffixes: "reverse-aig" → "reverse",
+                                        "ai4eda_metrics" → "ai4eda"
+        """
+        if not name:
+            return name
+        # Strip leading "main._" or "main." prefixes
+        for prefix in ("main._", "main."):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
+        # Strip leading underscore
+        if name.startswith("_"):
+            name = name[1:]
+        # If already an exact match, return early
+        if name in self.allowed_tools:
+            return name
+        # Try prefix matching: "reverse-aig" → "reverse", "ai4eda_metrics" → "ai4eda"
+        for tool in self.allowed_tools:
+            if name.startswith(tool + "-") or name.startswith(tool + "_"):
+                return tool
+        return name
+
     def parse(self, text: str) -> Optional[Dict[str, Any]]:
         """
         Extract a tool call from LLM text output.
@@ -55,6 +85,24 @@ class ToolCallParser:
             return None
 
         raw = text.strip()
+
+        # Path -1: Qwen2.5-Instruct native <tool_call>...</tool_call> format
+        tc_match = re.search(
+            r"<tool_call>\s*([\s\S]*?)\s*(?:</tool_call>|$)", text, flags=re.IGNORECASE
+        )
+        if tc_match:
+            inner = tc_match.group(1).strip()
+            # Inner may start with a stray word like "worker" before the JSON; skip to first {
+            brace_idx = inner.find("{")
+            if brace_idx >= 0:
+                inner = inner[brace_idx:]
+            try:
+                obj = json.loads(inner)
+                normalized = self._normalize(obj)
+                if normalized:
+                    return normalized
+            except Exception:
+                pass
 
         # Strip wrapping markdown code fence if present
         if raw.startswith("```"):
@@ -203,6 +251,8 @@ class ToolCallParser:
         if not isinstance(obj, dict):
             return None
         tool_name = obj.get("tool_name") or obj.get("name") or obj.get("tool")
+        # Apply name normalization before checking against allowed list
+        tool_name = self._normalize_tool_name(str(tool_name)) if tool_name else None
         args = obj.get("arguments") or obj.get("args") or {}
         if isinstance(args, str):
             args_s = args.strip()
