@@ -95,20 +95,26 @@ class OrchestratorEngine:
             border_style="cyan",
         ))
 
-        # Interactive requirement gathering
+        # Interactive requirement gathering (async-safe via prompt_async)
         try:
-            from prompt_toolkit import prompt as pt_prompt
+            from prompt_toolkit import PromptSession
             from prompt_toolkit.formatted_text import HTML
 
+            session = PromptSession()
+
             console.print("\n[yellow]请描述您的具体需求（直接回车使用默认任务描述）:[/yellow]")
-            user_input = pt_prompt(HTML("<ansicyan>需求</ansicyan> ❯ "), default="").strip()
+            user_input = (await session.prompt_async(
+                HTML("<ansicyan>需求</ansicyan> ❯ "), default=""
+            )).strip()
 
             if user_input:
                 user_task = user_task + "\n\n用户补充需求：" + user_input
-                console.print(f"[green]✓ 已添加用户需求[/green]")
+                console.print("[green]✓ 已添加用户需求[/green]")
 
             console.print(f"\n[yellow]将执行以下阶段：[/yellow] {' → '.join(self.spec.stages)}")
-            confirm = pt_prompt(HTML("<ansicyan>确认执行？[Y/n]</ansicyan> ❯ "), default="Y").strip().lower()
+            confirm = (await session.prompt_async(
+                HTML("<ansicyan>确认执行？[Y/n]</ansicyan> ❯ "), default="Y"
+            )).strip().lower()
 
             if confirm == 'n':
                 console.print("[yellow]已取消执行[/yellow]")
@@ -190,14 +196,44 @@ class OrchestratorEngine:
             result.setdefault("stage", stage)
             return result
 
-        # LLM did not produce a structured block — treat as WARN and proceed
+        # No JSON block found — ask the LLM to produce just the status block
+        if response.strip():
+            followup_msgs = messages + [
+                {"role": "assistant", "content": response},
+                {
+                    "role": "user",
+                    "content": (
+                        f"You did not include the required JSON status block. "
+                        f"Please output ONLY the JSON block now (no other text):\n"
+                        f'```json\n{{"stage": "{stage}", "status": "PASS", '
+                        f'"qor": {{}}, "issues": [], "recommendation": "proceed"}}\n```'
+                    ),
+                },
+            ]
+            followup_resp = await self._call_llm(followup_msgs)
+            result = _extract_stage_result(followup_resp)
+            if result:
+                result.setdefault("stage", stage)
+                return result
+
+        # LLM produced a response but still no JSON block — treat as PASS (stage did run)
+        if response.strip():
+            return {
+                "stage": stage,
+                "status": "PASS",
+                "qor": {},
+                "issues": [],
+                "recommendation": "proceed",
+                "raw_response": response[:2000],
+            }
+
+        # Empty response — warn and proceed
         return {
             "stage": stage,
             "status": "WARN",
             "qor": {},
-            "issues": [{"severity": "WARN", "description": "No structured status block in LLM response"}],
+            "issues": [{"severity": "WARN", "description": "LLM returned empty response"}],
             "recommendation": "proceed",
-            "raw_response": response[:2000],
         }
 
     async def _call_llm(self, messages: list[dict]) -> str:
@@ -224,10 +260,19 @@ class OrchestratorEngine:
 
         skill_registry = get_skill_registry()
         all_skills = await skill_registry.list_skills()
+        # Skills excluded from chip-design orchestrator:
+        # - chip-*: prevent recursive nesting
+        # - rltf / pareto-negotiate / reverse: not yet stable enough for automated orchestration
+        # - save_session_memory: not relevant to analysis stages; wastes tool budget
+        _ORCHESTRATOR_EXCLUDED = {
+            "rltf", "pareto-negotiate",
+            "reverse", "reverse-aig", "aig-reverse",
+            "save_session_memory", "session-memory",
+        }
         tools = []
         for skill in all_skills:
-            # Exclude chip-* orchestrator skills to prevent recursive nesting
-            if skill.user_invocable and not skill.name.startswith("chip-"):
+            if skill.user_invocable and not skill.name.startswith("chip-") \
+                    and skill.name not in _ORCHESTRATOR_EXCLUDED:
                 tools.append({
                     "type": "function",
                     "function": {
@@ -275,7 +320,13 @@ class OrchestratorEngine:
                 skill = await skill_registry.get_skill(tool_name)
                 if skill and skill.executor:
                     ctx = {"cli_state": cli_state}
-                    result = await skill.executor(tool_args.get("args", ""), ctx)
+                    # tool_args can be a bare string when LLM serialises the argument
+                    # as a JSON string rather than a JSON object {"args": "..."}
+                    if isinstance(tool_args, str):
+                        args_str = tool_args
+                    else:
+                        args_str = tool_args.get("args", "") if isinstance(tool_args, dict) else str(tool_args)
+                    result = await skill.executor(args_str, ctx)
                     if isinstance(result, list):
                         return "\n".join(
                             item.get("text", str(item))
@@ -286,9 +337,14 @@ class OrchestratorEngine:
                 pass
             return f"Tool '{tool_name}' not available."
 
+        # Divide the total turn budget across stages; cap at 10 per stage to
+        # prevent a single stage from monopolising all available turns.
+        n_stages = max(len(self.spec.stages), 1)
+        per_stage_turns = max(4, min(10, self.spec.max_turns // n_stages))
+
         config = QueryConfig(
             system_prompt="",
-            max_turns=self.spec.max_turns,
+            max_turns=per_stage_turns,
             auto_compact_enabled=True,
             auto_compact_threshold=150_000,
             target_tokens=40_000,

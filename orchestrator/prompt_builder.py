@@ -82,15 +82,17 @@ def _build_system_prompt(
 
     parts.append(
         "## Response Format\n"
-        "After completing the stage work, you MUST end your response with a "
-        "JSON block fenced by ```json ... ``` containing:\n"
+        "IMPORTANT: You MUST end your response with EXACTLY this JSON block "
+        "(replace values as appropriate):\n"
+        "```json\n"
+        '{"stage": "<stage_name>", "status": "PASS", "qor": {}, "issues": [], "recommendation": "proceed"}\n'
         "```\n"
-        '{"stage": "<stage_name>", "status": "PASS|FAIL|WARN", '
-        '"qor": {<metric>: <value>, ...}, '
-        '"issues": [{"severity": "ERROR|WARN", "description": "..."}], '
-        '"recommendation": "proceed|loop_back_to:<stage>|escalate"}\n'
-        "```\n"
-        "This block is required for the orchestrator to track progress."
+        "Rules:\n"
+        '- status must be "PASS", "WARN", or "FAIL"\n'
+        '- recommendation must be "proceed", "loop_back_to:<stage>", or "escalate"\n'
+        "- qor can include numeric metrics like {\"area\": 100, \"delay\": 5.2}\n"
+        "- Always include this block even if you have nothing to report — just use the default above.\n"
+        "- Do NOT omit this block. It is required for the orchestrator to advance."
     )
 
     return "\n".join(parts)
@@ -138,8 +140,10 @@ def _build_user_prompt(
     parts.append(f"Current position: **{stage}**")
 
     parts.append(
-        "\n\nExecute this stage now. Use available tools as needed. "
-        "End with the JSON status block."
+        "\n\n**IMPORTANT — Tool Budget**: You have at most **8 tool calls** for this stage. "
+        "Be efficient: do not repeat the same command, do not run exhaustive sweeps. "
+        "Pick the most relevant 1-3 commands, observe the results, then conclude. "
+        "Execute this stage now and end your response with the JSON status block."
     )
 
     return "\n".join(parts)

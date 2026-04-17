@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Tuple, Optional
 
-from config import AI4EDA_TOOLKIT_PATH
+from config import AI4EDA_TOOLKIT_PATH, ABC_PATH as CONFIG_ABC_PATH
 
 # AI4EDA Toolkit 路径（优先使用 CKTCLAW_AI4EDA_PATH 环境变量，其次 config.py 默认值）
 TOOLKIT_PATH = Path(AI4EDA_TOOLKIT_PATH)
@@ -55,14 +55,9 @@ def convert_aig_to_pt(
                 str(pt_file),
             ]
 
-            # 添加 ABC 路径（如果指定）
-            if abc_path:
-                cmd.extend(["--abc-path", abc_path])
-            else:
-                # 尝试从环境变量获取
-                env_abc = os.environ.get("ABC_PATH")
-                if env_abc:
-                    cmd.extend(["--abc-path", env_abc])
+            # 添加 ABC 路径：参数 > 环境变量 > config 默认值
+            effective_abc_cli = abc_path or os.environ.get("ABC_PATH") or CONFIG_ABC_PATH
+            cmd.extend(["--abc-path", effective_abc_cli])
 
             # 执行转换
             result = subprocess.run(
@@ -104,7 +99,8 @@ def convert_aig_to_pt_python_api(
 
         from ai4eda.converters.aig_to_pt import AigToPTConverter
 
-        converter = AigToPTConverter(abc_path=abc_path or os.environ.get("ABC_PATH"))
+        effective_abc = abc_path or os.environ.get("ABC_PATH") or CONFIG_ABC_PATH
+        converter = AigToPTConverter(abc_path=effective_abc)
         success, message = converter.convert(aig_file, pt_file)
 
         return success, message
