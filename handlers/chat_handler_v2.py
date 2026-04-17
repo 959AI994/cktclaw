@@ -195,12 +195,6 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
             tools,  # 传递工具列表
         )
 
-        # Debug: print LLM response
-        if cli_state.console:
-            cli_state.console.print(f"[dim]🔍 LLM Response Type: {type(llm_resp)}[/dim]")
-            if isinstance(llm_resp, str):
-                cli_state.console.print(f"[dim]🔍 LLM Response (first 100 chars): {llm_resp[:100]}...[/dim]")
-
         # Handle None response
         if llm_resp is None:
             return {

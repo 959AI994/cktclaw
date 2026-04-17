@@ -30,8 +30,11 @@ CONTEXT_WINDOW_SIZE = 16384  # Max tokens for context (CodeV/DeepSeek)
 DEFAULT_MAX_TOKENS = 2000  # Max tokens for generation
 INFERENCE_TIMEOUT = 300  # 5 minutes timeout for long AIG processing
 
+# Local chat model configuration (supports HuggingFace Hub ID or local path)
+LOCAL_CHAT_MODEL = os.environ.get("CKTCLAW_LOCAL_MODEL", "")
+
 # CodeV model configuration（对话 / 分析用本地 CodeV）
-# 优先级: 环境变量 CKTCLAW_CODEV_PATH → 并排的 GenEDA CodeV 目录 → 本仓库 models/llm_decoder/CodeV
+# 优先级: 环境变量 CKTCLAW_CODEV_PATH → LOCAL_CHAT_MODEL → 并排的 GenEDA CodeV 目录 → 本仓库 models/llm_decoder/CodeV
 _GENEDA_CODEV = (
     _REPO_ROOT.parent
     / "0reverse"
@@ -44,6 +47,9 @@ _GENEDA_CODEV = (
 _REPO_BUNDLED_CODEV = _REPO_ROOT / "models" / "llm_decoder" / "CodeV"
 if os.environ.get("CKTCLAW_CODEV_PATH"):
     CODEV_PATH = os.environ["CKTCLAW_CODEV_PATH"]
+elif LOCAL_CHAT_MODEL:
+    # Use LOCAL_CHAT_MODEL if specified (supports HF Hub ID like "Qwen/Qwen3.5-2B")
+    CODEV_PATH = LOCAL_CHAT_MODEL
 elif _GENEDA_CODEV.is_dir():
     CODEV_PATH = str(_GENEDA_CODEV.resolve())
 else:
@@ -67,6 +73,12 @@ DEEPSEEK_CONFIG = {
     "temperature": 0.3,
     "max_tokens": 2000,
 }
+
+# ━━━━━━━━━━ AI4EDA Toolkit Configuration ━━━━━━━━━━
+AI4EDA_TOOLKIT_PATH = os.environ.get(
+    "CKTCLAW_AI4EDA_PATH",
+    "/root/AI4EDA-OpenABC-Data-Toolkit/ai4eda-toolkit"
+)
 
 # ━━━━━━━━━━ System Prompt (moved from LLMVerilogAnalyzer) ━━━━━━━━━━
 LOGICRT_SYSTEM_PROMPT = (

@@ -24,8 +24,9 @@ from prompt_toolkit.styles import Style as PromptStyle, merge_styles
 from ..ui import render_spinner, render_error, Icons
 from ..eda_tools.tool_dicts import AI4EDA_COMMANDS
 from ..eda_tools.base_runner import clean_eda_output
+from .. import config
 
-AI4EDA_BIN = "/home/wjx/pythonproject/AI4EDA-OpenABC-Data-Toolkit/ai4eda-toolkit"
+AI4EDA_BIN = config.AI4EDA_TOOLKIT_PATH
 
 GHOST_HINTS = {
 	"convert aig2pt": " <input.aig> <output.pt> (示例: test.aig out.pt)",

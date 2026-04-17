@@ -95,6 +95,28 @@ class OrchestratorEngine:
             border_style="cyan",
         ))
 
+        # Interactive requirement gathering
+        try:
+            from prompt_toolkit import prompt as pt_prompt
+            from prompt_toolkit.formatted_text import HTML
+
+            console.print("\n[yellow]请描述您的具体需求（直接回车使用默认任务描述）:[/yellow]")
+            user_input = pt_prompt(HTML("<ansicyan>需求</ansicyan> ❯ "), default="").strip()
+
+            if user_input:
+                user_task = user_task + "\n\n用户补充需求：" + user_input
+                console.print(f"[green]✓ 已添加用户需求[/green]")
+
+            console.print(f"\n[yellow]将执行以下阶段：[/yellow] {' → '.join(self.spec.stages)}")
+            confirm = pt_prompt(HTML("<ansicyan>确认执行？[Y/n]</ansicyan> ❯ "), default="Y").strip().lower()
+
+            if confirm == 'n':
+                console.print("[yellow]已取消执行[/yellow]")
+                return {"status": "cancelled", "stages": {}}
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]已取消执行[/yellow]")
+            return {"status": "cancelled", "stages": {}}
+
         stage = self.state_machine.start()
         if not stage:
             console.print("[yellow]No stages defined in orchestrator.[/yellow]")

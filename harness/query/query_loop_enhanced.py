@@ -67,6 +67,7 @@ class LoopState:
     has_attempted_reactive_compact: bool = False
     tool_use_blocks: List[Dict[str, Any]] = field(default_factory=list)
     assistant_messages: List[Dict[str, Any]] = field(default_factory=list)
+    called_tool_signatures: set = field(default_factory=set)
 
 
 class EnhancedQueryLoop:
@@ -211,7 +212,7 @@ class EnhancedQueryLoop:
                     )
                     return
 
-                # 8) Run tools (parallel gather)
+                # 8) Run tools (parallel gather) with deduplication
                 yield QueryResult(
                     state=QueryStateEnum.CONTINUING,
                     continue_reason=ContinueReason.TOOL_USE,
@@ -220,12 +221,30 @@ class EnhancedQueryLoop:
                     total_tokens=self.total_tokens,
                 )
 
-                tool_results = await self._execute_tools_parallel(tool_calls)
+                # Filter out duplicate tool calls
+                filtered_calls, skipped_calls = self._filter_duplicate_tools(tool_calls, state)
+
+                if not filtered_calls and skipped_calls:
+                    # All tools were duplicates, inject warning message
+                    warning_msg = {
+                        "role": "tool",
+                        "tool_call_id": skipped_calls[0].get("id", "duplicate"),
+                        "name": "system",
+                        "content": (
+                            "⚠️ 检测到重复工具调用。您已经调用过相同的工具和参数。"
+                            "请直接总结之前的工具输出结果，不要重复调用。"
+                        ),
+                    }
+                    state.messages.append(warning_msg)
+                    state.turn_count += 1
+                    continue
+
+                tool_results = await self._execute_tools_parallel(filtered_calls)
 
                 for result in tool_results:
                     state.messages.append(result)
 
-                self.tool_calls += len(tool_calls)
+                self.tool_calls += len(filtered_calls)
 
                 # 9) Next turn
                 state.turn_count += 1
@@ -325,6 +344,44 @@ class EnhancedQueryLoop:
                 ]
 
         return tool_calls
+
+    def _filter_duplicate_tools(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        state: LoopState
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Filter out duplicate tool calls based on (tool_name, args_hash).
+        Returns (filtered_calls, skipped_calls).
+        """
+        import hashlib
+
+        filtered = []
+        skipped = []
+
+        for tool_call in tool_calls:
+            # Extract tool name and args
+            if "function" in tool_call:
+                tool_name = tool_call["function"]["name"]
+                tool_args = tool_call["function"]["arguments"]
+            elif "type" in tool_call and tool_call["type"] == "tool_use":
+                tool_name = tool_call["name"]
+                tool_args = json.dumps(tool_call.get("input", {}), sort_keys=True)
+            else:
+                filtered.append(tool_call)
+                continue
+
+            # Create signature: (tool_name, args_hash)
+            args_hash = hashlib.md5(str(tool_args).encode()).hexdigest()[:8]
+            signature = (tool_name, args_hash)
+
+            if signature in state.called_tool_signatures:
+                skipped.append(tool_call)
+            else:
+                state.called_tool_signatures.add(signature)
+                filtered.append(tool_call)
+
+        return filtered, skipped
 
     async def _execute_tools_parallel(
         self,
