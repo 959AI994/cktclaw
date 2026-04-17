@@ -29,7 +29,7 @@ CktClaw is a **multi-agent AI terminal for chip design**. Describe your task in 
 - **20+ EDA tools auto-detected** — Scans Yosys, Verilator, OpenSTA, NextPNR, etc. at startup and configures MCP servers automatically
 - **Intelligent context management** — 4-layer memory + automatic compression keeps critical info across long sessions
 - **Circuit reverse engineering** — AIG → Verilog semantic recovery with AI-powered Q&A
-- **Multi-engine support** — Local LogicRT + Cloud DeepSeek, switchable at runtime
+- **Multi-engine support** — Local LogicRT, Local Qwen2.5-3B-Instruct, and Cloud DeepSeek — all switchable at runtime with `/model`
 ---
 
 <img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
@@ -222,7 +222,7 @@ CktClaw > /pareto circuit.aig 10  # Pareto multi-agent PPA negotiation
 | `/rltf [aig] [iter]` | RLTF reinforcement learning optimization |
 | `/pareto [aig] [rounds]` | Pareto multi-agent PPA negotiation |
 | `/chip-design-skills` | Manually browse 14 chip design domains |
-| `/model` | Switch AI engine (LogicRT / DeepSeek) |
+| `/model` | Switch AI engine (LogicRT / Qwen / DeepSeek) |
 | `/session info` | View current session |
 | `/clear` | New session |
 | `/help` | Full help |
@@ -267,6 +267,32 @@ Or switch engines inside CktClaw:
 ```bash
 CktClaw > /model
 ```
+
+### Local Qwen Model (Privacy-First, No API Key)
+
+CktClaw supports [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct) as a lightweight local engine — no internet connection or API key required after download.
+
+**Download the model (~6 GB):**
+
+```bash
+conda activate cktclaw
+python download_qwen.py   # auto-uses ModelScope mirror
+```
+
+**Switch to Qwen inside CktClaw:**
+
+```bash
+CktClaw > /model
+# ↑↓ to navigate, Enter to confirm
+
+  ❯  🤖 Qwen    — 本地推理，Qwen2.5-3B-Instruct，轻量通用
+     💻 LogicRT  — 本地推理，基于 CodeV，快速且隐私
+     ☁️  DeepSeek — 云端 API，ByteDance Volcano Engine
+```
+
+Once selected, Qwen drives all EDA tool calls (Yosys, AI4EDA, etc.) entirely on-device:
+
+<img src="figure/local-qwen-yosys&ai4eda.png" alt="Local Qwen driving Yosys and AI4EDA tool calls" width="100%" />
 
 ### EDA Tools
 

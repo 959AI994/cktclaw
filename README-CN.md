@@ -29,7 +29,7 @@ CktClaw 是一个面向芯片设计的**多智能体 AI 终端**。你只需用�
 - **20+ EDA 工具自动检测** — 启动时扫描 Yosys、Verilator、OpenSTA、NextPNR 等工具，自动配置 MCP server
 - **智能上下文管理** — 四层记忆架构 + 自动压缩，长对话不丢失关键信息
 - **电路逆向工程** — AIG → Verilog 语义恢复，支持 AI 问答分析
-- **多引擎支持** — LogicRT 本地推理 + DeepSeek 云端增强，运行时一键切换
+- **多引擎支持** — 本地 LogicRT、本地 Qwen2.5-3B-Instruct、云端 DeepSeek 三引擎，运行时 `/model` 一键切换
 ---
 
 <img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
@@ -222,7 +222,7 @@ CktClaw > /pareto circuit.aig 10  # Pareto 多智能体协商 PPA
 | `/rltf [aig] [iter]` | RLTF 强化学习优化 |
 | `/pareto [aig] [rounds]` | Pareto 多智能体 PPA 协商 |
 | `/chip-design-skills` | 手动浏览 14 个芯片设计领域 |
-| `/model` | 切换 AI 引擎（LogicRT / DeepSeek） |
+| `/model` | 切换 AI 引擎（LogicRT / Qwen / DeepSeek） |
 | `/session info` | 查看当前会话 |
 | `/clear` | 新建会话 |
 | `/help` | 完整帮助 |
@@ -269,6 +269,32 @@ export DEEPSEEK_API_KEY="your-api-key"
 ```bash
 CktClaw > /model
 ```
+
+### 本地 Qwen 模型（隐私优先，无需 API Key）
+
+CktClaw 内置对 [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct) 的支持，下载一次后完全离线运行，无需联网或 API Key。
+
+**下载模型（约 6 GB）：**
+
+```bash
+conda activate cktclaw
+python download_qwen.py   # 自动使用 ModelScope 镜像加速
+```
+
+**在 CktClaw 内切换到 Qwen：**
+
+```bash
+CktClaw > /model
+# ↑↓ 选择，Enter 确认
+
+  ❯  🤖 Qwen    — 本地推理，Qwen2.5-3B-Instruct，轻量通用
+     💻 LogicRT  — 本地推理，基于 CodeV，快速且隐私
+     ☁️  DeepSeek — 云端 API，ByteDance Volcano Engine
+```
+
+切换后，Qwen 将在本地全程驱动 EDA 工具调用（Yosys、AI4EDA 等）：
+
+<img src="figure/local-qwen-yosys&ai4eda.png" alt="本地 Qwen 驱动 Yosys 与 AI4EDA 工具调用" width="100%" />
 
 ### EDA 工具
 
