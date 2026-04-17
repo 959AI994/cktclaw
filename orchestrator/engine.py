@@ -136,8 +136,20 @@ class OrchestratorEngine:
 
             stage_result = await self._execute_stage(stage, user_task)
 
+            # Guard: _execute_stage should always return a dict
+            if not isinstance(stage_result, dict):
+                import traceback as _tb
+                _msg = (f"_execute_stage returned non-dict ({type(stage_result).__name__}): "
+                        f"{repr(stage_result)[:200]}")
+                with open("/tmp/cktclaw_orchestrator_error.log", "a") as _f:
+                    _f.write(_msg + "\n" + _tb.format_stack()[-4])
+                stage_result = {"stage": stage, "status": "WARN", "qor": {},
+                                "issues": [{"severity": "WARN", "description": _msg}]}
+
             status = stage_result.get("status", "FAIL")
             qor = stage_result.get("qor", {})
+            if not isinstance(qor, dict):
+                qor = {}
 
             self._render_stage_result(console, stage, stage_result)
 
@@ -191,8 +203,12 @@ class OrchestratorEngine:
 
         response = await self._call_llm(messages)
 
+        # Defensive: _call_llm must return str
+        if not isinstance(response, str):
+            response = str(response) if response is not None else ""
+
         result = _extract_stage_result(response)
-        if result:
+        if isinstance(result, dict):
             result.setdefault("stage", stage)
             return result
 
@@ -211,8 +227,10 @@ class OrchestratorEngine:
                 },
             ]
             followup_resp = await self._call_llm(followup_msgs)
+            if not isinstance(followup_resp, str):
+                followup_resp = str(followup_resp) if followup_resp is not None else ""
             result = _extract_stage_result(followup_resp)
-            if result:
+            if isinstance(result, dict):
                 result.setdefault("stage", stage)
                 return result
 
@@ -268,6 +286,8 @@ class OrchestratorEngine:
             "rltf", "pareto-negotiate",
             "reverse", "reverse-aig", "aig-reverse",
             "save_session_memory", "session-memory",
+            # Built-in tool names the LLM may hallucinate — not real skills
+            "Read", "Write", "Bash", "Edit", "Glob", "Grep",
         }
         tools = []
         for skill in all_skills:
@@ -388,14 +408,21 @@ class OrchestratorEngine:
         lines = [f"**Status**: [{color}]{status}[/{color}]"]
         if qor:
             lines.append("**QoR**:")
-            for k, v in qor.items():
-                lines.append(f"  - {k}: {v}")
+            if isinstance(qor, dict):
+                for k, v in qor.items():
+                    lines.append(f"  - {k}: {v}")
+            else:
+                lines.append(f"  - {qor}")
         if issues:
             lines.append("**Issues**:")
             for iss in issues:
-                sev = iss.get("severity", "?")
-                desc = iss.get("description", "")
-                lines.append(f"  - [{sev}] {desc}")
+                if isinstance(iss, dict):
+                    sev = iss.get("severity", "?")
+                    desc = iss.get("description", "")
+                    lines.append(f"  - [{sev}] {desc}")
+                else:
+                    # LLM sometimes returns plain strings in issues list
+                    lines.append(f"  - [?] {iss}")
 
         console.print(Panel(
             "\n".join(lines),

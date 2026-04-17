@@ -207,6 +207,10 @@ def _make_executor(
             return [{"type": "text", "text": f"## Orchestrator Complete\n\n```json\n{json.dumps(snapshot, indent=2)}\n```"}]
 
         except Exception as e:
+            import traceback as _tb
+            _tb_str = _tb.format_exc()
+            with open("/tmp/cktclaw_orchestrator_error.log", "w") as _f:
+                _f.write(_tb_str)
             await task_manager.update_task_status(task.task_id, TaskStatus.FAILED)
             return [{"type": "text", "text": f"Error in {display_name}: {e}"}]
 
