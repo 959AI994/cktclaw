@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from datetime import datetime
+from .. import config
 
 if TYPE_CHECKING:
     from ..main import CLIState
@@ -73,7 +74,7 @@ async def _list_sessions(state: "CLIState", console: Console) -> None:
         session_id = session["session_id"]
         session_title = session.get("session_title") or "(无标题)"
         project_name = session.get("project_name") or "-"
-        model_choice = session.get("model_choice", "logicrt")
+        model_choice = session.get("model_choice", config.DEFAULT_ENGINE)
         updated_at = session.get("updated_at", "")
         total_compactions = session.get("total_compactions", 0)
 
@@ -140,7 +141,7 @@ async def _switch_session(state: "CLIState", console: Console, session_id: str) 
     # 切换会话
     state.session_id = session_id
     state.project_name = session_info.get("project_name")
-    state.model_choice = session_info.get("model_choice", "logicrt")
+    state.model_choice = session_info.get("model_choice", config.DEFAULT_ENGINE)
 
     session_title = session_info.get("session_title", "(无标题)")
 

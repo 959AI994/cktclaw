@@ -19,8 +19,8 @@ _REPO_ROOT = Path(__file__).resolve().parent
 CLI_DATABASE_PATH = str(Path(__file__).parent / "cktclaw_sessions.db")
 
 # ━━━━━━━━━━ Engine Configuration ━━━━━━━━━━
-DEFAULT_ENGINE = "logicrt"  # "logicrt" or "deepseek"
-AVAILABLE_ENGINES = ["logicrt", "deepseek"]
+DEFAULT_ENGINE = "deepseek"  # "deepseek", "logicrt", or "qwen"
+AVAILABLE_ENGINES = ["deepseek", "logicrt", "qwen"]
 
 # ━━━━━━━━━━ Memory Management ━━━━━━━━━━
 MAX_MEMORY_ROUNDS = 5  # Sliding window size for short memory
@@ -32,6 +32,14 @@ INFERENCE_TIMEOUT = 300  # 5 minutes timeout for long AIG processing
 
 # Local chat model configuration (supports HuggingFace Hub ID or local path)
 LOCAL_CHAT_MODEL = os.environ.get("CKTCLAW_LOCAL_MODEL", "")
+
+# Qwen local model path
+QWEN_MODEL_PATH = os.environ.get(
+    "CKTCLAW_QWEN_PATH",
+    str(_REPO_ROOT / "models" / "qwen" / "Qwen2.5-3B"),
+)
+# Qwen GPU ID: -2 = auto-select, 0/1/… = fixed logical GPU
+QWEN_GPU_ID = int(os.environ.get("CKTCLAW_QWEN_GPU", "-2"))
 
 # CodeV model configuration（对话 / 分析用本地 CodeV）
 # 优先级: 环境变量 CKTCLAW_CODEV_PATH → LOCAL_CHAT_MODEL → 并排的 GenEDA CodeV 目录 → 本仓库 models/llm_decoder/CodeV
@@ -77,7 +85,7 @@ DEEPSEEK_CONFIG = {
 # ━━━━━━━━━━ AI4EDA Toolkit Configuration ━━━━━━━━━━
 AI4EDA_TOOLKIT_PATH = os.environ.get(
     "CKTCLAW_AI4EDA_PATH",
-    "/root/AI4EDA-OpenABC-Data-Toolkit/ai4eda-toolkit"
+    "/root/AI4EDA-OpenABC-Data-Toolkit"
 )
 
 # ━━━━━━━━━━ System Prompt (moved from LLMVerilogAnalyzer) ━━━━━━━━━━

@@ -295,12 +295,17 @@ class LocalCodeVProvider(BaseLLMProvider):
 
         if has_chat_template:
             try:
-                prompt_tensor = tokenizer.apply_chat_template(
+                result = tokenizer.apply_chat_template(
                     messages,
                     tokenize=True,
                     add_generation_prompt=True,
                     return_tensors="pt",
-                ).to(model.device)
+                )
+                # transformers ≥5.x may return BatchEncoding instead of a raw tensor
+                if hasattr(result, 'input_ids'):
+                    prompt_tensor = result.input_ids.to(model.device)
+                else:
+                    prompt_tensor = result.to(model.device)
                 return prompt_tensor
             except Exception as e:
                 self._log(f"  [ChatTemplate] apply_chat_template failed: {e}, falling back to manual ChatML")

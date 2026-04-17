@@ -18,9 +18,11 @@ from ..utils.verilog_parser import VerilogMetricsExtractor
 from ..utils.tool_call_parser import ToolCallParser
 
 try:
-    from ..config import LOGICRT_SYSTEM_PROMPT
+    from ..config import LOGICRT_SYSTEM_PROMPT, QWEN_MODEL_PATH, QWEN_GPU_ID
 except ImportError:
     LOGICRT_SYSTEM_PROMPT = ""
+    QWEN_MODEL_PATH = "models/qwen/Qwen2.5-3B"
+    QWEN_GPU_ID = -2
 
 
 class LLMVerilogAnalyzer:
@@ -48,17 +50,26 @@ class LLMVerilogAnalyzer:
         self.local_provider = LocalCodeVProvider(
             codev_path=codev_path, gpu_id=gpu_id, verbose=verbose
         )
+        self.qwen_provider = LocalCodeVProvider(
+            codev_path=QWEN_MODEL_PATH, gpu_id=QWEN_GPU_ID, verbose=verbose
+        )
         self._tool_parser = ToolCallParser(verbose=verbose)
 
         if verbose:
-            print("  [LLMVerilogAnalyzer] Initialized (dual-engine mode)")
+            print("  [LLMVerilogAnalyzer] Initialized (multi-engine mode)")
             print("    → DeepSeek API: ready")
             print(f"    → Local CodeV : lazy-load from '{codev_path}'")
+            print(f"    → Local Qwen  : lazy-load from '{QWEN_MODEL_PATH}'")
 
     # ── Provider routing ──
 
     def _get_provider(self, model_choice: str) -> BaseLLMProvider:
-        return self.local_provider if model_choice == "local" else self.deepseek_provider
+        if model_choice == "local":
+            return self.local_provider
+        elif model_choice == "qwen":
+            return self.qwen_provider
+        else:
+            return self.deepseek_provider
 
     # ── Public API (backward-compatible) ──
 

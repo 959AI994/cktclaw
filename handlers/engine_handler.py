@@ -83,6 +83,10 @@ def switch_engine(engine_choice: str, cli_state) -> None:
         engine_details["API"] = "ByteDance Volcano Engine (字节跳动火山引擎)"
         engine_details["模型 Model"] = "DeepSeek V3"
         engine_details["类型 Type"] = "云端 Cloud"
+    elif engine_choice == "qwen":
+        engine_details["类型 Type"] = "本地推理 Local"
+        engine_details["模型 Model"] = "Qwen2.5-3B"
+        engine_details["设备 Device"] = "GPU"
     else:  # logicrt
         engine_details["类型 Type"] = "本地推理 Local"
         engine_details["模型 Model"] = "LogicRT (CodeV 融合)"

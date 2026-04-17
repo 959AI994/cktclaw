@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 from typing import Tuple, Optional
 
-# AI4EDA Toolkit 路径
-TOOLKIT_PATH = Path("/home/wjx/pythonproject/AI4EDA-OpenABC-Data-Toolkit")
+from config import AI4EDA_TOOLKIT_PATH
+
+# AI4EDA Toolkit 路径（优先使用 CKTCLAW_AI4EDA_PATH 环境变量，其次 config.py 默认值）
+TOOLKIT_PATH = Path(AI4EDA_TOOLKIT_PATH)
 
 
 def convert_aig_to_pt(

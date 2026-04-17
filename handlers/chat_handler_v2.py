@@ -421,6 +421,8 @@ def _chat_with_messages(analyzer, messages, engine, tools=None):
         model_choice = "local"
     elif engine == "deepseek":
         model_choice = "deepseek"
+    elif engine == "qwen":
+        model_choice = "qwen"
     else:
         model_choice = "local"
 

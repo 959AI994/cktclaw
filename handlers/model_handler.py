@@ -87,6 +87,8 @@ def select_model_interactive(cli_state) -> None:
         options.append(("logicrt", "💻 LogicRT", "本地推理，基于 CodeV，快速且隐私"))
     if "deepseek" in AVAILABLE_ENGINES:
         options.append(("deepseek", "☁️  DeepSeek", "云端 API，ByteDance Volcano Engine"))
+    if "qwen" in AVAILABLE_ENGINES:
+        options.append(("qwen", "🤖 Qwen", "本地推理，Qwen2.5-3B，轻量通用"))
 
     if not options:
         console.print("[red]没有可用的引擎 No engines available[/red]")
@@ -204,6 +206,10 @@ def select_model_interactive(cli_state) -> None:
         engine_details["API"] = "ByteDance Volcano Engine"
         engine_details["模型 Model"] = "DeepSeek V3"
         engine_details["类型 Type"] = "云端推理 Cloud"
+    elif selected_engine == "qwen":
+        engine_details["类型 Type"] = "本地推理 Local"
+        engine_details["模型 Model"] = "Qwen2.5-3B"
+        engine_details["设备 Device"] = "GPU"
     else:
         engine_details["类型 Type"] = "本地推理 Local"
         engine_details["模型 Model"] = "LogicRT (CodeV)"
@@ -219,4 +225,6 @@ def _get_engine_display_name(engine: str) -> str:
         return "LogicRT"
     elif engine == "deepseek":
         return "DeepSeek"
+    elif engine == "qwen":
+        return "Qwen"
     return engine.upper()
