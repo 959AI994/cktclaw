@@ -331,6 +331,29 @@ class LocalCodeVProvider(BaseLLMProvider):
         lines = [line.rstrip() for line in text.split('\n')]
         return '\n'.join(lines).strip()
 
+    # ── Stop Token Helpers ──
+
+    def _get_eos_token_ids(self) -> List[int]:
+        """Build stop-token list: standard EOS + <|im_end|> (ChatML models like Qwen)."""
+        ids = []
+        if self._tokenizer.eos_token_id is not None:
+            ids.append(self._tokenizer.eos_token_id)
+        try:
+            im_end_id = self._tokenizer.convert_tokens_to_ids("<|im_end|>")
+            unk_id = self._tokenizer.unk_token_id
+            if im_end_id is not None and im_end_id != unk_id and im_end_id not in ids:
+                ids.append(im_end_id)
+        except Exception:
+            pass
+        return ids or None
+
+    @staticmethod
+    def _strip_chat_artifacts(text: str) -> str:
+        """Remove any leftover ChatML markers that skip_special_tokens may miss."""
+        for marker in ("<|im_end|>", "<|im_start|>", "<|endoftext|>"):
+            text = text.replace(marker, "")
+        return text.strip()
+
     # ── Interface Methods ──
 
     def chat_with_context(
@@ -353,13 +376,18 @@ class LocalCodeVProvider(BaseLLMProvider):
             prompt_tensor = self._apply_chat_template_safe(messages)
             input_len = prompt_tensor.shape[1]
 
+            eos_ids = self._get_eos_token_ids()
+
             with torch.no_grad():
                 outputs = self._model.generate(
                     prompt_tensor,
-                    max_new_tokens=2048,
+                    max_new_tokens=512,
                     do_sample=True,
                     temperature=0.3,
                     top_p=0.9,
+                    repetition_penalty=1.15,
+                    no_repeat_ngram_size=5,
+                    eos_token_id=eos_ids,
                     pad_token_id=self._tokenizer.pad_token_id
                         or self._tokenizer.eos_token_id,
                 )
@@ -368,6 +396,7 @@ class LocalCodeVProvider(BaseLLMProvider):
             reply = self._tokenizer.decode(
                 generated_tokens, skip_special_tokens=True
             )
+            reply = self._strip_chat_artifacts(reply)
 
             extracted = self._tool_parser.parse(reply)
             if extracted:
@@ -410,6 +439,8 @@ class LocalCodeVProvider(BaseLLMProvider):
             prompt_tensor = self._apply_chat_template_safe(msg_list)
             input_len = prompt_tensor.shape[1]
 
+            eos_ids = self._get_eos_token_ids()
+
             with torch.no_grad():
                 outputs = self._model.generate(
                     prompt_tensor,
@@ -417,6 +448,7 @@ class LocalCodeVProvider(BaseLLMProvider):
                     do_sample=True,
                     temperature=0.3,
                     top_p=0.9,
+                    eos_token_id=eos_ids,
                     pad_token_id=self._tokenizer.pad_token_id
                         or self._tokenizer.eos_token_id,
                 )
@@ -426,7 +458,7 @@ class LocalCodeVProvider(BaseLLMProvider):
                 generated_tokens, skip_special_tokens=True
             )
 
-            return analysis.strip()
+            return self._strip_chat_artifacts(analysis)
 
         except Exception as e:
             if self.verbose:

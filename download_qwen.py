@@ -14,11 +14,11 @@ def download_qwen():
         print("❌ huggingface_hub 未安装，请运行: pip install huggingface_hub")
         sys.exit(1)
 
-    repo_id = "Qwen/Qwen2.5-3B"
-    local_dir = os.path.join(os.path.dirname(__file__), "models", "qwen", "Qwen2.5-3B")
+    repo_id = "Qwen/Qwen2.5-3B-Instruct"
+    local_dir = os.path.join(os.path.dirname(__file__), "models", "qwen", "Qwen2.5-3B-Instruct")
     os.makedirs(local_dir, exist_ok=True)
 
-    print(f"📥 开始下载 {repo_id}")
+    print(f"📥 开始下载 {repo_id}（Instruct 对话版）")
     print(f"📁 保存路径: {local_dir}")
     print("⏳ 下载中（模型约 6GB，请耐心等待）...\n")
 
@@ -35,7 +35,7 @@ def download_qwen():
         )
         print(f"\n✅ 下载完成！模型保存在: {path}")
         print("\n使用方法:")
-        print(f"  export CKTCLAW_LOCAL_MODEL={local_dir}")
+        print(f"  export CKTCLAW_QWEN_PATH={local_dir}")
         print("  python main.py")
         return path
     except KeyboardInterrupt:

@@ -33,10 +33,10 @@ INFERENCE_TIMEOUT = 300  # 5 minutes timeout for long AIG processing
 # Local chat model configuration (supports HuggingFace Hub ID or local path)
 LOCAL_CHAT_MODEL = os.environ.get("CKTCLAW_LOCAL_MODEL", "")
 
-# Qwen local model path
+# Qwen local model path（仅使用 Instruct 对话版）
 QWEN_MODEL_PATH = os.environ.get(
     "CKTCLAW_QWEN_PATH",
-    str(_REPO_ROOT / "models" / "qwen" / "Qwen2.5-3B"),
+    str(_REPO_ROOT / "models" / "qwen" / "Qwen2.5-3B-Instruct"),
 )
 # Qwen GPU ID: -2 = auto-select, 0/1/… = fixed logical GPU
 QWEN_GPU_ID = int(os.environ.get("CKTCLAW_QWEN_GPU", "-2"))
