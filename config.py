@@ -88,6 +88,19 @@ AI4EDA_TOOLKIT_PATH = os.environ.get(
     "/root/AI4EDA-OpenABC-Data-Toolkit"
 )
 
+# ABC executable — prefer yosys-abc from oss-cad-suite, fall back to system abc
+_OSS_YOSYS_ABC = Path("/root/oss-cad-suite/bin/yosys-abc")
+ABC_PATH = os.environ.get(
+    "ABC_PATH",
+    str(_OSS_YOSYS_ABC) if _OSS_YOSYS_ABC.exists() else "abc",
+)
+
+# Default Liberty library for AI4EDA metrics
+AI4EDA_DEFAULT_LIB = os.environ.get(
+    "AI4EDA_DEFAULT_LIB",
+    str(Path(AI4EDA_TOOLKIT_PATH) / "libs" / "asap7.lib"),
+)
+
 # ━━━━━━━━━━ System Prompt (moved from LLMVerilogAnalyzer) ━━━━━━━━━━
 LOGICRT_SYSTEM_PROMPT = (
     "IDENTITY & AUTHORSHIP RULES:\n"

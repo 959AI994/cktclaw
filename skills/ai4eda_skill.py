@@ -37,6 +37,13 @@ AI4EDA_BIN = os.environ.get(
     str(Path(__file__).parent.parent.parent.resolve() / "AI4EDA-OpenABC-Data-Toolkit" / "ai4eda-toolkit"),
 )
 
+# ABC path and default library (from config or env)
+try:
+    from cktclaw.config import ABC_PATH as _ABC_PATH, AI4EDA_DEFAULT_LIB as _DEFAULT_LIB
+except ImportError:
+    _ABC_PATH = os.environ.get("ABC_PATH", "/root/oss-cad-suite/bin/yosys-abc")
+    _DEFAULT_LIB = os.environ.get("AI4EDA_DEFAULT_LIB", "/root/AI4EDA-OpenABC-Data-Toolkit/libs/asap7.lib")
+
 
 
 class AI4EDAInput(BaseModel):
@@ -82,8 +89,11 @@ async def ai4eda_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, 
     )
 
     try:
-        # 构造完整命令
-        full_command = f"{AI4EDA_BIN} {ai4eda_input.command}"
+        # 构造完整命令，自动注入 --abc-path（若用户未显式提供）
+        cmd_args = ai4eda_input.command
+        if "metrics" in cmd_args and "--abc-path" not in cmd_args:
+            cmd_args = cmd_args + f" --abc-path {_ABC_PATH}"
+        full_command = f"{AI4EDA_BIN} {cmd_args}"
 
         # 执行 AI4EDA
         result = subprocess.run(
@@ -182,7 +192,11 @@ AI4EDA_SKILL = SkillDefinition(
         "当需要进行电路格式转换（如 AIG 转 PyTorch、Verilog 转 AIG）或计算电路物理指标（面积、延时、功耗）时使用此技能。"
         "支持的主要命令：metrics（指标分析）、convert（格式转换）。"
     ),
-    argument_hint="AI4EDA 子命令，例如: metrics --lib /path/to/lib.lib circuit.aig 或 convert aig2pt input.aig output.pt",
+    argument_hint=(
+        f"AI4EDA 子命令，例如: "
+        f"metrics --lib /root/AI4EDA-OpenABC-Data-Toolkit/libs/asap7.lib /path/to/circuit.aig "
+        f"或 convert aig2pt input.aig output.pt"
+    ),
     argument_names=["command"],
     allowed_tools=["Bash", "Read", "Write"],
     user_invocable=True,
