@@ -422,7 +422,7 @@ class OrchestratorEngine:
                     lines.append(f"  - [{sev}] {desc}")
                 else:
                     # LLM sometimes returns plain strings in issues list
-                    lines.append(f"  - [?] {iss}")
+                    lines.append(f"  - • {iss}")
 
         console.print(Panel(
             "\n".join(lines),
