@@ -89,10 +89,13 @@ async def ai4eda_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, 
     )
 
     try:
-        # 构造完整命令，自动注入 --abc-path（若用户未显式提供）
+        # 构造完整命令，metrics 子命令自动注入缺失的 --lib 和 --abc-path
         cmd_args = ai4eda_input.command
-        if "metrics" in cmd_args and "--abc-path" not in cmd_args:
-            cmd_args = cmd_args + f" --abc-path {_ABC_PATH}"
+        if "metrics" in cmd_args:
+            if "--lib" not in cmd_args:
+                cmd_args = f"metrics --lib {_DEFAULT_LIB} " + cmd_args[len("metrics"):].lstrip()
+            if "--abc-path" not in cmd_args:
+                cmd_args = cmd_args + f" --abc-path {_ABC_PATH}"
         full_command = f"{AI4EDA_BIN} {cmd_args}"
 
         # 执行 AI4EDA
