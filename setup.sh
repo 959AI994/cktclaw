@@ -225,7 +225,12 @@ fi
 
 cd "${AI4EDA_DIR}"
 pip install -e . -q 2>/dev/null || log_warning "AI4EDA Toolkit pip install 失败（torch-geometric 可能需要手动安装）"
-log_success "AI4EDA Toolkit 就绪"
+
+# 确保所有入口脚本可执行（缺少 +x 会导致"Permission denied"运行时错误）
+find "${AI4EDA_DIR}" -maxdepth 2 \( -name "ai4eda-toolkit" -o -name "*.sh" \) \
+    -type f ! -executable -exec chmod +x {} \; \
+    -exec log_info "已授权可执行: {}" \;
+log_success "AI4EDA Toolkit 就绪: ${AI4EDA_DIR}/ai4eda-toolkit"
 
 # ══════════════════════════════════════════════════════════════════════
 # Step 6: 生成 .env + activate.sh
@@ -246,6 +251,13 @@ export CHIP_AGENTS_ROOT="${AGENTS_DIR}/plugins"
 
 # AI4EDA 工具
 export AI4EDA_BIN="${AI4EDA_DIR}/ai4eda-toolkit"
+export CKTCLAW_AI4EDA_PATH="${AI4EDA_DIR}"
+
+# ABC 可执行文件（优先使用 oss-cad-suite 附带的 yosys-abc）
+export ABC_PATH="${DEPS_DIR}/oss-cad-suite/bin/yosys-abc"
+
+# AI4EDA 默认 Liberty 库（ASAP7）
+export AI4EDA_DEFAULT_LIB="${AI4EDA_DIR}/libs/asap7.lib"
 
 # DeepSeek API（请替换为你的 key）
 # export DEEPSEEK_API_KEY="sk-xxx"
@@ -310,10 +322,15 @@ else
 fi
 
 # AI4EDA
-if [ -f "${AI4EDA_DIR}/ai4eda-toolkit" ]; then
-    log_success "AI4EDA Toolkit"
+AI4EDA_ENTRY="${AI4EDA_DIR}/ai4eda-toolkit"
+if [ -x "${AI4EDA_ENTRY}" ]; then
+    log_success "AI4EDA Toolkit 可执行: ${AI4EDA_ENTRY}"
+elif [ -f "${AI4EDA_ENTRY}" ]; then
+    log_warning "AI4EDA Toolkit 存在但缺少执行权限，正在修复..."
+    chmod +x "${AI4EDA_ENTRY}"
+    log_success "AI4EDA Toolkit 权限已修复: ${AI4EDA_ENTRY}"
 else
-    log_warning "AI4EDA Toolkit 未找到"
+    log_warning "AI4EDA Toolkit 未找到: ${AI4EDA_ENTRY}"
 fi
 
 # ══════════════════════════════════════════════════════════════════════
