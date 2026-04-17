@@ -8,6 +8,16 @@ cktclaw_sessions.db
 # PyTorch model files
 *.pt
 
+# Downloaded LLM models (Qwen, etc.)
+models/qwen/
+models/llm_decoder/CodeV/
+*.safetensors
+*.bin
+*.h5
+*.onnx
+*.msgpack
+*.gguf
+
 # Test data
 test/
 

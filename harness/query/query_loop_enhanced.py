@@ -99,8 +99,8 @@ class EnhancedQueryLoop:
         self.compactions = 0
 
         self.budget = TokenBudget(
-            max_tokens=config.token_budget if hasattr(config, 'token_budget') else 500_000,
-            max_cost=config.max_budget_usd if hasattr(config, 'max_budget_usd') else 10.0,
+            max_tokens=getattr(config, 'token_budget', None) or 500_000,
+            max_cost=getattr(config, 'max_budget_usd', None) or 10.0,
         )
 
         self.max_retries = 3
