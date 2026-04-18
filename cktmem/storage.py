@@ -158,6 +158,23 @@ class Storage:
             return dict(row)
         return None
 
+    async def delete_session(self, session_id: str) -> bool:
+        """
+        Remove a session row. Dependent rows (messages, compact_history, session_memories)
+        are removed when FOREIGN KEY constraints are enabled (PRAGMA foreign_keys=ON).
+        """
+        conn = self._get_connection()
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            cur = conn.execute(
+                "DELETE FROM sessions WHERE session_id = ?",
+                (session_id,),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
     async def update_session(
         self,
         session_id: str,
