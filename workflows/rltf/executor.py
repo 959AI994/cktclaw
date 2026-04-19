@@ -65,7 +65,6 @@ class RLTFExecutor:
         if not result.success:
             raise RuntimeError(f"Failed to get initial metrics: {result.error}")
 
-        # 解析统计信息
         metrics = self._parse_abc_stats(result.output)
         return metrics
 
@@ -112,16 +111,13 @@ class RLTFExecutor:
             if output_file:
                 commands.append(f"write_aiger {output_file}")
 
-            # 组合成完整命令
+            # 只传 ABC 内联脚本；由 ABCRunner 负责加「-c」和可执行文件路径。
             abc_script = "; ".join(commands)
-            abc_command = f'abc -c "{abc_script}"'
-
-            # 执行 ABC
-            result = self.abc_runner.run(abc_command)
+            result = self.abc_runner.run(abc_script, timeout=timeout)
 
             duration = time.time() - start_time
 
-            # 检查执行结果
+
             if result.error:
                 return ExecutionResult(
                     success=False,
@@ -244,7 +240,7 @@ report_checks -path_delay min
         解析 ABC 统计输出
 
         ABC ps 命令输出格式示例：
-        test                 : i/o =    8/    1  lat =    0  nd =   104  edge =   212  lev =    7
+        test                 : i/o =    8/    1  lat =    0  and =   104   lev =    7
 
         Args:
             output: ABC 输出
@@ -264,21 +260,18 @@ report_checks -path_delay min
             line = line.strip()
 
             # 匹配 ABC ps 输出格式
-            # 格式: name : i/o = X/ Y lat = Z nd = N edge = E lev = L
+            # 格式: name : i/o = X/ Y lat = Z and = N lev = L
             match = re.search(
-                r'nd\s*=\s*(\d+)\s+edge\s*=\s*(\d+)\s+lev\s*=\s*(\d+)',
+                r'and\s*=\s*(\d+)\s+lev\s*=\s*(\d+)',
                 line
             )
 
             if match:
-                node_count = int(match.group(1))
-                edge_count = int(match.group(2))
-                levels = int(match.group(3))
+                and_count = int(match.group(1))
+                levels = int(match.group(2))
 
-                # 使用节点数作为 area 的近似
-                area = node_count
+                area = and_count
 
-                # 使用层级数作为 delay 的近似（假设每层 0.1ns）
                 delay = levels * 0.1
 
                 break

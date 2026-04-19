@@ -24,17 +24,22 @@ class RLTFSequenceGenerator:
 
     # ABC 可用命令列表
     VALID_ABC_COMMANDS = [
-        "strash",      # 结构化哈希
-        "balance",     # 平衡 AIG
-        "rewrite",     # 代数重写
-        "refactor",    # 重构
-        "resub",       # 重新替换
-        "compress",    # 迭代压缩
-        "compress2",   # 高级压缩
-        "retime",      # 重定时
-        "dch",         # 选择哈希
-        "if",          # FPGA 映射
-        "map",         # 标准单元映射
+        "strash",   # 几乎所有操作前都建议 strash
+        "balance",  # 减少层数
+        "rewrite",  # 局部重写 (rw)
+        "rewrite -z", # 带零增益转换的重写 (rwz)
+        "refactor", # 重构 (rf)
+        "refactor -z", # rfz
+        "resub",    # 重新替换 (rs)
+        "resub -z", # rsz
+        "dch",      # 选择哈希 (Choice Generation)
+        "rw",       # alias for rewrite
+        "rwz",      # alias for rewrite -z
+        "rf",       # alias for refactor
+        "rfz",      # alias for refactor -z
+        "rs",       # alias for resub
+        "rsz",      # alias for resub -z
+        "b",        # alias for balance
     ]
 
     def __init__(
@@ -123,27 +128,25 @@ class RLTFSequenceGenerator:
 Your task is to generate ABC command sequences to optimize AIG (And-Inverter Graph) circuits for better PPA (Power, Performance, Area) metrics.
 
 Available ABC commands:
-- strash: Structural hashing (creates AIG structure)
-- balance: Balance the AIG to reduce depth
-- rewrite: Algebraic rewriting for area reduction
-- refactor: Refactoring for area/delay trade-off
-- resub: Resubstitution for area reduction
-- compress: Iterative compression (combines rewrite + refactor)
-- compress2: Advanced compression with more iterations
-- retime: Retiming for delay optimization
-- dch: Don't-care-based hashing
-- if: FPGA technology mapping
-- map: Standard cell technology mapping
+- b: Balance the AIG (reduces levels)
+- rw: Rewrite (area reduction)
+- rwz: Rewrite with zero-gain (explores more area/delay trade-off)
+- rf: Refactor (logic restructuring)
+- rfz: Refactor with zero-gain
+- rs: Resubstitution
+- rsz: Resubstitution with zero-gain
+- dch: Choice generation (crucial for structural hashing)
+- strash: Structural hashing
 
 Guidelines:
 1. Start with 'strash' to create proper AIG structure
-2. Use 'balance' to reduce logic depth
+2. Use 'b' to reduce logic depth
 3. Combine multiple optimization passes for better results
-4. Typical sequence length: 3-8 commands
+4. Typical sequence length: 3-10 commands
 5. Consider the trade-off between area and delay
 
 Output format: Just the semicolon-separated command sequence, e.g.:
-strash; balance; rewrite; refactor"""
+strash; b; rw; rf"""
 
     def _build_prompt(self, context: SequenceGenerationContext) -> str:
         """
@@ -301,16 +304,14 @@ strash; balance; rewrite; refactor"""
         """
         # 预定义的优化序列池
         default_sequences = [
-            "strash; balance; rewrite",
-            "strash; rewrite; refactor",
-            "strash; balance; rewrite; refactor",
-            "strash; rewrite; rewrite; refactor",
-            "strash; balance; rewrite; rewrite; balance",
-            "strash; compress",
-            "strash; compress2",
-            "strash; balance; compress",
-            "strash; rewrite; resub",
-            "strash; balance; rewrite; resub; balance",
+            "strash; b; rw", 
+            "strash; rw; rf",
+            "strash; b; rw; rf",
+            "strash; dch; b; rw; rf; rs",
+            "strash; rw; b; rw; b",
+            "strash; rw; rw; rw; b; rf; rf; b",
+            "strash; rs; rw; rf; rs; rw",
+            "strash; b; rw; rs; b; rf; rw",
         ]
 
         # 根据迭代次数循环选择

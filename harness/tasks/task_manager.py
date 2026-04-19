@@ -166,6 +166,14 @@ class TaskManager:
 
             task.output_offset = os.path.getsize(task.output_file)
 
+    async def append_output(
+        self,
+        task_id: str,
+        output: str,
+    ) -> None:
+        """Append to the task log (alias for :meth:`append_task_output`, used by workflow skills)."""
+        await self.append_task_output(task_id, output)
+
     async def read_task_output(
         self,
         task_id: str,
