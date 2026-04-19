@@ -417,25 +417,70 @@ def _export_session(cli_state) -> None:
 
 
 def _delete_session(session_id: str, cli_state) -> None:
-    """Delete a session."""
+    """Delete a session via CktMem Storage (legacy MemoryManager is no longer used)."""
     console = cli_state.console
 
-    session_id = session_id.strip()
-
-    # Prevent deleting current session
-    if session_id == cli_state.session_id or session_id == cli_state.session_id[:8]:
+    if cli_state.storage is None:
         render_error(
             console,
-            "Cannot delete current session",
+            "Storage not initialized",
             error_type="error",
         )
         return
 
+    raw = session_id.strip()
+
     try:
-        cli_state.memory_manager.delete_session(session_id)
+        conn = cli_state.storage._get_connection()
+
+        rows = conn.execute(
+            """SELECT session_id, session_title FROM sessions
+               WHERE session_id LIKE ?
+               ORDER BY updated_at DESC
+               LIMIT 10""",
+            (f"{raw}%",),
+        ).fetchall()
+
+        conn.close()
+
+        if not rows:
+            render_error(
+                console,
+                f"未找到会话: {raw}",
+                error_type="error",
+            )
+            return
+
+        if len(rows) > 1:
+            console.print("[yellow]⚠[/yellow] 找到多个匹配的会话，请提供更长的 ID:")
+            for row in rows[:5]:
+                sid = row[0]
+                title = row[1] or "(无标题)"
+                console.print(f"  • {sid[:12]}... - {title}")
+            return
+
+        full_id = rows[0][0]
+
+        if full_id == cli_state.session_id:
+            render_error(
+                console,
+                "Cannot delete current session",
+                error_type="error",
+            )
+            return
+
+        ok = asyncio.run(cli_state.storage.delete_session(full_id))
+        if not ok:
+            render_error(
+                console,
+                f"未能删除会话: {full_id}",
+                error_type="error",
+            )
+            return
+
         render_success(
             console,
-            f"Session deleted: {session_id}",
+            f"Session deleted: {full_id[:8]}...",
             title="Deletion Complete",
         )
 
