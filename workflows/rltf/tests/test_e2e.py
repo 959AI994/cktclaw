@@ -32,7 +32,7 @@ class MockABCRunner:
         # 模拟成功的输出
         mock_result = Mock()
         mock_result.stdout = f"""
-test : i/o =    8/    1  lat =    0  nd =   {950 - self.call_count * 10}  edge =   200  lev =    {7 - self.call_count // 5}
+test : i/o =    8/    1  lat =    0  and =   {950 - self.call_count * 10}  lev =    {7 - self.call_count // 5}
         """
         mock_result.stderr = ""
         mock_result.returncode = 0
@@ -150,7 +150,7 @@ class TestEndToEnd:
         try:
             config = RLTFConfig(
                 aig_file_path=aig_file,
-                max_iterations=10,
+                max_iterations=0,
                 target_area=900,
                 target_delay=4.0,
             )
