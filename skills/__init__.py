@@ -9,7 +9,11 @@ from .yosys_skill import YOSYS_SKILL, register_yosys_skill
 from .reverse_skill import REVERSE_SKILL, register_reverse_skill
 from .opensta_skill import OPENSTA_SKILL, register_opensta_skill
 from .ai4eda_skill import AI4EDA_SKILL, register as register_ai4eda_skill
-from .session_memory_skill import SESSION_MEMORY_SKILL, register as register_session_memory_skill
+from .session_memory_skill import (
+    SESSION_MEMORY_SKILL,
+    SESSION_MEMORY_LIST_SKILL,
+    register as register_session_memory_skill,
+)
 from .chip_design_skills import CHIP_DESIGN_SKILLS, register_chip_design_skills
 
 __all__ = [
@@ -24,6 +28,7 @@ __all__ = [
     "AI4EDA_SKILL",
     "register_ai4eda_skill",
     "SESSION_MEMORY_SKILL",
+    "SESSION_MEMORY_LIST_SKILL",
     "register_session_memory_skill",
     "CHIP_DESIGN_SKILLS",
     "register_chip_design_skills",

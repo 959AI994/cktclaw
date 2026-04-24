@@ -25,11 +25,11 @@ from cktclaw.harness import (
 
 
 class SessionMemoryInput(BaseModel):
-    """Session Memory 输入参数"""
-    topic: str = Field(..., description="语义主题（如 circuit_adder, project_requirements）")
-    summary: str = Field(..., description="一行摘要")
-    content: str = Field(..., description="完整内容")
-    memory_type: str = Field(default="general", description="记忆类型：general, circuit, requirement, decision")
+    """Session Memory input parameters."""
+    topic: str = Field(..., description="Semantic topic (for example: circuit_adder, project_requirements)")
+    summary: str = Field(..., description="One-line summary")
+    content: str = Field(..., description="Full content")
+    memory_type: str = Field(default="general", description="Memory type: general, circuit, requirement, decision")
 
 
 async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -47,7 +47,7 @@ async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Di
     if not cli_state:
         return [{
             "type": "text",
-            "text": "❌ 无法获取 CLI 状态"
+            "text": "❌ Unable to get CLI state"
         }]
 
     # 解析输入
@@ -55,7 +55,7 @@ async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Di
     if len(parts) < 3:
         return [{
             "type": "text",
-            "text": "❌ 参数格式错误。格式：<topic>|<summary>|<content>|[memory_type]"
+            "text": "❌ Invalid argument format. Expected: <topic>|<summary>|<content>|[memory_type]"
         }]
 
     topic = parts[0].strip()
@@ -67,7 +67,7 @@ async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Di
     if not topic or not summary or not content:
         return [{
             "type": "text",
-            "text": "❌ topic, summary, content 不能为空"
+            "text": "❌ topic, summary, and content cannot be empty"
         }]
 
     try:
@@ -82,21 +82,60 @@ async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Di
 
         return [{
             "type": "text",
-            "text": f"✅ 已保存到 Session Memory\n\n主题: {topic}\n摘要: {summary}\n类型: {memory_type}"
+            "text": f"✅ Saved to Session Memory\n\nTopic: {topic}\nSummary: {summary}\nType: {memory_type}"
         }]
 
     except Exception as e:
         return [{
             "type": "text",
-            "text": f"❌ 保存失败: {str(e)}"
+            "text": f"❌ Save failed: {str(e)}"
         }]
 
 
-# 定义 Session Memory Skill
+async def session_memory_list_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Read current session memory entries.
+
+    Args:
+        args: Optional max entries as integer string, default 10.
+        context: Execution context.
+    """
+    cli_state = context.get("cli_state")
+    if not cli_state:
+        return [{"type": "text", "text": "❌ Unable to get CLI state"}]
+
+    try:
+        limit = int(args.strip()) if args and args.strip() else 10
+    except ValueError:
+        limit = 10
+
+    limit = max(1, min(limit, 50))
+
+    try:
+        memories = await cli_state.storage.get_session_memories(cli_state.session_id)
+        if not memories:
+            return [{
+                "type": "text",
+                "text": "No saved session memory entries for this session."
+            }]
+
+        lines = [f"Session memory entries (showing up to {limit}):", ""]
+        for idx, mem in enumerate(memories[:limit], start=1):
+            lines.append(
+                f"{idx}. topic={mem.get('topic', '')} | "
+                f"type={mem.get('memory_type', 'general')} | "
+                f"summary={mem.get('summary', '')}"
+            )
+        return [{"type": "text", "text": "\n".join(lines)}]
+    except Exception as e:
+        return [{"type": "text", "text": f"❌ Read failed: {e}"}]
+
+
+# Define Session Memory Skill
 SESSION_MEMORY_SKILL = SkillDefinition(
     name="save_session_memory",
     skill_type=SkillType.TOOL,
-    description="保存重要信息到 Session Memory，用于在当前会话中持久化记忆",
+    description="Persist important information to Session Memory for the current session",
     display_name="Session Memory",
     aliases=["remember", "save_memory"],
     executor=session_memory_executor,
@@ -109,11 +148,30 @@ SESSION_MEMORY_SKILL = SkillDefinition(
     }
 )
 
+SESSION_MEMORY_LIST_SKILL = SkillDefinition(
+    name="list_session_memory",
+    skill_type=SkillType.TOOL,
+    description="List saved session memory entries for current session",
+    display_name="Session Memory List",
+    aliases=["show_memory", "memory_list", "recall_memory"],
+    executor=session_memory_list_executor,
+    argument_hint="[max_entries]",
+    argument_names=["max_entries"],
+    loaded_from=LoadedFrom.BUNDLED,
+    version="1.0.0",
+    metadata={
+        "author": "CktClaw Team",
+        "category": "memory",
+        "tags": ["memory", "session", "read"],
+    }
+)
+
 
 async def register():
-    """注册 Session Memory Skill"""
+    """Register Session Memory skills."""
     await register_skill(SESSION_MEMORY_SKILL)
-    return SESSION_MEMORY_SKILL
+    await register_skill(SESSION_MEMORY_LIST_SKILL)
+    return [SESSION_MEMORY_SKILL, SESSION_MEMORY_LIST_SKILL]
 
 
 if __name__ == "__main__":
