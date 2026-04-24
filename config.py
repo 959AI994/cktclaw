@@ -89,13 +89,14 @@ AI4EDA_TOOLKIT_PATH = os.environ.get(
 )
 
 # ABC executable — prefer yosys-abc from oss-cad-suite, fall back to system abc
-_OSS_YOSYS_ABC = Path("/root/oss-cad-suite/bin/yosys-abc")
-ABC_PATH = os.environ.get(
-    "ABC_PATH",
-    str(_OSS_YOSYS_ABC) if _OSS_YOSYS_ABC.exists() else "abc",
-)
+ABC_PATH = os.environ.get("ABC_PATH")
 
-# Default Liberty library for AI4EDA metrics
+if not ABC_PATH:
+    _OSS_YOSYS_ABC = Path("/root/oss-cad-suite/bin/yosys-abc")
+    try:
+        ABC_PATH = str(_OSS_YOSYS_ABC) if _OSS_YOSYS_ABC.exists() else "abc"
+    except PermissionError:
+        ABC_PATH = "abc"
 AI4EDA_DEFAULT_LIB = os.environ.get(
     "AI4EDA_DEFAULT_LIB",
     str(Path(AI4EDA_TOOLKIT_PATH) / "libs" / "asap7.lib"),
@@ -123,6 +124,10 @@ LOGICRT_SYSTEM_PROMPT = (
     "- yosys: For Yosys synthesis and optimization\n"
     "- reverse: For AIG to Verilog reverse engineering\n"
     "- opensta: For static timing analysis\n\n"
+    "MEMORY SOURCE OF TRUTH (MANDATORY):\n"
+    "- Session memory is stored in cktmem/SQLite, not in MEMORY.md files.\n"
+    "- Do NOT claim you inspected MEMORY.md or a memory directory unless a tool output explicitly contains it.\n"
+    "- When user asks what you remember, first use 'list_session_memory' to check saved memory entries.\n\n"
     "TOOL USAGE EXAMPLES:\n"
     "User: '请分析这个 AIG 的面积和延时'\n"
     "You: Call ai4eda tool with args: 'metrics --lib /path/to/lib.lib /path/to/circuit.aig'\n\n"
@@ -133,12 +138,12 @@ LOGICRT_SYSTEM_PROMPT = (
     "DO NOT stubbornly retry the same or similar commands more than twice.\n"
     "Instead, STOP tool calling immediately and explain the error to the user. Ask the user for help or suggest "
     "an alternative tool (e.g., if `ai4eda` fails, suggest using `yosys` or `abc`).\n\n"
-    "TOOL OUTPUT & BREVITY (MANDATORY — 中文总结与少轮工具):\n"
-    "- 一旦工具返回包含面积、延时、功耗或 metrics 相关结果，你必须在下一轮用**中文**向用户做简洁总结，"
-    "明确写出关键数值与含义；禁止仅重复粘贴原始日志而不解释。\n"
-    "- 同一类工具（例如已调用过 ai4eda、yosys、abc、opensta、reverse 中的任一类且已成功得到可用输出）"
-    "若无新的用户目标或明确的纠错需求，**不得再次调用同类工具**；避免多轮重复试探。\n"
-    "- 默认策略：优先最少轮次完成用户任务；能一次工具调用解决就不要多次。\n\n"
+    "TOOL OUTPUT & BREVITY (MANDATORY — concise English summary, minimal tool rounds):\n"
+    "- Once a tool returns area, delay, power, or other metrics, provide a concise **English** summary in the next turn, "
+    "explicitly stating the key values and their meaning. Do not only paste raw logs without explanation.\n"
+    "- For the same tool category (ai4eda, yosys, abc, opensta, reverse), if you already obtained usable output, "
+    "**do not call the same category again** unless the user provides a new goal or explicit error-correction request.\n"
+    "- Default strategy: finish the task in the fewest turns; if one tool call is enough, do not make multiple calls.\n\n"
     "LOGICRT MODEL IDENTITY RULE:\n"
     "When the user asks what LogicRT is (e.g., 'LogicRT 是什么模型'), you should answer:\n"
     "'LogicRT 模型是由上海交通大学 ACE 实验室的博士研究生王晶鑫和郭士通开发和研究的，"
@@ -233,6 +238,7 @@ COMMANDS 命令:
   /clear                    创建新会话，清除屏幕
   /session info             显示当前会话信息
   /sessions list            列出最近的会话
+  /sessions clear           删除当前项目下除当前会话外的所有会话（需输入 DELETE 确认）
   /help, /?                 显示此帮助信息
   /exit, /quit              退出程序（或按 Ctrl+C）
 
