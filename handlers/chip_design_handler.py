@@ -189,6 +189,7 @@ async def handle_chip_design(skill_name: str, args: str, cli_state) -> None:
         return
 
     context: Dict[str, Any] = {"cli_state": cli_state}
+    rendered_text_parts: List[str] = []
     try:
         result = await skill.executor(args.strip(), context)
     except Exception as e:
@@ -199,6 +200,7 @@ async def handle_chip_design(skill_name: str, args: str, cli_state) -> None:
         for item in result:
             if isinstance(item, dict) and "text" in item:
                 text = item["text"]
+                rendered_text_parts.append(text)
                 console.print(
                     Panel(
                         Markdown(text),
@@ -206,6 +208,31 @@ async def handle_chip_design(skill_name: str, args: str, cli_state) -> None:
                         border_style="cyan",
                     )
                 )
-        return
+    else:
+        text = str(result)
+        rendered_text_parts.append(text)
+        console.print(text)
 
-    console.print(str(result))
+    # Persist chip-domain turns so the next free-form chat turn can summarize them.
+    try:
+        from ..cktmem import MessageRole, MessageType, ContextLayer
+
+        user_content = f"/{skill_name} {args.strip()}".strip()
+        assistant_content = "\n\n".join(p for p in rendered_text_parts if p.strip())
+
+        await cli_state.storage.add_message(
+            session_id=cli_state.session_id,
+            role=MessageRole.USER,
+            content=user_content,
+            msg_type=MessageType.CHAT,
+            layer=ContextLayer.TURN,
+        )
+        await cli_state.storage.add_message(
+            session_id=cli_state.session_id,
+            role=MessageRole.ASSISTANT,
+            content=assistant_content,
+            msg_type=MessageType.CHAT,
+            layer=ContextLayer.TURN,
+        )
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Failed to store chip-design messages: {e}[/yellow]")

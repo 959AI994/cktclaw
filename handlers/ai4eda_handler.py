@@ -25,6 +25,7 @@ from ..ui import render_spinner, render_error, Icons
 from ..eda_tools.tool_dicts import AI4EDA_COMMANDS
 from ..eda_tools.base_runner import clean_eda_output
 from .. import config
+from .abc_handler import _persist_cli_turn
 
 AI4EDA_BIN = config.AI4EDA_TOOLKIT_PATH
 
@@ -178,18 +179,12 @@ def handle_ai4eda(args: str, cli_state) -> None:
 
 		# Memory integration
 		try:
-			cli_state.memory_manager.add_message(
-				cli_state.session_id, "user", f"[用户手动执行了 AI4EDA 脚本]:\n{' '.join(argv)}"
-			)
+			user_text = f"[用户手动执行了 AI4EDA 脚本]:\n{' '.join(argv)}"
 			if success and output_path:
-				cli_state.memory_manager.add_message(
-					cli_state.session_id, "assistant",
-					f"[AI4EDA 执行结果]:\n✅ 转换成功！生成的文件位于: {output_path}\n\n{cleaned or ''}".strip()
-				)
+				assistant_text = f"[AI4EDA 执行结果]:\n✅ 转换成功！生成的文件位于: {output_path}\n\n{cleaned or ''}".strip()
 			else:
-				cli_state.memory_manager.add_message(
-					cli_state.session_id, "assistant", f"[AI4EDA 执行结果]:\n{cleaned or '(无输出)'}"
-				)
+				assistant_text = f"[AI4EDA 执行结果]:\n{cleaned or '(无输出)'}"
+			_persist_cli_turn(cli_state, user_text, assistant_text)
 		except Exception:
 			pass
 

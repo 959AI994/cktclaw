@@ -23,7 +23,7 @@ from ..ui import render_spinner, render_error, Icons
 from ..eda_tools.base_runner import clean_eda_output
 
 # Reuse the shared rendering helpers from abc_handler
-from .abc_handler import _prompt_for_script, _render_tool_output
+from .abc_handler import _persist_cli_turn, _prompt_for_script, _render_tool_output
 
 
 # Module-level singleton
@@ -52,13 +52,11 @@ def handle_yosys(args: str, cli_state) -> None:
     # ── Render result ──────────────────────────────────────────
     if result.error:
         render_error(console, result.error, error_type="error")
-        # Memory integration (error)
         try:
-            cli_state.memory_manager.add_message(
-                cli_state.session_id, "user", f"[用户手动执行了 Yosys 脚本]:\n{args}"
-            )
-            cli_state.memory_manager.add_message(
-                cli_state.session_id, "assistant", f"[Yosys 执行结果]:\n{result.error}"
+            _persist_cli_turn(
+                cli_state,
+                f"[用户手动执行了 Yosys 脚本]:\n{args}",
+                f"[Yosys 执行结果]:\n{result.error}",
             )
         except Exception:
             pass
@@ -70,11 +68,10 @@ def handle_yosys(args: str, cli_state) -> None:
         if result.stderr and result.stderr.strip():
             combined = f"{combined}\n{result.stderr.strip()}".strip()
         cleaned = clean_eda_output("Yosys", combined)
-        cli_state.memory_manager.add_message(
-            cli_state.session_id, "user", f"[用户手动执行了 Yosys 脚本]:\n{args}"
-        )
-        cli_state.memory_manager.add_message(
-            cli_state.session_id, "assistant", f"[Yosys 执行结果]:\n{cleaned or '(无输出)'}"
+        _persist_cli_turn(
+            cli_state,
+            f"[用户手动执行了 Yosys 脚本]:\n{args}",
+            f"[Yosys 执行结果]:\n{cleaned or '(无输出)'}",
         )
     except Exception:
         pass
