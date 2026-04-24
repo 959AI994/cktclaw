@@ -122,6 +122,7 @@ def handle_sessions_command(args: str, cli_state) -> None:
     - /sessions: List recent sessions (default)
     - /sessions list: List recent sessions
     - /sessions delete <session_id>: Delete a session
+    - /sessions clear: Delete all non-current sessions in current project (requires DELETE confirmation)
     - /sessions <session_id>: Switch to a session
 
     Args:
@@ -141,6 +142,9 @@ def handle_sessions_command(args: str, cli_state) -> None:
 
     if subcommand == "list":
         _list_sessions(cli_state, limit=20)
+
+    elif subcommand == "clear":
+        _clear_sessions(cli_state)
 
     elif subcommand == "delete":
         if not extra_args:
@@ -282,6 +286,7 @@ def _list_sessions(cli_state, limit: int = 10) -> None:
         console.print("[dim]💡 提示:[/dim]")
         console.print("[dim]  • /sessions 96e36f87 - 切换到指定会话（直接输入ID，不要尖括号）[/dim]")
         console.print("[dim]  • /sessions delete 96e36f87 - 删除指定会话[/dim]")
+        console.print("[dim]  • /sessions clear - 删除当前项目下除当前会话外的全部会话[/dim]")
         console.print()
 
     except Exception as e:
@@ -490,3 +495,68 @@ def _delete_session(session_id: str, cli_state) -> None:
             f"Failed to delete session: {e}",
             error_type="error",
         )
+
+
+def _clear_sessions(cli_state) -> None:
+    """
+    Delete all non-current sessions for the current project.
+
+    Requires explicit "DELETE" confirmation to avoid accidental data loss.
+    """
+    console = cli_state.console
+
+    if cli_state.storage is None:
+        render_error(console, "Storage not initialized", error_type="error")
+        return
+
+    project_name = os.path.basename(os.getcwd())
+    current_session = cli_state.session_id
+
+    try:
+        conn = cli_state.storage._get_connection()
+        rows = conn.execute(
+            """SELECT session_id FROM sessions
+               WHERE project_name = ? AND session_id != ?""",
+            (project_name, current_session),
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        render_error(console, f"Failed to query sessions: {e}", error_type="error")
+        return
+
+    if not rows:
+        console.print("[dim]No deletable sessions found for current project.[/dim]")
+        return
+
+    count = len(rows)
+    console.print(
+        f"[yellow]About to delete {count} sessions for project '{project_name}' "
+        f"(excluding current session {current_session[:8]}...).[/yellow]"
+    )
+
+    try:
+        from prompt_toolkit import prompt
+        confirm = prompt("Type DELETE to continue: ").strip()
+    except (KeyboardInterrupt, EOFError):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    if confirm != "DELETE":
+        console.print("[yellow]Cancelled. No sessions were deleted.[/yellow]")
+        return
+
+    deleted = 0
+    for row in rows:
+        sid = row[0]
+        try:
+            ok = asyncio.run(cli_state.storage.delete_session(sid))
+            if ok:
+                deleted += 1
+        except Exception:
+            continue
+
+    render_success(
+        console,
+        f"Deleted {deleted}/{count} sessions for project '{project_name}'.",
+        title="Sessions Cleared",
+    )
