@@ -528,17 +528,28 @@ class Storage:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # upsert when UNIQUE(session_id, topic) exists (requires matching DDL)
+        # Keep this robust even if historical DBs do not have
+        # UNIQUE(session_id, topic) defined in DDL.
         cursor.execute("""
-            INSERT INTO session_memories (session_id, topic, summary, content, memory_type, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-            ON CONFLICT(session_id, topic)
-            DO UPDATE SET
-                summary = excluded.summary,
-                content = excluded.content,
-                memory_type = excluded.memory_type,
-                updated_at = datetime('now')
-        """, (session_id, topic, summary, content, memory_type))
+            SELECT id
+            FROM session_memories
+            WHERE session_id = ? AND topic = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+        """, (session_id, topic))
+        row = cursor.fetchone()
+
+        if row:
+            cursor.execute("""
+                UPDATE session_memories
+                SET summary = ?, content = ?, memory_type = ?, updated_at = datetime('now')
+                WHERE id = ?
+            """, (summary, content, memory_type, row[0]))
+        else:
+            cursor.execute("""
+                INSERT INTO session_memories (session_id, topic, summary, content, memory_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """, (session_id, topic, summary, content, memory_type))
 
         conn.commit()
         conn.close()

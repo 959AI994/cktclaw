@@ -8,6 +8,9 @@ the result with Rich panels.
 - ``/abc``  (no args)                        → interactive fallback prompt
 """
 
+import asyncio
+import concurrent.futures
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -44,6 +47,35 @@ ABC_COMMANDS = {
 # Module-level singleton — avoids re-checking PATH every call
 _abc_runner = ABCRunner()
 
+def _persist_cli_turn(cli_state, user_text: str, assistant_text: str) -> None:
+    """Persist a tool turn into cktmem storage for follow-up chat context."""
+    if not getattr(cli_state, "storage", None):
+        return
+
+    async def _save():
+        from ..cktmem import MessageRole, MessageType, ContextLayer
+        await cli_state.storage.add_message(
+            session_id=cli_state.session_id,
+            role=MessageRole.USER,
+            content=user_text,
+            msg_type=MessageType.CHAT,
+            layer=ContextLayer.TURN,
+        )
+        await cli_state.storage.add_message(
+            session_id=cli_state.session_id,
+            role=MessageRole.ASSISTANT,
+            content=assistant_text,
+            msg_type=MessageType.CHAT,
+            layer=ContextLayer.TURN,
+        )
+
+    try:
+        asyncio.run(_save())
+    except RuntimeError:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, _save())
+            future.result()
+
 
 def handle_abc(args: str, cli_state) -> None:
     """
@@ -67,13 +99,11 @@ def handle_abc(args: str, cli_state) -> None:
     # ── Render result ──────────────────────────────────────────
     if result.error:
         render_error(console, result.error, error_type="error")
-        # Persist error to memory (assistant as tool feedback)
         try:
-            cli_state.memory_manager.add_message(
-                cli_state.session_id, "user", f"[用户手动执行了 ABC 脚本]:\n{args}"
-            )
-            cli_state.memory_manager.add_message(
-                cli_state.session_id, "assistant", f"[ABC 执行结果]:\n{result.error}"
+            _persist_cli_turn(
+                cli_state,
+                f"[用户手动执行了 ABC 脚本]:\n{args}",
+                f"[ABC 执行结果]:\n{result.error}",
             )
         except Exception:
             pass
@@ -85,11 +115,10 @@ def handle_abc(args: str, cli_state) -> None:
         if result.stderr and result.stderr.strip():
             combined = f"{combined}\n{result.stderr.strip()}".strip()
         cleaned = clean_eda_output("ABC", combined)
-        cli_state.memory_manager.add_message(
-            cli_state.session_id, "user", f"[用户手动执行了 ABC 脚本]:\n{args}"
-        )
-        cli_state.memory_manager.add_message(
-            cli_state.session_id, "assistant", f"[ABC 执行结果]:\n{cleaned or '(无输出)'}"
+        _persist_cli_turn(
+            cli_state,
+            f"[用户手动执行了 ABC 脚本]:\n{args}",
+            f"[ABC 执行结果]:\n{cleaned or '(无输出)'}",
         )
     except Exception:
         pass

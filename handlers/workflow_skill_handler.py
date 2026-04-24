@@ -100,6 +100,7 @@ async def process_workflow_skill(skill_name: str, args: str, cli_state) -> None:
         effective_args = picked
 
     context: Dict[str, Any] = {"cli_state": cli_state}
+    rendered_text_parts: List[str] = []
     try:
         result = await skill.executor(effective_args, context)
     except Exception as e:
@@ -110,11 +111,40 @@ async def process_workflow_skill(skill_name: str, args: str, cli_state) -> None:
         lines: List[str] = []
         for item in result:
             if isinstance(item, dict) and "text" in item:
-                lines.append(str(item["text"]))
+                text = str(item["text"])
+                lines.append(text)
+                rendered_text_parts.append(text)
             elif isinstance(item, dict):
-                lines.append(str(item))
+                text = str(item)
+                lines.append(text)
+                rendered_text_parts.append(text)
         if lines:
             console.print("\n\n".join(lines))
-        return
+    else:
+        text = str(result)
+        rendered_text_parts.append(text)
+        console.print(text)
 
-    console.print(str(result))
+    # Persist workflow turns so follow-up free-form chat can summarize them.
+    try:
+        from ..cktmem import MessageRole, MessageType, ContextLayer
+
+        user_content = f"/{skill_name} {effective_args}".strip()
+        assistant_content = "\n\n".join(p for p in rendered_text_parts if p.strip())
+
+        await cli_state.storage.add_message(
+            session_id=cli_state.session_id,
+            role=MessageRole.USER,
+            content=user_content,
+            msg_type=MessageType.CHAT,
+            layer=ContextLayer.TURN,
+        )
+        await cli_state.storage.add_message(
+            session_id=cli_state.session_id,
+            role=MessageRole.ASSISTANT,
+            content=assistant_content,
+            msg_type=MessageType.CHAT,
+            layer=ContextLayer.TURN,
+        )
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Failed to store workflow messages: {e}[/yellow]")
