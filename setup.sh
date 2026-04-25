@@ -337,6 +337,10 @@ export CKTCLAW_AI4EDA_PATH="${AI4EDA_DIR}"
 # ABC 可执行文件（优先使用 oss-cad-suite 附带的 yosys-abc）
 export ABC_PATH="${ABC_BIN}"
 
+# AIG->BENCH 输出模式（gate/lut/auto）
+# 默认 gate：避免部分 yosys-abc 输出 LUT BENCH 导致下游 Graph 转换丢失结构
+export CKTCLAW_BENCH_FORMAT="gate"
+
 # AI4EDA 默认 Liberty 库（ASAP7）
 export AI4EDA_DEFAULT_LIB="${AI4EDA_DIR}/libs/asap7.lib"
 
