@@ -27,7 +27,22 @@ from ..eda_tools.base_runner import clean_eda_output
 from .. import config
 from .abc_handler import _persist_cli_turn
 
-AI4EDA_BIN = config.AI4EDA_TOOLKIT_PATH
+def _resolve_ai4eda_bin() -> str:
+	"""Resolve executable path for AI4EDA toolkit."""
+	# Highest priority: explicit binary path
+	env_bin = os.environ.get("AI4EDA_BIN", "").strip()
+	if env_bin:
+		return env_bin
+
+	# Backward-compatible: toolkit root directory
+	toolkit_root = os.environ.get("CKTCLAW_AI4EDA_PATH", "").strip() or str(config.AI4EDA_TOOLKIT_PATH)
+	p = Path(toolkit_root)
+	if p.is_dir():
+		return str(p / "ai4eda-toolkit")
+	return str(p)
+
+
+AI4EDA_BIN = _resolve_ai4eda_bin()
 
 GHOST_HINTS = {
 	"convert aig2pt": " <input.aig> <output.pt> (示例: test.aig out.pt)",
@@ -151,6 +166,23 @@ def handle_ai4eda(args: str, cli_state) -> None:
 			if len(argv) >= 4 and argv[3]:
 				if not os.path.isabs(argv[3]):
 					argv[3] = os.path.abspath(argv[3])
+		# Auto-inject tool paths so users don't need to type them manually.
+		# AI4EDA defaults to "abc", which may be unavailable in many environments
+		# where only "yosys-abc" exists.
+		abc_path = os.environ.get("ABC_PATH", "").strip()
+		if argv and argv[0] == "convert" and len(argv) >= 2:
+			subcmd = argv[1]
+			needs_abc = subcmd in {"aig2bench", "aig2pt", "verilog2pt"}
+			needs_yosys_abc = subcmd in {"verilog2aig", "verilog2pt"}
+
+			if needs_abc and abc_path and "--abc-path" not in argv:
+				argv.extend(["--abc-path", abc_path])
+			if needs_yosys_abc and abc_path and "--yosys-abc-path" not in argv:
+				argv.extend(["--yosys-abc-path", abc_path])
+		elif argv and argv[0] == "metrics":
+			if abc_path and "--abc-path" not in argv:
+				argv.extend(["--abc-path", abc_path])
+
 		with render_spinner(console, f"{Icons.LIGHTNING} Running AI4EDA Toolkit..."):
 			try:
 				result = subprocess.run(
@@ -165,6 +197,13 @@ def handle_ai4eda(args: str, cli_state) -> None:
 				cleaned = clean_eda_output("AI4EDA", combined)
 			except FileNotFoundError:
 				render_error(console, f"找不到可执行文件: {AI4EDA_BIN}", error_type="error")
+				return
+			except PermissionError:
+				render_error(
+					console,
+					f"AI4EDA 路径不可执行: {AI4EDA_BIN}（请确认 AI4EDA_BIN 指向 ai4eda-toolkit 可执行文件）",
+					error_type="error",
+				)
 				return
 			except Exception as e:
 				render_error(console, f"运行出错: {e}", error_type="error")

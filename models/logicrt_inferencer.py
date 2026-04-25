@@ -8,21 +8,54 @@ import time
 from pathlib import Path
 from typing import Tuple, Dict, Any, Optional
 
-# 设置项目根目录
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
-os.chdir(PROJECT_ROOT)
-sys.path.insert(0, str(PROJECT_ROOT))
+def _resolve_logicrt_root() -> Optional[Path]:
+    """Locate LogicRT reverse_engineering root that contains scripts/."""
+    env_root = os.environ.get("CKTCLAW_LOGICRT_ROOT")
+    candidates = []
+    if env_root:
+        candidates.append(Path(env_root).expanduser().resolve())
+
+    # Common local layouts
+    workspace_root = Path(__file__).resolve().parents[2]  # .../pythonproject
+    candidates.extend(
+        [
+            workspace_root / "0reverse" / "GenEDA-main" / "reverse_engineering",
+            workspace_root / "LogicRT",
+            workspace_root / "reverse_engineering",
+        ]
+    )
+
+    for root in candidates:
+        if (root / "scripts" / "inference_single_modal.py").exists():
+            return root
+    return None
+
+
+# Set LogicRT root so `scripts.*` imports work reliably
+LOGICRT_ROOT = _resolve_logicrt_root()
+if LOGICRT_ROOT is not None:
+    os.chdir(LOGICRT_ROOT)
+    if str(LOGICRT_ROOT) not in sys.path:
+        sys.path.insert(0, str(LOGICRT_ROOT))
 
 os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 
 import torch
 
-from scripts.inference_single_modal import (
-    load_trained_model,
-    resolve_prompt_and_instruction,
-    sanitize_generated_verilog,
-)
-from scripts.train_pipeline import fill_instruction_stats
+try:
+    from scripts.inference_single_modal import (
+        load_trained_model,
+        resolve_prompt_and_instruction,
+        sanitize_generated_verilog,
+    )
+    from scripts.train_pipeline import fill_instruction_stats
+except ModuleNotFoundError as e:
+    if e.name == "scripts":
+        raise ModuleNotFoundError(
+            "No module named 'scripts'. Please set CKTCLAW_LOGICRT_ROOT to your "
+            "LogicRT reverse_engineering directory (the one containing scripts/)."
+        ) from e
+    raise
 
 
 class LogicRTInferencer:

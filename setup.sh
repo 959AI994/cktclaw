@@ -107,8 +107,28 @@ pip install --upgrade pip -q
 log_info "安装 CktClaw + 核心依赖..."
 pip install -e . -q
 
-log_info "安装额外推荐包..."
-pip install pydantic aiosqlite networkx openai -q
+# 统一安装 PyTorch/CUDA 栈（避免 NCCL/ABI 冲突）
+log_info "清理可能冲突的 PyTorch/CUDA/PyG 包..."
+pip uninstall -y \
+    torch torchvision torchaudio \
+    torch_cluster torch_scatter torch_sparse \
+    nvidia-nccl-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 \
+    >/dev/null 2>&1 || true
+
+log_info "安装 PyTorch cu128 官方轮子..."
+pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
+    --index-url https://download.pytorch.org/whl/cu128 -q
+
+log_info "安装 requirements.txt 依赖..."
+pip install -r "${PROJECT_ROOT}/requirements.txt" -q
+
+log_info "安装 PyG 扩展依赖（官方 wheel 源）..."
+PYG_WHL="https://data.pyg.org/whl/torch-2.8.0+cu128.html"
+pip install -f "${PYG_WHL}" torch_cluster torch_scatter torch_sparse torch-geometric -q || {
+    log_error "PyG 扩展安装失败，请检查网络/CUDA 兼容性"
+    log_info "可手动执行: pip install -f ${PYG_WHL} torch_cluster torch_scatter torch_sparse torch-geometric"
+    exit 1
+}
 
 log_success "cktclaw 命令已注册: $(which cktclaw)"
 
@@ -290,6 +310,16 @@ ABC_BIN="${OSS_DIR}/bin/yosys-abc"
 if [ ! -x "${ABC_BIN}" ]; then
     ABC_BIN="abc"
 fi
+LOGICRT_ROOT="${PROJECT_ROOT}/0reverse/GenEDA-main/reverse_engineering"
+if [ ! -d "${LOGICRT_ROOT}/scripts" ]; then
+    if [ -d "${PROJECT_ROOT}/../0reverse/GenEDA-main/reverse_engineering/scripts" ]; then
+        LOGICRT_ROOT="$(cd "${PROJECT_ROOT}/../0reverse/GenEDA-main/reverse_engineering" && pwd)"
+    elif [ -d "${PROJECT_ROOT}/../LogicRT/scripts" ]; then
+        LOGICRT_ROOT="$(cd "${PROJECT_ROOT}/../LogicRT" && pwd)"
+    else
+        LOGICRT_ROOT=""
+    fi
+fi
 
 cat > "${PROJECT_ROOT}/.env" << ENVEOF
 # CktClaw 环境变量 — 由 setup.sh 自动生成 ($(date +%Y-%m-%d))
@@ -309,6 +339,9 @@ export ABC_PATH="${ABC_BIN}"
 
 # AI4EDA 默认 Liberty 库（ASAP7）
 export AI4EDA_DEFAULT_LIB="${AI4EDA_DIR}/libs/asap7.lib"
+
+# LogicRT 根目录（用于导入 scripts/inference_single_modal.py）
+export CKTCLAW_LOGICRT_ROOT="${LOGICRT_ROOT}"
 
 # DeepSeek API（请替换为你的 key）
 # export DEEPSEEK_API_KEY="sk-xxx"
@@ -395,6 +428,13 @@ elif [ -f "${AI4EDA_ENTRY}" ]; then
     log_success "AI4EDA Toolkit 权限已修复: ${AI4EDA_ENTRY}"
 else
     log_warning "AI4EDA Toolkit 未找到: ${AI4EDA_ENTRY}"
+fi
+
+# LogicRT scripts
+if [ -n "${LOGICRT_ROOT}" ] && [ -f "${LOGICRT_ROOT}/scripts/inference_single_modal.py" ]; then
+    log_success "LogicRT scripts 可用: ${LOGICRT_ROOT}"
+else
+    log_warning "未检测到 LogicRT scripts 目录；请在 .env 中设置 CKTCLAW_LOGICRT_ROOT"
 fi
 
 # ══════════════════════════════════════════════════════════════════════

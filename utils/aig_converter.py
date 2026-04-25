@@ -23,7 +23,7 @@ def convert_aig_to_pt(
     """
     将 AIG 文件转换为 PyTorch Tensor (.pt) 格式
 
-    优先使用 Python API，失败时回退到命令行方式
+    优先使用命令行子进程方式（隔离 torch/CUDA 初始化），失败时回退到 Python API
 
     Args:
         aig_file: 输入 .aig 文件路径
@@ -40,47 +40,70 @@ def convert_aig_to_pt(
     if not Path(aig_file).exists():
         return False, f"AIG file not found: {aig_file}"
 
-    # 优先尝试 Python API 方式（避免相对导入问题）
+    # Python API 优先：in-process 调用 AigToPTConverter，已验证可用。
+    # （subprocess 路径假设 ai4eda.converters.aig_to_pt 有 __main__ 入口，
+    # 但当前 vendored 副本是纯库模块，python -m 会立即退出且不产出文件，
+    # 这是 "Output file not created" 报错的根因）
+    api_msg = ""
     try:
-        return convert_aig_to_pt_python_api(aig_file, pt_file, abc_path)
+        api_success, api_msg = convert_aig_to_pt_python_api(aig_file, pt_file, abc_path)
+        if api_success:
+            return True, api_msg
     except Exception as api_error:
-        # 回退到命令行方式（使用 -m 参数）
-        try:
-            # 使用 python -m 来避免相对导入问题
-            cmd = [
-                "python",
-                "-m",
-                "ai4eda.converters.aig_to_pt",
-                str(aig_file),
-                str(pt_file),
-            ]
+        api_msg = f"API exception: {api_error}"
 
-            # 添加 ABC 路径：参数 > 环境变量 > config 默认值
-            effective_abc_cli = abc_path or os.environ.get("ABC_PATH") or CONFIG_ABC_PATH
-            cmd.extend(["--abc-path", effective_abc_cli])
+    # CLI 兜底：留给未来 ai4eda 提供 CLI 入口时使用
+    try:
+        cli_success, cli_msg = convert_aig_to_pt_cli(aig_file, pt_file, abc_path, timeout)
+        if cli_success:
+            return True, cli_msg
+        return False, f"API failed ({api_msg}); CLI failed ({cli_msg})"
+    except Exception as cli_error:
+        return False, f"API failed ({api_msg}); CLI exception: {cli_error}"
 
-            # 执行转换
-            result = subprocess.run(
-                cmd,
-                cwd=str(TOOLKIT_PATH),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
 
-            if result.returncode == 0:
-                if Path(pt_file).exists():
-                    return True, f"Converted: {aig_file} -> {pt_file}"
-                else:
-                    return False, f"Output file not created: {pt_file}"
-            else:
-                error_msg = result.stderr if result.stderr else result.stdout
-                return False, f"Conversion failed: {error_msg}"
+def convert_aig_to_pt_cli(
+    aig_file: str,
+    pt_file: str,
+    abc_path: Optional[str] = None,
+    timeout: int = 60,
+) -> Tuple[bool, str]:
+    """
+    使用命令行子进程调用 AI4EDA（推荐）
+    """
+    # 使用 python -m 来避免相对导入问题
+    cmd = [
+        "python",
+        "-m",
+        "ai4eda.converters.aig_to_pt",
+        str(aig_file),
+        str(pt_file),
+    ]
 
-        except subprocess.TimeoutExpired:
-            return False, f"Conversion timeout after {timeout}s"
-        except Exception as e:
-            return False, f"Both API and CLI conversion failed. API error: {api_error}, CLI error: {str(e)}"
+    # 添加 ABC 路径：参数 > 环境变量 > config 默认值
+    effective_abc_cli = abc_path or os.environ.get("ABC_PATH") or CONFIG_ABC_PATH
+    cmd.extend(["--abc-path", effective_abc_cli])
+
+    # 在子进程中固定可见 GPU 到 0..4，避免出现 device=5, num_gpus=5 越界
+    child_env = os.environ.copy()
+    child_env["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4"
+
+    result = subprocess.run(
+        cmd,
+        cwd=str(TOOLKIT_PATH),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=child_env,
+    )
+
+    if result.returncode == 0:
+        if Path(pt_file).exists():
+            return True, f"Converted: {aig_file} -> {pt_file}"
+        return False, f"Output file not created: {pt_file}"
+
+    error_msg = result.stderr if result.stderr else result.stdout
+    return False, f"Conversion failed: {error_msg}"
 
 
 def convert_aig_to_pt_python_api(
@@ -100,7 +123,11 @@ def convert_aig_to_pt_python_api(
         from ai4eda.converters.aig_to_pt import AigToPTConverter
 
         effective_abc = abc_path or os.environ.get("ABC_PATH") or CONFIG_ABC_PATH
-        converter = AigToPTConverter(abc_path=effective_abc)
+        # User-facing hyperparameter:
+        #   CKTCLAW_BENCH_FORMAT=gate|lut|auto
+        # Default to gate to avoid LUT BENCH breaking downstream graph conversion.
+        bench_format = (os.environ.get("CKTCLAW_BENCH_FORMAT", "gate") or "gate").strip().lower()
+        converter = AigToPTConverter(abc_path=effective_abc, bench_format=bench_format)
         success, message = converter.convert(aig_file, pt_file)
 
         return success, message
