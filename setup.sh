@@ -108,7 +108,7 @@ log_info "安装 CktClaw + 核心依赖..."
 pip install -e . -q
 
 log_info "安装额外推荐包..."
-pip install pydantic aiosqlite networkx -q
+pip install pydantic aiosqlite networkx openai -q
 
 log_success "cktclaw 命令已注册: $(which cktclaw)"
 
