@@ -73,3 +73,9 @@ todo
 tool-manifest.json
 mcp/mcp-servers.json
 .claude/settings.json
+
+deps/
+.claude
+bin/
+__pycache__/
+.cktclaw/

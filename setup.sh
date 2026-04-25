@@ -118,14 +118,35 @@ log_success "cktclaw 命令已注册: $(which cktclaw)"
 log_step "Step 3/6: EDA 工具"
 
 mkdir -p "${DEPS_DIR}"
+OSS_DIR="${DEPS_DIR}/oss-cad-suite"
+
+# 优先探测本机已有 oss-cad-suite，避免重复下载
+for candidate in \
+    "${OSS_DIR}" \
+    "${HOME}/.cktclaw-tools/oss-cad-suite" \
+    "${HOME}/oss-cad-suite" \
+    "/opt/oss-cad-suite"; do
+    if [ -x "${candidate}/bin/yosys" ]; then
+        OSS_DIR="${candidate}"
+        break
+    fi
+done
+
+# 若 PATH 中已有 yosys，尝试反推其根目录
+if [ ! -x "${OSS_DIR}/bin/yosys" ] && command_exists yosys; then
+    YOSYS_BIN="$(command -v yosys)"
+    YOSYS_ROOT="$(cd "$(dirname "${YOSYS_BIN}")/.." && pwd)"
+    if [ -x "${YOSYS_ROOT}/bin/yosys" ]; then
+        OSS_DIR="${YOSYS_ROOT}"
+    fi
+fi
 
 if ${MINIMAL}; then
     log_warning "精简模式，跳过 EDA 工具安装"
 else
     # ── 3a: oss-cad-suite (Yosys, ABC, Verilator, SymbiYosys, nextpnr …) ──
-    OSS_DIR="${DEPS_DIR}/oss-cad-suite"
     if [ -d "${OSS_DIR}" ] && [ -x "${OSS_DIR}/bin/yosys" ]; then
-        log_success "oss-cad-suite 已存在，跳过下载"
+        log_success "发现现有 oss-cad-suite，跳过下载: ${OSS_DIR}"
     else
         log_info "下载 oss-cad-suite（含 Yosys / ABC / Verilator / SymbiYosys / nextpnr）..."
         ARCH=$(uname -m)
@@ -136,24 +157,49 @@ else
             PLATFORM="linux-${ARCH}"
         fi
 
-        # 获取最新 release 下载链接
-        OSS_URL="https://github.com/YosysHQ/oss-cad-suite-build/releases/latest/download/oss-cad-suite-${PLATFORM}-$(date +%Y%m%d).tgz"
+        # 获取 release 下载链接（不再用本地日期拼接，避免 404）
         OSS_FALLBACK="https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2024-12-23/oss-cad-suite-${PLATFORM}-20241223.tgz"
 
         TARBALL="${DEPS_DIR}/oss-cad-suite.tgz"
+        # 通过 GitHub API 获取该平台最新可用资产，失败时回退到稳定版
+        OSS_URL=""
+        API_URL="https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest"
+        if command_exists curl; then
+            OSS_URL="$(curl -fsSL "${API_URL}" | grep -Eo "https://[^\" ]*oss-cad-suite-${PLATFORM}-[0-9]{8}\.tgz" | head -n1 || true)"
+        fi
+        if [ -z "${OSS_URL}" ]; then
+            log_warning "无法解析最新 release 资产，使用已知稳定版..."
+            OSS_URL="${OSS_FALLBACK}"
+        fi
+
         log_info "尝试下载: ${OSS_URL}"
         if ! wget -q --show-progress -O "${TARBALL}" "${OSS_URL}" 2>/dev/null && \
            ! curl -fSL -o "${TARBALL}" "${OSS_URL}" 2>/dev/null; then
-            log_warning "最新版下载失败，尝试已知稳定版..."
-            wget -q --show-progress -O "${TARBALL}" "${OSS_FALLBACK}" 2>/dev/null || \
-                curl -fSL -o "${TARBALL}" "${OSS_FALLBACK}" || {
+            if [ "${OSS_URL}" != "${OSS_FALLBACK}" ]; then
+                log_warning "最新版下载失败，尝试已知稳定版..."
+                if ! wget -q --show-progress -O "${TARBALL}" "${OSS_FALLBACK}" 2>/dev/null && \
+                   ! curl -fSL -o "${TARBALL}" "${OSS_FALLBACK}" 2>/dev/null; then
+                    rm -f "${TARBALL}"
+                    log_error "oss-cad-suite 下载失败，请手动下载:"
+                    log_info "  https://github.com/YosysHQ/oss-cad-suite-build/releases"
+                    log_info "  解压到 ${DEPS_DIR}/oss-cad-suite/"
+                    exit 1
+                fi
+            else
+                rm -f "${TARBALL}"
                 log_error "oss-cad-suite 下载失败，请手动下载:"
                 log_info "  https://github.com/YosysHQ/oss-cad-suite-build/releases"
                 log_info "  解压到 ${DEPS_DIR}/oss-cad-suite/"
-            }
+                exit 1
+            fi
         fi
 
         if [ -f "${TARBALL}" ]; then
+            if ! tar tzf "${TARBALL}" >/dev/null 2>&1; then
+                rm -f "${TARBALL}"
+                log_error "下载文件损坏或非有效 tar.gz，请重试或手动下载"
+                exit 1
+            fi
             log_info "解压 oss-cad-suite..."
             tar xzf "${TARBALL}" -C "${DEPS_DIR}"
             rm -f "${TARBALL}"
@@ -240,11 +286,16 @@ log_step "Step 6/6: 环境配置"
 cd "${PROJECT_ROOT}"
 
 # ── .env ──
+ABC_BIN="${OSS_DIR}/bin/yosys-abc"
+if [ ! -x "${ABC_BIN}" ]; then
+    ABC_BIN="abc"
+fi
+
 cat > "${PROJECT_ROOT}/.env" << ENVEOF
 # CktClaw 环境变量 — 由 setup.sh 自动生成 ($(date +%Y-%m-%d))
 
 # EDA 工具路径
-export PATH="${DEPS_DIR}/oss-cad-suite/bin:${DEPS_DIR}/opensta-install/bin:\${PATH}"
+export PATH="${OSS_DIR}/bin:${DEPS_DIR}/opensta-install/bin:\${PATH}"
 
 # Orchestrator 模板
 export CHIP_AGENTS_ROOT="${AGENTS_DIR}/plugins"
@@ -254,7 +305,7 @@ export AI4EDA_BIN="${AI4EDA_DIR}/ai4eda-toolkit"
 export CKTCLAW_AI4EDA_PATH="${AI4EDA_DIR}"
 
 # ABC 可执行文件（优先使用 oss-cad-suite 附带的 yosys-abc）
-export ABC_PATH="${DEPS_DIR}/oss-cad-suite/bin/yosys-abc"
+export ABC_PATH="${ABC_BIN}"
 
 # AI4EDA 默认 Liberty 库（ASAP7）
 export AI4EDA_DEFAULT_LIB="${AI4EDA_DIR}/libs/asap7.lib"
@@ -286,8 +337,9 @@ log_step "验证安装"
 source "${PROJECT_ROOT}/.env"
 
 # Python
-python -c "from cktclaw.main import main; print('  cktclaw 模块导入 ✓')" 2>/dev/null || \
-    log_warning "cktclaw 模块导入失败"
+PROJECT_PARENT="$(cd "${PROJECT_ROOT}/.." && pwd)"
+python -c "import os,sys; os.chdir('${PROJECT_PARENT}'); from cktclaw.main import main; print('  cktclaw 模块导入 ✓')" 2>/dev/null || \
+    log_warning "cktclaw 模块导入失败（请确认在 ${PROJECT_PARENT} 下可导入）"
 
 # cktclaw 命令
 if command_exists cktclaw; then
@@ -302,11 +354,23 @@ if ! ${MINIMAL}; then
     FOUND=0; TOTAL=0
     for tool in yosys abc verilator sta sby nextpnr-ice40; do
         TOTAL=$((TOTAL + 1))
-        if command_exists "$tool"; then
-            FOUND=$((FOUND + 1))
-            log_success "$tool"
+        if [ "$tool" = "abc" ]; then
+            if command_exists abc; then
+                FOUND=$((FOUND + 1))
+                log_success "abc"
+            elif command_exists yosys-abc; then
+                FOUND=$((FOUND + 1))
+                log_success "abc (via yosys-abc)"
+            else
+                log_warning "abc/yosys-abc — 未检测到"
+            fi
         else
-            log_warning "$tool — 未检测到"
+            if command_exists "$tool"; then
+                FOUND=$((FOUND + 1))
+                log_success "$tool"
+            else
+                log_warning "$tool — 未检测到"
+            fi
         fi
     done
     echo ""
