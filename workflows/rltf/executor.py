@@ -9,7 +9,7 @@ import os
 import time
 import tempfile
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 from dataclasses import dataclass
 
 # 使用相对导入避免循环依赖
@@ -66,6 +66,10 @@ class RLTFExecutor:
             raise RuntimeError(f"Failed to get initial metrics: {result.error}")
 
         metrics = self._parse_abc_stats(result.output)
+        if not metrics.metrics_valid:
+            raise RuntimeError(
+                "Failed to parse initial ABC stats (no and/lev line in ps output)"
+            )
         return metrics
 
     async def execute_abc(
@@ -100,11 +104,16 @@ class RLTFExecutor:
                 f"read_aiger {input_file}",
             ]
 
-            # 添加优化序列
+            # 添加优化序列。dch 会产生 choice network，后续 rw/rwz 等需纯 AIG；
+            # 在每条 dch 后自动插入 strash，避免 "choice nodes" 类错误。
             for cmd in sequence.split(';'):
                 cmd = cmd.strip()
-                if cmd:
-                    commands.append(cmd)
+                if not cmd:
+                    continue
+                commands.append(cmd)
+                first_tok = cmd.split()[0] if cmd.split() else ""
+                if first_tok == "dch":
+                    commands.append("strash")
 
             # 添加统计和输出命令
             commands.append("ps")
@@ -117,18 +126,21 @@ class RLTFExecutor:
 
             duration = time.time() - start_time
 
+            combined_out = result.stdout or ""
+            if result.stderr:
+                combined_out = combined_out + "\n" + result.stderr
 
             if result.error:
                 return ExecutionResult(
                     success=False,
-                    output=result.stdout or "",
+                    output=combined_out,
                     duration=duration,
                     error=result.error,
                 )
 
             return ExecutionResult(
                 success=True,
-                output=result.stdout or "",
+                output=combined_out,
                 output_file=output_file,
                 duration=duration,
             )
@@ -227,8 +239,12 @@ report_checks -path_delay min
         # 从 ABC 输出中提取 area 和基本信息
         metrics = self._parse_abc_stats(abc_result.output)
 
-        # 如果有 STA 结果，提取 delay 信息
-        if sta_result and sta_result.success:
+        # 若有 STA 结果且 ABC 统计已可靠解析，再用 STA 覆盖 delay
+        if (
+            sta_result
+            and sta_result.success
+            and metrics.metrics_valid
+        ):
             delay = self._parse_sta_delay(sta_result.output)
             if delay is not None:
                 metrics.delay = delay
@@ -254,6 +270,7 @@ report_checks -path_delay min
         node_count = 0
         edge_count = 0
         levels = 0
+        stats_found = False
 
         # 查找统计信息行
         for line in output.split('\n'):
@@ -273,7 +290,7 @@ report_checks -path_delay min
                 area = and_count
 
                 delay = levels * 0.1
-
+                stats_found = True
                 break
 
         return PPAMetrics(
@@ -282,6 +299,7 @@ report_checks -path_delay min
             node_count=node_count,
             edge_count=edge_count,
             levels=levels,
+            metrics_valid=stats_found,
         )
 
     def _parse_sta_delay(self, output: str) -> Optional[float]:
