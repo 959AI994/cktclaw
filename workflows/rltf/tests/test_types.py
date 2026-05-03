@@ -85,6 +85,12 @@ class TestPPAMetrics:
         assert restored.delay == original.delay
         assert restored.power == original.power
 
+    def test_metrics_valid_roundtrip(self):
+        """metrics_valid 序列化往返"""
+        original = PPAMetrics(area=0, delay=0.0, metrics_valid=False)
+        restored = PPAMetrics.from_dict(original.to_dict())
+        assert restored.metrics_valid is False
+
 
 class TestRLTFConfig:
     """测试 RLTFConfig 配置类"""

@@ -32,6 +32,7 @@ class PPAMetrics:
     node_count: Optional[int] = None    # 节点数量
     edge_count: Optional[int] = None    # 边数量
     levels: Optional[int] = None        # 逻辑层级数
+    metrics_valid: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -42,6 +43,7 @@ class PPAMetrics:
             "node_count": self.node_count,
             "edge_count": self.edge_count,
             "levels": self.levels,
+            "metrics_valid": self.metrics_valid,
         }
 
     @classmethod
@@ -54,6 +56,7 @@ class PPAMetrics:
             node_count=data.get("node_count"),
             edge_count=data.get("edge_count"),
             levels=data.get("levels"),
+            metrics_valid=data.get("metrics_valid", True),
         )
 
 

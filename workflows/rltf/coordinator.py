@@ -303,9 +303,15 @@ class RLTFCoordinator:
             return True
 
         current = iteration.metrics
+        if not current.metrics_valid:
+            return False
+
         best = state.best_metrics
 
         if not best:
+            return True
+
+        if not best.metrics_valid:
             return True
 
         # 多目标优化：优先 area，其次 delay

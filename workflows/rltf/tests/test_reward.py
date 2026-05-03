@@ -50,6 +50,14 @@ class TestRLTFRewardCalculator:
         # 应该是正的 reward（因为有改进）
         assert reward > 0
 
+    def test_calculate_invalid_metrics(self):
+        """解析失败的指标：不得把全 0 当作相对基线的巨大改进"""
+        baseline = PPAMetrics(area=1000, delay=5.0)
+        bad = PPAMetrics(area=0, delay=0.0, metrics_valid=False)
+        config = RLTFConfig(aig_file_path="test.aig")
+        calculator = RLTFRewardCalculator()
+        assert calculator.calculate(bad, baseline, config) == -1.0
+
     def test_calculate_degradation(self):
         """测试退化情况"""
         baseline = PPAMetrics(area=1000, delay=5.0)

@@ -60,6 +60,9 @@ class RLTFRewardCalculator:
         Returns:
             Reward 值（可能为负）
         """
+        if not current.metrics_valid:
+            return -1.0
+
         # 计算改进率（正值表示改进）
         area_improvement = self._calculate_improvement(
             baseline.area, current.area
@@ -157,6 +160,11 @@ class RLTFRewardCalculator:
         Returns:
             True 如果 a 被 b 支配
         """
+        if not a.metrics_valid and b.metrics_valid:
+            return True
+        if a.metrics_valid and not b.metrics_valid:
+            return False
+
         # b 在所有目标上都不差于 a
         not_worse = (
             b.area <= a.area and
