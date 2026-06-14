@@ -1,0 +1,11 @@
+name: openlane2
+version: 0.1.0
+description: OpenLane2 RTL-to-GDS flow integration for CktClaw
+author: CktClaw Community
+cktclaw_version: ">=2.0.0"
+tools:
+  - name: openlane2
+    handler: tools.openlane2_tool:OpenLane2Tool
+    description: Run OpenLane2 RTL-to-GDS automated flow
+    read_only: false
+    category: eda

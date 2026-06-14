@@ -390,6 +390,9 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "opensta": "opensta",  # EDA tool: OpenSTA
             "ai4eda": "ai4eda",  # CktClaw Toolkit
             "cktclaw": "ai4eda",
+            "plugin": "plugin",
+            "plugins": "plugin",
+            "tools": "tools",
             "rltf": "rltf",
             "rltf-opt": "rltf",
             "rl-synth": "rltf",
@@ -705,24 +708,10 @@ class LogicRTCLI:
             self._run_async_handler(process_reverse(args, self.state))
 
         elif cmd_type == "chat":
-            # Auto-routing to chip-* orchestrators is intentionally disabled for now.
-            # Keep the original logic below for easy rollback.
-            #
-            # from .handlers.intent_router import detect_chip_design_intent
-            # routed_skill = detect_chip_design_intent(user_input)
-            # if routed_skill:
-            #     console.print(
-            #         f"[dim]→ Auto-routed to [bold]{routed_skill}[/bold][/dim]"
-            #     )
-            #     from .handlers.chip_design_handler import handle_chip_design
-            #     self._run_async_handler(
-            #         handle_chip_design(routed_skill, user_input, self.state)
-            #     )
-            # else:
-            #     from .handlers.chat_handler_v2 import process_chat_v2
-            #     self._run_async_handler(process_chat_v2(user_input, self.state))
-            from .handlers.chat_handler_v2 import process_chat_v2
-            self._run_async_handler(process_chat_v2(user_input, self.state))
+            # Use V3 streaming handler when cloud providers are configured,
+            # fall back to V2 for local models
+            from .handlers.chat_handler_v3 import process_chat_v3
+            self._run_async_handler(process_chat_v3(user_input, self.state))
 
         elif cmd_type == "model":
             from .handlers.model_handler import select_model_interactive
@@ -788,6 +777,14 @@ class LogicRTCLI:
         elif cmd_type == "about":
             from .handlers.help_handler import show_about
             show_about(self.state)
+
+        elif cmd_type == "plugin":
+            from .handlers.plugin_handler import handle_plugin_command
+            handle_plugin_command(args, self.state)
+
+        elif cmd_type == "tools":
+            from .handlers.tools_handler import handle_tools_command
+            handle_tools_command(args, self.state)
 
         elif cmd_type == "quit":
             self.shutdown()

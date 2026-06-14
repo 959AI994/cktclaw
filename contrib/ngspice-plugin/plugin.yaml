@@ -1,0 +1,11 @@
+name: ngspice
+version: 0.1.0
+description: ngspice SPICE circuit simulator integration for CktClaw
+author: CktClaw Community
+cktclaw_version: ">=2.0.0"
+tools:
+  - name: ngspice
+    handler: tools.ngspice_tool:NgspiceTool
+    description: Run SPICE circuit simulations using ngspice
+    read_only: false
+    category: eda
