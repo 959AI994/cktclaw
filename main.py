@@ -320,7 +320,9 @@ class CLIState:
                 "/chip-design-skills": "🔷 芯片设计子终端（提示符 [chip-design-skills]；.. 回主界面）",
                 "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
-                "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek)",
+                "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek / Claude / OpenAI)",
+                "/plugin": "🔌 管理插件 (list/install/remove)",
+                "/tools": "🛠️ 列出已注册的工具",
                 "/clear": "🧹 清屏并开启新的对话 Session",
                 "/help": "📖 查看详细帮助文档",
                 "/exit": "👋 退出 CktClaw 控制台",
@@ -526,6 +528,46 @@ class LogicRTCLI:
                 )
         except Exception as e:
             console.print(f"[dim]⚠️ Tool detection: {e}[/dim]")
+
+        # ━━━━━━━━━━ Initialize v2 Architecture (Plugin + ToolRegistry + LLM Router) ━━━━━━━━━━
+        try:
+            from .plugins import get_plugin_manager
+            from .tools import get_tool_registry
+            from .tools.eda.yosys_tool import YosysTool
+            from .tools.eda.opensta_tool import OpenSTATool
+            from .tools.eda.abc_tool import ABCTool
+            from .tools.eda.openroad_tool import OpenROADTool
+            from .tools.system.bash_tool import BashTool
+            from .llm import get_model_router
+
+            # Initialize Tool Registry with built-in tools
+            _registry = get_tool_registry()
+            _registry.register(YosysTool(), source="builtin")
+            _registry.register(OpenSTATool(), source="builtin")
+            _registry.register(ABCTool(), source="builtin")
+            _registry.register(OpenROADTool(), source="builtin")
+            _registry.register(BashTool(), source="builtin")
+
+            # Initialize LLM Model Router
+            _router = get_model_router()
+            _router.initialize()
+
+            # Discover and load plugins
+            _plugin_mgr = get_plugin_manager()
+            _plugins = _plugin_mgr.discover_and_load_all()
+
+            if config.VERBOSE:
+                _n_tools = len(_registry.list_names())
+                _n_plugins = len(_plugins)
+                _n_providers = len(_router.available_providers)
+                console.print(
+                    f"[dim]🔌 v2 arch: {_n_tools} tools, "
+                    f"{_n_plugins} plugins, "
+                    f"{_n_providers} LLM providers ({', '.join(_router.available_providers)})[/dim]"
+                )
+        except Exception as e:
+            if config.VERBOSE:
+                console.print(f"[dim]⚠️ v2 arch init: {e}[/dim]")
 
         # ━━━━━━━━━━ Load Project Behavior (.cktclaw/) ━━━━━━━━━━
         try:
@@ -817,10 +859,25 @@ class LogicRTCLI:
 # ━━━━━━━━━━ Entry Point ━━━━━━━━━━
 def main():
     """
-    Main entry point for LogicRT CLI.
+    Main entry point for CktClaw CLI.
     Called by setup.py console_scripts entry point.
     """
+    import argparse
+    parser = argparse.ArgumentParser(description="CktClaw - EDA Agent CLI")
+    parser.add_argument("--web", action="store_true", help="Start web dashboard (port 8741)")
+    parser.add_argument("--web-port", type=int, default=8741, help="Web dashboard port")
+    args = parser.parse_args()
+
     try:
+        # Start web dashboard if requested
+        if args.web:
+            try:
+                from .web import start_web_server
+                start_web_server(port=args.web_port)
+                print(f"[Web dashboard] http://localhost:{args.web_port}")
+            except ImportError as e:
+                print(f"[Warning] Web dashboard requires: pip install 'cktclaw[web]' ({e})")
+
         cli = LogicRTCLI()
         cli.startup()
         cli.repl_loop()
