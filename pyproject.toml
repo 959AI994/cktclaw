@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cktclaw"
-version = "1.0.0"
+version = "2.0.0-dev"
 description = "The Autonomous Multi-Agent Ecosystem for Intelligent EDA"
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,7 +32,20 @@ dependencies = [
 
 [project.optional-dependencies]
 local = ["torch>=2.0", "transformers>=4.30"]
-full = ["torch>=2.0", "transformers>=4.30", "anthropic>=0.20"]
+cloud = ["anthropic>=0.20", "openai>=1.0"]
+web = ["fastapi>=0.100", "uvicorn[standard]>=0.20", "websockets>=11.0"]
+memory = ["sentence-transformers>=2.2", "chromadb>=0.4"]
+full = [
+    "torch>=2.0",
+    "transformers>=4.30",
+    "anthropic>=0.20",
+    "openai>=1.0",
+    "sentence-transformers>=2.2",
+    "chromadb>=0.4",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "websockets>=11.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/959AI994/cktclaw"
@@ -42,4 +55,5 @@ Issues = "https://github.com/959AI994/cktclaw/issues"
 cktclaw = "cktclaw.main:main"
 
 [tool.setuptools.packages.find]
+where = [".."]
 include = ["cktclaw*"]
