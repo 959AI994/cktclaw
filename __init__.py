@@ -2,6 +2,13 @@
 CktClaw: The Autonomous Multi-Agent Ecosystem for Intelligent EDA
 
 A modern REPL interface for AIG-to-Verilog conversion and circuit analysis.
+
+v2.1 modules:
+- security: Path sandboxing + threat detection
+- tools.repair: Tool call argument repair
+- cktmem.llm_compactor: LLM-backed context summarization
+- config_loader: YAML configuration
+- trajectory: Structured audit logging
 """
 
 import sys
@@ -12,7 +19,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-__version__ = "1.0.0"
+__version__ = "2.1.0"
 __author__ = "Jingxin Wang"
 
 __all__ = [
