@@ -823,8 +823,8 @@ cd /path/to/cktclaw
 # Run all unit tests
 python -m pytest tests/test_system_loop.py -v
 
-# Run individual experiments
-python -c "exec(open('exp.md').read())"  # (extract script blocks)
+# Run 6-dimension benchmark
+python tests/test_benchmark_6dim.py
 
 # Or directly:
 python -c "
@@ -837,3 +837,73 @@ g.complete_task('t1', 'passed')
 print(f'Ready: {[t.id for t in g.get_ready_tasks()]}')
 "
 ```
+
+---
+
+## Six-Dimension Architecture Benchmark (Appendix)
+
+Run via: `python tests/test_benchmark_6dim.py`
+
+### Results Summary
+
+| Dimension | Metric | Value |
+|-----------|--------|-------|
+| **1. Intent Routing** | Top-1 Accuracy (180 prompts, 14 domains) | **81.7%** |
+| | Generic chat rejection rate | 100% |
+| | LLM Fallback Rate (regex miss) | 13.3% |
+| | Latency per prompt | <0.1ms |
+| **2. Tool Repair** | JSON argument repair rate (10 malformed) | **100%** |
+| | Tool name fuzzy-match rate (8 misspelled) | 100% |
+| | Security TPR (32 malicious inputs) | **100%** |
+| | Security FPR (20 benign inputs) | **0%** |
+| | Guardrail loop-prevention activation | Yes |
+| **3. Memory** | Token compression ratio (50-turn conv.) | **72.6%** |
+| | Raw tokens → Sent tokens | 16,836 → 4,621 |
+| | Token savings | 12,215 tokens |
+| **4. PPA Optimization** | Avg AIG node reduction (10 EPFL circuits) | **18.0%** |
+| | Avg logic level reduction | **43.5%** |
+| | Best single gain (priority) | 42.3% nodes |
+| **5. Convergence** | Easy scenario (2 tasks) | 2 iterations |
+| | Medium (4 tasks, 50% initial pass) | **3 iterations** |
+| | Hard (6 tasks, 33% initial pass) | 5 iterations |
+| | Stuck detection trigger | 3 iterations |
+| **6. Concurrency** | Parallel speedup (10 tasks) | **7.9x** |
+| | Error isolation (2/10 tasks crash) | System survives |
+| | Max concurrent agents | 5 |
+
+### Per-Domain Routing Accuracy
+
+| Domain | Accuracy | Notes |
+|--------|----------|-------|
+| chip-synthesis | 93% | Strong keyword coverage |
+| chip-compiler | 100% | Highly specific patterns |
+| chip-hls | 90% | Good |
+| chip-dft | 90% | Good |
+| chip-soc | 90% | Good |
+| chip-sta | 80% | Some "fix timing" prompts miss |
+| chip-rtl | 73% | Generic "write/design" hard to distinguish |
+| chip-verification | 73% | "verify" can be ambiguous |
+| chip-architecture | 70% | Needs broader patterns |
+| chip-firmware | 70% | Overlaps with generic coding |
+| chip-formal | 70% | Some prompts lack trigger words |
+| chip-fpga | 70% | Could add more bitstream patterns |
+| chip-pd | 70% | Physical design terms less common |
+| chip-infrastructure | 70% | Niche vocabulary |
+| generic (no route) | 100% | Perfect rejection |
+
+### PPA Data (EPFL/OpenABC Benchmarks)
+
+| Circuit | Baseline AND | Optimized AND | Reduction | Level Δ |
+|---------|-------------|---------------|-----------|---------|
+| cavlc | 694 | 568 | 18.2% | 1 |
+| ctrl | 174 | 130 | 25.3% | 2 |
+| dec | 304 | 304 | 0.0% | 2 |
+| i2c | 1342 | 1068 | 20.4% | 6 |
+| int2float | 260 | 214 | 17.7% | 4 |
+| mem_ctrl | 46836 | 38402 | 18.0% | 46 |
+| priority | 978 | 564 | **42.3%** | 123 |
+| router | 257 | 203 | 21.0% | 23 |
+| voter | 13758 | 11646 | 15.4% | 33 |
+| max | 2865 | 2194 | 23.4% | 72 |
+
+Data source: [NYU-MLDA/OpenABC](https://github.com/NYU-MLDA/OpenABC) (published research data)
