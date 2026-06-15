@@ -262,7 +262,210 @@ Each stage is LLM-driven. On failure, the orchestrator auto-loops back per confi
 
 ---
 
-## ⚙️ Configuration
+## 🏗️ Agent Architecture
+
+CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-loop capabilities. The following diagram shows the complete architecture from user input to tool execution:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              USER INTERFACE LAYER                                     │
+│                                                                                       │
+│   ┌──────────┐    ┌──────────────┐    ┌───────────────┐    ┌──────────────────┐      │
+│   │  REPL    │    │ /commands    │    │ Natural Lang  │    │ /loop (v3)       │      │
+│   │ main.py  │    │ /abc /yosys  │    │ "synthesize   │    │ cross-domain     │      │
+│   │          │    │ /rltf /pareto│    │  this adder"  │    │ closed loop      │      │
+│   └────┬─────┘    └──────┬───────┘    └──────┬────────┘    └────────┬─────────┘      │
+│        └─────────────────┼───────────────────┼──────────────────────┘                 │
+│                          ▼                   ▼                                         │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+                           │                   │
+┌──────────────────────────▼───────────────────▼──────────────────────────────────────┐
+│                              ROUTING & DISPATCH LAYER                                 │
+│                                                                                       │
+│   ┌─────────────────────────────────────────────────────────────────────────────┐    │
+│   │  IntentRouter (handlers/intent_router.py)                                    │    │
+│   │  • Keyword-based first pass (40+ regex patterns)                             │    │
+│   │  • 14 chip-design domain routing                                             │    │
+│   │  • Fallback to LLM classification for ambiguous inputs                       │    │
+│   └──────────────────────────────┬──────────────────────────────────────────────┘    │
+│                                  │                                                    │
+│   ┌──────────────────────────────▼──────────────────────────────────────────────┐    │
+│   │  Harness (harness/)                                                          │    │
+│   │  ┌─────────────┐ ┌────────────┐ ┌──────────────┐ ┌───────────┐ ┌────────┐  │    │
+│   │  │ Bootstrap   │ │  Tasks     │ │   Skills     │ │Coordinator│ │ Query  │  │    │
+│   │  │ (状态管理)  │ │ (生命周期) │ │ (技能注册)   │ │ (调度隔离)│ │ (循环) │  │    │
+│   │  │ StateManager│ │ TaskManager│ │ SkillRegistry│ │ Coord.Mgr │ │QueryLoop│  │    │
+│   │  └─────────────┘ └────────────┘ └──────────────┘ └───────────┘ └────────┘  │    │
+│   └──────────────────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              ▼                        ▼                        ▼
+┌─────────────────────┐  ┌─────────────────────┐  ┌────────────────────────────────┐
+│ ORCHESTRATION LAYER │  │  WORKFLOW LAYER      │  │ v3 SYSTEM LOOP LAYER           │
+│                     │  │                      │  │ (loop/)                        │
+│ ┌─────────────────┐│  │ ┌──────────────────┐ │  │                                │
+│ │OrchestratorEngine││  │ │ RLTFCoordinator  │ │  │ ┌────────────────────────────┐ │
+│ │                  ││  │ │ • RL loop driver │ │  │ │    GoalDecomposer          │ │
+│ │ • Multi-stage    ││  │ │ • ABC sequences  │ │  │ │    (LLM → TaskGraph)       │ │
+│ │   flow control   ││  │ │ • PPA reward     │ │  │ └─────────────┬──────────────┘ │
+│ │ • LLM + tools    ││  │ └──────────────────┘ │  │               ▼                │
+│ │ • JSON status    ││  │                      │  │ ┌────────────────────────────┐ │
+│ │ • Auto-retry     ││  │ ┌──────────────────┐ │  │ │  CrossLayerTaskGraph (DAG) │ │
+│ │ • Escalation     ││  │ │  Negotiation     │ │  │ │  • Dependencies            │ │
+│ │                  ││  │ │  Coordinator     │ │  │ │  • Verification criteria   │ │
+│ │ ┌──────────────┐││  │ │ • Area Agent     │ │  │ │  • Critical path           │ │
+│ │ │StateMachine  │││  │ │ • Delay Agent    │ │  │ └─────────────┬──────────────┘ │
+│ │ │ • proceed    │││  │ │ • Power Agent    │ │  │               ▼                │
+│ │ │ • loop_back  │││  │ │ • Nash Arbiter   │ │  │ ┌────────────────────────────┐ │
+│ │ │ • suspend    │││  │ │ • Pareto Front   │ │  │ │     Domain Teams           │ │
+│ │ │ • escalate   │││  │ └──────────────────┘ │  │ │  ┌────┐ ┌────┐ ┌───────┐  │ │
+│ │ └──────────────┘││  │                      │  │ │  │EDA │ │Chip│ │AIInfra│  │ │
+│ └─────────────────┘│  └──────────────────────┘  │ │  │Team│ │Team│ │Team   │  │ │
+│                     │                            │ │  └──┬─┘ └──┬─┘ └───┬───┘  │ │
+│ 14 Domain Orchs:    │                            │ └─────┼──────┼───────┼──────┘ │
+│ • chip-synthesis    │                            │       ▼      ▼       ▼        │
+│ • chip-rtl          │                            │ ┌────────────────────────────┐ │
+│ • chip-verification │                            │ │   VerificationRunner       │ │
+│ • chip-sta          │                            │ │   • Yosys/ABC/OpenSTA      │ │
+│ • chip-pd           │                            │ │   • Verilator/iVerilog     │ │
+│ • chip-formal       │                            │ │   • pytest / compile check │ │
+│ • chip-dft          │                            │ └─────────────┬──────────────┘ │
+│ • chip-hls          │                            │               ▼                │
+│ • chip-soc          │                            │ ┌────────────────────────────┐ │
+│ • chip-architecture │                            │ │    EvolutionEngine         │ │
+│ • chip-compiler     │                            │ │  • ExperienceStore         │ │
+│ • chip-firmware     │                            │ │  • BottleneckAnalyzer      │ │
+│ • chip-fpga         │                            │ │  • FeedbackGenerator       │ │
+│ • chip-infrastructure                            │ │  • ConvergenceChecker      │ │
+│                     │                            │ └──────────────┬─────────────┘ │
+└─────────────────────┘                            │                │ feedback       │
+                                                   │                └───── ↺ ───────┘ │
+                                                   └────────────────────────────────┘
+              │                        │                        │
+              └────────────────────────┼────────────────────────┘
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                              AGENT EXECUTION LAYER                                    │
+│                                                                                       │
+│   ┌─────────────────────────────────────────────────────────────────────────────┐    │
+│   │  AgentRuntime (agents/runtime.py)                                            │    │
+│   │  • Max 5 concurrent agents                                                   │    │
+│   │  • Event broadcasting                                                        │    │
+│   │  • Timeout / budget enforcement                                              │    │
+│   │  • Result collection                                                         │    │
+│   └─────────────────────────────────┬───────────────────────────────────────────┘    │
+│                                     │                                                 │
+│   ┌─────────────────────────────────▼───────────────────────────────────────────┐    │
+│   │  WorkerAgent (agents/worker.py)                                              │    │
+│   │  • LLM query loop (call → tool_calls → execute → feed back)                 │    │
+│   │  • Budget: max_turns=20, max_tokens=100K, timeout=300s                       │    │
+│   │  • Tool sandbox via allowed_tools whitelist                                  │    │
+│   │  • Status: CREATED → RUNNING → COMPLETED/FAILED/BUDGET_EXCEEDED             │    │
+│   └─────────────────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────────────┐
+│                              LLM PROVIDER LAYER                                       │
+│                                                                                       │
+│   ┌───────────────────────────────────────────────────────────────────────────────┐  │
+│   │  ModelRouter (llm/router.py)                                                   │  │
+│   │  ┌─────────────┐  ┌───────────────────┐  ┌─────────────────────────────────┐  │  │
+│   │  │ DeepSeek    │  │ OpenAI-Compatible │  │ Local (Qwen2.5 / LogicRT)       │  │  │
+│   │  │ (Cloud API) │  │ (Anthropic, etc.) │  │ (On-device inference)           │  │  │
+│   │  └─────────────┘  └───────────────────┘  └─────────────────────────────────┘  │  │
+│   │  • Streaming support      • Function calling      • Failover                   │  │
+│   └───────────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────────────┐
+│                              TOOL & SECURITY LAYER                                    │
+│                                                                                       │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐   │
+│  │  ToolRegistry (tools/registry.py)                                              │   │
+│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌────────┐  │   │
+│  │  │ Yosys   │ │   ABC    │ │ OpenSTA  │ │ OpenROAD │ │Verilator│ │  Bash  │  │   │
+│  │  │(synth)  │ │(logic opt│ │(timing)  │ │(PnR)     │ │(sim)    │ │(system)│  │   │
+│  │  └─────────┘ └──────────┘ └──────────┘ └──────────┘ └─────────┘ └────────┘  │   │
+│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────────────────────┐  │   │
+│  │  │  File   │ │ Delegate │ │ NextPNR  │ │ MCP Servers (auto-configured)    │  │   │
+│  │  │ (R/W)   │ │ (spawn)  │ │ (FPGA)   │ │ + SymbiYosys + Bambu + ...      │  │   │
+│  │  └─────────┘ └──────────┘ └──────────┘ └──────────────────────────────────┘  │   │
+│  └───────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                       │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐   │
+│  │  Security (security/)                                                          │   │
+│  │  ┌─────────────────────┐  ┌──────────────────────────────────────────────┐    │   │
+│  │  │  PathSandbox        │  │  ThreatPatterns                               │    │   │
+│  │  │  • Allowed roots    │  │  • Command injection detection                │    │   │
+│  │  │  • Denied globs     │  │  • EDA-specific dangerous patterns            │    │   │
+│  │  │  • Symlink resolve  │  │  • Fork bomb / disk wipe prevention           │    │   │
+│  │  └─────────────────────┘  └──────────────────────────────────────────────┘    │   │
+│  │  ┌─────────────────────┐  ┌──────────────────────────────────────────────┐    │   │
+│  │  │  ToolGuardrails     │  │  ToolRepair (tools/repair.py)                 │    │   │
+│  │  │  • Pre/post checks  │  │  • Auto-fix malformed tool arguments          │    │   │
+│  │  │  • Budget limits    │  │  • LLM hallucination recovery                 │    │   │
+│  │  └─────────────────────┘  └──────────────────────────────────────────────┘    │   │
+│  └───────────────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────────────┐
+│                              MEMORY & OBSERVABILITY LAYER                             │
+│                                                                                       │
+│  ┌────────────────────────────────────────┐  ┌──────────────────────────────────┐   │
+│  │  CktMem (cktmem/)                      │  │ TrajectoryLogger (trajectory.py) │   │
+│  │  ┌──────────────────────────────────┐  │  │ • JSONL per session              │   │
+│  │  │ 4-Layer Memory Stack             │  │  │ • user_message / assistant_msg   │   │
+│  │  │ ┌────────────────────────────┐   │  │  │ • tool_call / tool_result        │   │
+│  │  │ │ L1: Sliding Window (recent)│   │  │  │ • loop events (v3)              │   │
+│  │  │ ├────────────────────────────┤   │  │  │ • failover / error              │   │
+│  │  │ │ L2: LLM Compactor (summary)│   │  │  └──────────────────────────────────┘   │
+│  │  │ ├────────────────────────────┤   │  │                                          │
+│  │  │ │ L3: Semantic Search (embed)│   │  │  ┌──────────────────────────────────┐   │
+│  │  │ ├────────────────────────────┤   │  │  │ ConfigLoader (config_loader.py)  │   │
+│  │  │ │ L4: File-backed persistent │   │  │  │ • YAML-driven configuration      │   │
+│  │  │ └────────────────────────────┘   │  │  │ • Tool paths, model prefs        │   │
+│  │  └──────────────────────────────────┘  │  │ • Security policies              │   │
+│  │  • VectorStore (embedding index)       │  └──────────────────────────────────┘   │
+│  │  • TokenCounter (budget tracking)      │                                          │
+│  │  • Compactor (auto-compress)           │                                          │
+│  └────────────────────────────────────────┘                                          │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Summary
+
+```
+User Input
+    │
+    ├──[slash cmd]──→ Handler (abc/yosys/rltf/...) ──→ EDA Tool ──→ Result
+    │
+    ├──[NL task]───→ IntentRouter ──→ Domain Orchestrator ──→ Multi-stage LLM+Tools
+    │
+    └──[/loop]────→ GoalDecomposer ──→ TaskGraph ──→ DomainTeams ──→ Verify ──→ Evolve
+                                                         ▲                         │
+                                                         └─────── feedback ────────┘
+```
+
+### Module Dependency Map
+
+| Module | Depends On | Provides |
+|--------|-----------|----------|
+| `main.py` | harness, handlers, llm, skills | CLI entry point, REPL |
+| `harness/` | — | Bootstrap, Tasks, Skills, Query, Coordinator |
+| `orchestrator/` | harness, llm, mcp | Multi-stage flow engine |
+| `agents/` | llm, tools | WorkerAgent, AgentRuntime |
+| `llm/` | — | ModelRouter, Providers, Streaming |
+| `tools/` | security | ToolRegistry, EDA/Agent/System tools |
+| `security/` | — | PathSandbox, ThreatPatterns, Guardrails |
+| `cktmem/` | — | ContextManager, SemanticSearch, VectorStore |
+| `workflows/rltf/` | tools, llm | RLTFCoordinator, Executor, Reward |
+| `workflows/pareto_negotiation/` | tools, llm | NegotiationCoordinator, NashArbiter |
+| `loop/` (v3) | agents, tools, cktmem, llm | SystemLoopController, TaskGraph, Teams |
+| `skills/` | harness, workflows, loop | Skill registration + executors |
+| `handlers/` | harness, skills, llm | Request dispatch |
+
+---
 
 ### DeepSeek Cloud Engine (default)
 
