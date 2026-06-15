@@ -9,6 +9,9 @@ v2.1 modules:
 - cktmem.llm_compactor: LLM-backed context summarization
 - config_loader: YAML configuration
 - trajectory: Structured audit logging
+
+v3.0 modules:
+- loop: Cross-domain system closed loop (EDA + Chip + AI Infra)
 """
 
 import sys
@@ -19,7 +22,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 __author__ = "Jingxin Wang"
 
 __all__ = [

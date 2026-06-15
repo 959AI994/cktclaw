@@ -15,6 +15,7 @@ from .session_memory_skill import (
     register as register_session_memory_skill,
 )
 from .chip_design_skills import CHIP_DESIGN_SKILLS, register_chip_design_skills
+from .system_loop_skill import SYSTEM_LOOP_SKILL, register_system_loop_skill
 
 __all__ = [
     "ABC_SKILL",
@@ -32,4 +33,6 @@ __all__ = [
     "register_session_memory_skill",
     "CHIP_DESIGN_SKILLS",
     "register_chip_design_skills",
+    "SYSTEM_LOOP_SKILL",
+    "register_system_loop_skill",
 ]

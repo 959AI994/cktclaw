@@ -463,6 +463,7 @@ class LogicRTCLI:
             # Register innovation skills
             from .skills.rltf_skill import register_rltf_skill
             from .skills.pareto_negotiation_skill import register_pareto_negotiation_skill
+            from .skills.system_loop_skill import register_system_loop_skill
 
             import asyncio
             try:
@@ -475,6 +476,7 @@ class LogicRTCLI:
                 asyncio.run(register_rltf_skill())
                 asyncio.run(register_pareto_negotiation_skill())
                 asyncio.run(register_chip_design_skills())
+                asyncio.run(register_system_loop_skill())
             except RuntimeError:
                 # Already in async context
                 import concurrent.futures
@@ -488,6 +490,7 @@ class LogicRTCLI:
                     future7 = executor.submit(asyncio.run, register_rltf_skill())
                     future8 = executor.submit(asyncio.run, register_pareto_negotiation_skill())
                     future9 = executor.submit(asyncio.run, register_chip_design_skills())
+                    future10 = executor.submit(asyncio.run, register_system_loop_skill())
                     future1.result()
                     future2.result()
                     future3.result()
@@ -497,6 +500,7 @@ class LogicRTCLI:
                     future7.result()
                     future8.result()
                     future9.result()
+                    future10.result()
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
