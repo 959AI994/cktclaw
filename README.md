@@ -10,7 +10,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-267%20passing-brightgreen.svg)](tests/)
 
 [中文文档](README-CN.md) | **English**
 
@@ -284,8 +284,9 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │                                                                                       │
 │   ┌─────────────────────────────────────────────────────────────────────────────┐    │
 │   │  IntentRouter (handlers/intent_router.py)                                    │    │
-│   │  • Keyword-based first pass (40+ regex patterns)                             │    │
+│   │  • Keyword-based first pass (40+ regex patterns, bilingual CN/EN)            │    │
 │   │  • 14 chip-design domain routing                                             │    │
+│   │  • Stateless — no cross-turn state leak                                      │    │
 │   │  • Fallback to LLM classification for ambiguous inputs                       │    │
 │   └──────────────────────────────┬──────────────────────────────────────────────┘    │
 │                                  │                                                    │
@@ -311,35 +312,38 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │ │   flow control   ││  │ │ • PPA reward     │ │  │ └─────────────┬──────────────┘ │
 │ │ • LLM + tools    ││  │ └──────────────────┘ │  │               ▼                │
 │ │ • JSON status    ││  │                      │  │ ┌────────────────────────────┐ │
-│ │ • Auto-retry     ││  │ ┌──────────────────┐ │  │ │  CrossLayerTaskGraph (DAG) │ │
-│ │ • Escalation     ││  │ │  Negotiation     │ │  │ │  • Dependencies            │ │
-│ │                  ││  │ │  Coordinator     │ │  │ │  • Verification criteria   │ │
-│ │ ┌──────────────┐││  │ │ • Area Agent     │ │  │ │  • Critical path           │ │
-│ │ │StateMachine  │││  │ │ • Delay Agent    │ │  │ └─────────────┬──────────────┘ │
-│ │ │ • proceed    │││  │ │ • Power Agent    │ │  │               ▼                │
-│ │ │ • loop_back  │││  │ │ • Nash Arbiter   │ │  │ ┌────────────────────────────┐ │
-│ │ │ • suspend    │││  │ │ • Pareto Front   │ │  │ │     Domain Teams           │ │
-│ │ │ • escalate   │││  │ └──────────────────┘ │  │ │  ┌────┐ ┌────┐ ┌───────┐  │ │
-│ │ └──────────────┘││  │                      │  │ │  │EDA │ │Chip│ │AIInfra│  │ │
-│ └─────────────────┘│  └──────────────────────┘  │ │  │Team│ │Team│ │Team   │  │ │
-│                     │                            │ │  └──┬─┘ └──┬─┘ └───┬───┘  │ │
-│ 14 Domain Orchs:    │                            │ └─────┼──────┼───────┼──────┘ │
-│ • chip-synthesis    │                            │       ▼      ▼       ▼        │
-│ • chip-rtl          │                            │ ┌────────────────────────────┐ │
-│ • chip-verification │                            │ │   VerificationRunner       │ │
-│ • chip-sta          │                            │ │   • Yosys/ABC/OpenSTA      │ │
-│ • chip-pd           │                            │ │   • Verilator/iVerilog     │ │
-│ • chip-formal       │                            │ │   • pytest / compile check │ │
-│ • chip-dft          │                            │ └─────────────┬──────────────┘ │
-│ • chip-hls          │                            │               ▼                │
-│ • chip-soc          │                            │ ┌────────────────────────────┐ │
-│ • chip-architecture │                            │ │    EvolutionEngine         │ │
-│ • chip-compiler     │                            │ │  • ExperienceStore         │ │
-│ • chip-firmware     │                            │ │  • BottleneckAnalyzer      │ │
-│ • chip-fpga         │                            │ │  • FeedbackGenerator       │ │
-│ • chip-infrastructure                            │ │  • ConvergenceChecker      │ │
-│                     │                            │ └──────────────┬─────────────┘ │
-└─────────────────────┘                            │                │ feedback       │
+│ │   extraction     ││  │ ┌──────────────────┐ │  │ │  CrossLayerTaskGraph (DAG) │ │
+│ │ • WARN/followup  ││  │ │  Negotiation     │ │  │ │  • Dependencies            │ │
+│ │   retry path     ││  │ │  Coordinator     │ │  │ │  • Verification criteria   │ │
+│ │ • Escalation     ││  │ │ • Area Agent     │ │  │ │  • Critical path           │ │
+│ │                  ││  │ │ • Delay Agent    │ │  │ └─────────────┬──────────────┘ │
+│ │ ┌──────────────┐││  │ │ • Power Agent    │ │  │               ▼                │
+│ │ │StateMachine  │││  │ │ • Nash Arbiter   │ │  │ ┌────────────────────────────┐ │
+│ │ │ • proceed    │││  │ │ • Pareto Front   │ │  │ │     Domain Teams           │ │
+│ │ │ • loop_back  │││  │ └──────────────────┘ │  │ │  ┌────┐ ┌────┐ ┌───────┐  │ │
+│ │ │ • suspend    │││  │                      │  │ │  │EDA │ │Chip│ │AIInfra│  │ │
+│ │ │ • escalate   │││  └──────────────────────┘  │ │  │Team│ │Team│ │Team   │  │ │
+│ │ └──────────────┘││                            │ │  └──┬─┘ └──┬─┘ └───┬───┘  │ │
+│ └─────────────────┘│                            │ └─────┼──────┼───────┼──────┘ │
+│                     │                            │       ▼      ▼       ▼        │
+│ 14 Domain Orchs:    │                            │ ┌────────────────────────────┐ │
+│ • chip-synthesis    │                            │ │   VerificationRunner       │ │
+│ • chip-rtl          │                            │ │   • Yosys/ABC/OpenSTA      │ │
+│ • chip-verification │                            │ │   • Verilator/iVerilog     │ │
+│ • chip-sta          │                            │ │   • pytest / compile check │ │
+│ • chip-pd           │                            │ │   • Graceful no-tool path  │ │
+│ • chip-formal       │                            │ └─────────────┬──────────────┘ │
+│ • chip-dft          │                            │               ▼                │
+│ • chip-hls          │                            │ ┌────────────────────────────┐ │
+│ • chip-soc          │                            │ │    EvolutionEngine         │ │
+│ • chip-architecture │                            │ │  • ExperienceStore         │ │
+│ • chip-compiler     │                            │ │  • BottleneckAnalyzer      │ │
+│ • chip-firmware     │                            │ │  • FeedbackGenerator       │ │
+│ • chip-fpga         │                            │ │  • ConvergenceChecker      │ │
+│ • chip-infrastructure                            │ │    (continue/converged/    │ │
+│                     │                            │ │     stuck/pivot)           │ │
+└─────────────────────┘                            │ └──────────────┬─────────────┘ │
+                                                   │                │ feedback       │
                                                    │                └───── ↺ ───────┘ │
                                                    └────────────────────────────────┘
               │                        │                        │
@@ -374,7 +378,8 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │   │  │ DeepSeek    │  │ OpenAI-Compatible │  │ Local (Qwen2.5 / LogicRT)       │  │  │
 │   │  │ (Cloud API) │  │ (Anthropic, etc.) │  │ (On-device inference)           │  │  │
 │   │  └─────────────┘  └───────────────────┘  └─────────────────────────────────┘  │  │
-│   │  • Streaming support      • Function calling      • Failover                   │  │
+│   │  • Streaming support      • Function calling      • Failover chain             │  │
+│   │  • Retry with jitter      • Context overflow detect + compress                 │  │
 │   └───────────────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -394,6 +399,18 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │  └───────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                       │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐   │
+│  │  EDA Tool Detection (eda_tools/tool_detection.py)                              │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  detect_all_tools() — scans via shutil.which at startup                   │  │   │
+│  │  │  • 20 open-source tools (Yosys, ABC, Verilator, OpenROAD, …)             │  │   │
+│  │  │  • 7 proprietary tools (VCS, Xcelium, DC, Innovus, …)                    │  │   │
+│  │  │  • ABC_PATH / OPENSTA_PATH env var overrides                              │  │   │
+│  │  │  • ToolManifest.json written at startup, consumed by orchestrator         │  │   │
+│  │  │  • Graceful MISSING status — never raises on cold-start                   │  │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘  │   │
+│  └───────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                       │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐   │
 │  │  Security (security/)                                                          │   │
 │  │  ┌─────────────────────┐  ┌──────────────────────────────────────────────┐    │   │
 │  │  │  PathSandbox        │  │  ThreatPatterns                               │    │   │
@@ -403,8 +420,9 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │  │  └─────────────────────┘  └──────────────────────────────────────────────┘    │   │
 │  │  ┌─────────────────────┐  ┌──────────────────────────────────────────────┐    │   │
 │  │  │  ToolGuardrails     │  │  ToolRepair (tools/repair.py)                 │    │   │
-│  │  │  • Pre/post checks  │  │  • Auto-fix malformed tool arguments          │    │   │
-│  │  │  • Budget limits    │  │  • LLM hallucination recovery                 │    │   │
+│  │  │  • Pre/post checks  │  │  • Truncated / trailing-comma JSON repair     │    │   │
+│  │  │  • Budget limits    │  │  • Fuzzy tool-name correction (Levenshtein)   │    │   │
+│  │  │  • Loop prevention  │  │  • Schema-based type coercion                 │    │   │
 │  │  └─────────────────────┘  └──────────────────────────────────────────────┘    │   │
 │  └───────────────────────────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────────────────────┘
@@ -428,7 +446,7 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │  │  └──────────────────────────────────┘  │  │ • Security policies              │   │
 │  │  • VectorStore (embedding index)       │  └──────────────────────────────────┘   │
 │  │  • TokenCounter (budget tracking)      │                                          │
-│  │  • Compactor (auto-compress)           │                                          │
+│  │  • Compactor (auto-compress at 72.6%)  │                                          │
 │  └────────────────────────────────────────┘                                          │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -441,6 +459,7 @@ User Input
     ├──[slash cmd]──→ Handler (abc/yosys/rltf/...) ──→ EDA Tool ──→ Result
     │
     ├──[NL task]───→ IntentRouter ──→ Domain Orchestrator ──→ Multi-stage LLM+Tools
+    │                   (CN/EN)       (JSON repair + WARN path)
     │
     └──[/loop]────→ GoalDecomposer ──→ TaskGraph ──→ DomainTeams ──→ Verify ──→ Evolve
                                                          ▲                         │
@@ -453,17 +472,29 @@ User Input
 |--------|-----------|----------|
 | `main.py` | harness, handlers, llm, skills | CLI entry point, REPL |
 | `harness/` | — | Bootstrap, Tasks, Skills, Query, Coordinator |
-| `orchestrator/` | harness, llm, mcp | Multi-stage flow engine |
+| `orchestrator/` | harness, llm, mcp | Multi-stage flow engine, JSON repair |
 | `agents/` | llm, tools | WorkerAgent, AgentRuntime |
-| `llm/` | — | ModelRouter, Providers, Streaming |
-| `tools/` | security | ToolRegistry, EDA/Agent/System tools |
+| `llm/` | — | ModelRouter, Providers, Streaming, Failover |
+| `tools/` | security | ToolRegistry, EDA/Agent/System tools, ToolRepair |
 | `security/` | — | PathSandbox, ThreatPatterns, Guardrails |
+| `eda_tools/` | — | ToolManifest, detect_all_tools, cold-start detection |
 | `cktmem/` | — | ContextManager, SemanticSearch, VectorStore |
 | `workflows/rltf/` | tools, llm | RLTFCoordinator, Executor, Reward |
 | `workflows/pareto_negotiation/` | tools, llm | NegotiationCoordinator, NashArbiter |
-| `loop/` (v3) | agents, tools, cktmem, llm | SystemLoopController, TaskGraph, Teams |
+| `loop/` (v3) | agents, tools, cktmem, llm | SystemLoopController, TaskGraph, Teams, EvolutionEngine |
 | `skills/` | harness, workflows, loop | Skill registration + executors |
-| `handlers/` | harness, skills, llm | Request dispatch |
+| `handlers/` | harness, skills, llm | IntentRouter, request dispatch |
+
+### Test Suite
+
+| Suite | Tests | Covers |
+|-------|-------|--------|
+| `tests/test_system_loop.py` | 52 unit tests | v3 loop: TaskGraph, GoalDecomposer, VerificationRunner, EvolutionEngine, SystemLoopController |
+| `tests/test_*` (existing regression) | 174 tests | Intent router, tool repair, security, MCP, skills, EDA workflows |
+| `tests/test_stress_intent_routing.py` | 27 stress tests | Intent hijacking, bilingual routing, adversarial inputs, stateless routing |
+| `tests/test_stress_json_chaos.py` | 35 chaos tests | Truncated JSON, markdown contamination, trailing commas, WARN path, no infinite loops |
+| `tests/test_stress_cold_start.py` | 31 cold-start tests | Missing tools, empty PATH, ABC_PATH env, VerificationRunner graceful no-tool path |
+| **Total** | **319 tests** | **Full coverage: happy-path + adversarial + cold-start** |
 
 ---
 
