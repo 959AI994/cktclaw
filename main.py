@@ -107,6 +107,35 @@ if "ABC_PATH" not in os.environ and _DEFAULT_ABC:
 if "OPENSTA_PATH" not in os.environ and _DEFAULT_OPENSTA:
     os.environ["OPENSTA_PATH"] = _DEFAULT_OPENSTA
 
+
+def _load_project_env() -> None:
+    """Load ``cktclaw/.env`` into os.environ (never overrides existing vars).
+
+    Lets ``cktclaw`` work in fresh terminals without ``source activate.sh``.
+    """
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass
+
+
+_load_project_env()
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table

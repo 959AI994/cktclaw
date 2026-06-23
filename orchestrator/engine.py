@@ -35,6 +35,34 @@ from ..mcp.mcp_manager import MCPServerManager
 logger = logging.getLogger(__name__)
 
 
+def _task_needs_clarification(user_task: str) -> bool:
+    """Return True when the orchestrator should ask for extra requirements.
+
+    Short/vague tasks (e.g. ``/chip-rtl design a fifo``) benefit from clarification.
+    Multi-line or structured tasks already pasted by the user should proceed directly.
+    """
+    text = (user_task or "").strip()
+    if len(text) < 80:
+        return True
+    if text.count("\n") >= 2:
+        return False
+    if re.search(r"(?m)^\s*\d+[\.)．、]\s", text):
+        return False
+    if re.search(r"(?m)^\s*[-*•]\s", text):
+        return False
+    if any(k in text for k in ("要求：", "要求:", "约束：", "约束:", "设计目标")):
+        return False
+    return len(text) < 200
+
+
+def _summarize_task(user_task: str, max_len: int = 120) -> str:
+    """One-line summary for confirmation when skipping the clarify prompt."""
+    first = (user_task or "").strip().splitlines()[0].strip()
+    if len(first) <= max_len:
+        return first
+    return first[: max_len - 1] + "…"
+
+
 def save_checkpoint(state: dict) -> Optional[Path]:
     """Persist orchestrator progress to ``<run_dir>/checkpoint.json``.
 
@@ -204,14 +232,20 @@ class OrchestratorEngine:
 
                     session = PromptSession()
 
-                    console.print("\n[yellow]请描述您的具体需求（直接回车使用默认任务描述）:[/yellow]")
-                    user_input = (await session.prompt_async(
-                        HTML("<ansicyan>需求</ansicyan> ❯ "), default=""
-                    )).strip()
+                    if _task_needs_clarification(user_task):
+                        console.print("\n[yellow]请描述您的具体需求（直接回车使用默认任务描述）:[/yellow]")
+                        user_input = (await session.prompt_async(
+                            HTML("<ansicyan>需求</ansicyan> ❯ "), default=""
+                        )).strip()
 
-                    if user_input:
-                        user_task = user_task + "\n\n用户补充需求：" + user_input
-                        console.print("[green]✓ 已添加用户需求[/green]")
+                        if user_input:
+                            user_task = user_task + "\n\n用户补充需求：" + user_input
+                            console.print("[green]✓ 已添加用户需求[/green]")
+                    else:
+                        console.print(
+                            f"\n[green]✓ 已识别完整需求[/green] "
+                            f"[dim]({_summarize_task(user_task)})[/dim]"
+                        )
 
                     console.print(f"\n[yellow]将执行以下阶段：[/yellow] {' → '.join(self.spec.stages)}")
                     confirm = (await session.prompt_async(
@@ -538,12 +572,27 @@ class OrchestratorEngine:
         )
 
         console = cli_state.console
-        with render_spinner(console, f"{Icons.CIRCUIT} Running stage..."):
+        tool_counts: Dict[str, int] = {}
+        with render_spinner(console, f"{Icons.CIRCUIT} Running {stage}...") as status:
             result = None
             async for partial in query_loop.run(messages):
                 result = partial
-                if result.state == QueryStateEnum.TOOL_EXECUTING:
-                    console.print(f"[dim]  tool: {result.current_tool_name}[/dim]")
+                if (
+                    result.state == QueryStateEnum.TOOL_EXECUTING
+                    and result.current_tool_name
+                ):
+                    name = result.current_tool_name
+                    tool_counts[name] = tool_counts.get(name, 0) + 1
+                    status.update(
+                        f"[cyan]{Icons.CIRCUIT} {stage}: {name}[/cyan]"
+                    )
+
+        if tool_counts:
+            summary = ", ".join(
+                f"{name}×{count}" if count > 1 else name
+                for name, count in tool_counts.items()
+            )
+            console.print(f"[dim]  tools: {summary}[/dim]")
 
         if result and result.final_response:
             return result.final_response
@@ -627,10 +676,23 @@ class OrchestratorEngine:
         passed = sum(1 for s in stages_info.values() if s["status"] == "passed")
         total = len(stages_info)
 
-        console.print(Panel(
+        body = (
             f"[bold]{name}[/bold] — {passed}/{total} stages passed\n"
             f"Final state: {snapshot.get('current_stage', 'N/A')}\n"
-            f"Finished: {snapshot.get('finished', False)}",
+            f"Finished: {snapshot.get('finished', False)}"
+        )
+        try:
+            from ..runtime.run_context import get_current_run
+            run = get_current_run()
+            if run is not None:
+                ws = run.dir / "workspace"
+                if ws.is_dir() and any(ws.iterdir()):
+                    body += f"\n[dim]Artifacts: {ws.resolve()}[/dim]"
+        except Exception:
+            pass
+
+        console.print(Panel(
+            body,
             title="[cyan]Orchestrator Summary[/cyan]",
             border_style="cyan",
         ))

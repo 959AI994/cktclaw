@@ -129,7 +129,8 @@ typing_extensions
 typing-inspection
 tzdata
 urllib3
-uvicorn
+uvicorn[standard]>=0.20
+websockets>=11.0
 watchdog
 wcwidth
 Werkzeug

@@ -76,13 +76,11 @@ class ModelRouter:
         claude_key = get_anthropic_api_key(required=False) or ""
         if claude_key and claude_key.startswith("sk-ant-oat"):
             # Claude Code OAuth subscription token (sk-ant-oat...) — usable only by
-            # the Claude Code CLI, not the standard Messages API. Skip it so it does
-            # not become a broken "current provider" that returns canned errors.
-            logger.warning(
+            # the Claude Code CLI, not the standard Messages API. Skip silently at
+            # startup; /model shows a clear message if the user picks Claude.
+            logger.debug(
                 "ANTHROPIC_API_KEY looks like a Claude Code OAuth token "
-                "(sk-ant-oat...), which cannot call the Anthropic API directly; "
-                "skipping the claude provider. Use a standard API key "
-                "(sk-ant-api...) or set DEEPSEEK_API_KEY instead."
+                "(sk-ant-oat...); skipping the claude provider."
             )
         elif claude_key:
             try:
