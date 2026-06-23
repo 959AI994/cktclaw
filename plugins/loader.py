@@ -2,6 +2,7 @@
 Plugin Loader — discovers and loads plugins from filesystem.
 """
 
+import asyncio
 import importlib
 import importlib.util
 import logging
@@ -44,24 +45,26 @@ class PluginLoader:
             if not plugin_dir.is_dir():
                 continue
 
-            # Each subdirectory with a plugin.yaml is a plugin
+            # Each subdirectory with a plugin manifest is a plugin
             for candidate in plugin_dir.iterdir():
                 if not candidate.is_dir():
                     continue
 
-                manifest_path = candidate / "plugin.yaml"
-                if not manifest_path.is_file():
-                    # Also check plugin.yml
-                    manifest_path = candidate / "plugin.yml"
-                    if not manifest_path.is_file():
-                        continue
-
-                try:
-                    manifest = PluginManifest.from_yaml(manifest_path)
-                    discovered.append((candidate, manifest))
-                    logger.debug(f"Discovered plugin: {manifest.name} v{manifest.version} at {candidate}")
-                except Exception as e:
-                    logger.warning(f"Failed to parse manifest at {manifest_path}: {e}")
+                manifest = None
+                for manifest_candidate, loader_fn in [
+                    (candidate / "plugin.yaml",                    PluginManifest.from_yaml),
+                    (candidate / "plugin.yml",                     PluginManifest.from_yaml),
+                    (candidate / ".claude-plugin" / "plugin.json", PluginManifest.from_json),
+                    (candidate / "plugin.json",                    PluginManifest.from_json),
+                ]:
+                    if manifest_candidate.is_file():
+                        try:
+                            manifest = loader_fn(manifest_candidate)
+                            discovered.append((candidate, manifest))
+                            logger.debug(f"Discovered plugin: {manifest.name} v{manifest.version} at {candidate}")
+                        except Exception as e:
+                            logger.warning(f"Failed to parse manifest at {manifest_candidate}: {e}")
+                        break
 
         return discovered
 
@@ -139,6 +142,12 @@ class PluginLoader:
             info.status = PluginStatus.LOADED
             logger.info(f"Loaded plugin: {manifest.name} v{manifest.version}")
 
+            # Scan and register skills into SkillRegistry
+            skill_names = self._scan_and_register_skills(plugin_path, manifest)
+            if skill_names:
+                contributions[PluginType.SKILL] = skill_names
+            info.skill_names = skill_names
+
         except Exception as e:
             info.status = PluginStatus.ERROR
             info.error_message = str(e)
@@ -147,8 +156,16 @@ class PluginLoader:
         return info
 
     def unload_plugin(self, plugin_info: PluginInfo) -> None:
-        """Unload a plugin: unregister hooks, remove from sys.path."""
+        """Unload a plugin: unregister hooks and skills, remove from sys.path."""
         self._hook_registry.unregister_plugin(plugin_info.name)
+
+        # Unregister skills
+        from cktclaw.harness.skills import unregister_skill
+        for skill_name in (plugin_info.skill_names or []):
+            try:
+                asyncio.run(unregister_skill(skill_name))
+            except Exception:
+                pass
 
         plugin_str = str(plugin_info.path)
         if plugin_str in sys.path:
@@ -156,6 +173,53 @@ class PluginLoader:
 
         plugin_info.status = PluginStatus.DISABLED
         logger.info(f"Unloaded plugin: {plugin_info.name}")
+
+    def _scan_and_register_skills(self, plugin_path: Path, manifest: PluginManifest) -> List[str]:
+        """Scan plugin for SKILL.md files and register them in SkillRegistry."""
+        from .skill_loader import parse_skill_md
+
+        registered = []
+        seen_names: set = set()
+
+        # 1. Explicitly listed skills from manifest (takes priority)
+        for skill_entry in manifest.skills:
+            skill_md_path = plugin_path / skill_entry.path
+            if skill_md_path.is_file():
+                skill_def = parse_skill_md(skill_md_path, manifest.name)
+                if skill_def:
+                    if skill_entry.name:
+                        skill_def = skill_def.copy(update={"name": skill_entry.name})
+                    if skill_entry.aliases:
+                        skill_def = skill_def.copy(update={"aliases": skill_entry.aliases})
+                    self._register_skill_sync(skill_def)
+                    seen_names.add(skill_def.name)
+                    registered.append(skill_def.name)
+            else:
+                logger.warning(f"Plugin {manifest.name}: skill path not found: {skill_md_path}")
+
+        # 2. Auto-scan skills/*/SKILL.md (superpowers convention, depth-1 subdirs)
+        skills_dir = plugin_path / "skills"
+        if skills_dir.is_dir():
+            for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
+                skill_def = parse_skill_md(skill_md, manifest.name)
+                if skill_def and skill_def.name not in seen_names:
+                    self._register_skill_sync(skill_def)
+                    seen_names.add(skill_def.name)
+                    registered.append(skill_def.name)
+
+        return registered
+
+    def _register_skill_sync(self, skill_def) -> None:
+        """Register a skill synchronously, tolerating existing registrations."""
+        from cktclaw.harness.skills import register_skill
+        try:
+            asyncio.run(register_skill(skill_def, override=True))
+        except RuntimeError:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as ex:
+                ex.submit(asyncio.run, register_skill(skill_def, override=True)).result()
+        except Exception:
+            pass  # never crash plugin loading due to skill registration
 
     def _import_handler(
         self, plugin_path: Path, handler_spec: str

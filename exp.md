@@ -1059,3 +1059,63 @@ Run via: `python tests/test_benchmark_6dim.py`
 | max | 2865 | 2194 | 23.4% | 72 |
 
 Data source: [NYU-MLDA/OpenABC](https://github.com/NYU-MLDA/OpenABC) (published research data)
+
+---
+
+## Experiment 12: RTL-CLAW Skill Integration
+
+**Date:** 2026-06-22
+**Branch:** feat/v2-industrial-agent
+**Scope:** Integrate 5 RTL-CLAW pipeline skills (Tongji EDA Lab + CUHK) into CktClaw as bundled PROMPT-type skills.
+
+### Integration Summary
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `skills/rtl_claw_skills/` | New directory: 5 skill folders + SKILL.md files | ✅ |
+| `skills/rtl_claw_skill.py` | New: SkillDefinition × 5, executor factory, register function | ✅ |
+| `skills/__init__.py` | Added `register_rtl_claw_skills` export | ✅ |
+| `main.py` | Added registration in startup (both sequential + ThreadPoolExecutor paths) | ✅ |
+| `handlers/intent_router.py` | Added 5 bilingual CN/EN routing patterns | ✅ |
+| `README.md` | Added RTL-CLAW Skills table | ✅ |
+
+### Skills Registered
+
+| Name | Type | Aliases | OpenClaw Required |
+|------|------|---------|-------------------|
+| `rtl-spec-analyzer` | PROMPT/BUNDLED | `rtl-analyze`, `spec-analyze` | No (graceful degrade) |
+| `testbench-generator` | PROMPT/BUNDLED | `tb-gen`, `testbench-gen` | No |
+| `verilog-partition` | PROMPT/BUNDLED | `rtl-partition`, `verilog-split` | agent_partition.py |
+| `verilog-optimization` | PROMPT/BUNDLED | `rtl-opt`, `verilog-opt` | agent_optimization.py |
+| `verilog-merge` | PROMPT/BUNDLED | `rtl-merge`, `verilog-join` | agent_merge.py |
+
+### Verification Results
+
+```
+# Skills registration
+RTL-CLAW skills registered: ['rtl-spec-analyzer', 'testbench-generator',
+  'verilog-partition', 'verilog-optimization', 'verilog-merge']
+Total: 5 ✅
+
+# Intent routing (plan test cases)
+✅ '分割这个RTL模块' → verilog-partition
+✅ '优化verilog子模块' → verilog-optimization
+✅ '合并分割后的模块' → verilog-merge
+✅ '分析RTL规格做信号映射' → rtl-spec-analyzer
+✅ '生成testbench' → testbench-generator
+
+# Regression
+267 passed, 1 pre-existing failure (test_install_from_path symlink race)
+```
+
+### Graceful Degradation
+
+Skills check `RTL_CLAW_ROOT` env var for `agent_partition.py`, `agent_optimization.py`, `agent_merge.py`:
+- **Not set / not found:** Returns SKILL.md docs + `[RTL-CLAW: OpenClaw依赖未找到]` notice
+- **Found:** Returns SKILL.md prompt + user args as LLM context
+
+### Summary Table
+
+| # | Experiment | Status | Key Metric |
+|---|------------|--------|------------|
+| 12 | RTL-CLAW Skill Integration | ✅ PASS | 5 skills, 5/5 routing, 267 regression |

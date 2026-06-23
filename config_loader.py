@@ -41,7 +41,7 @@ llm:
 
   claude:
     # api_key: sk-ant-... (prefer ANTHROPIC_API_KEY env var)
-    model: claude-sonnet-4-20250514
+    model: claude-sonnet-4-6
     max_tokens: 4096
 
   openai:
@@ -72,6 +72,16 @@ context:
 trajectory:
   enabled: true
   directory: .cktclaw/trajectories
+
+# ━━━━━━━━━━ External Agent Skills ━━━━━━━━━━
+skills:
+  # Codex-style SKILL.md search paths (absolute paths recommended).
+  # Also scanned: ~/.cktclaw/skills/, sibling ../verilog-generator if present.
+  # Env override: CKTCLAW_SKILL_PATHS (colon-separated).
+  search_paths: []
+  # Example:
+  # search_paths:
+  #   - /path/to/verilog-generator
 
 # ━━━━━━━━━━ Security ━━━━━━━━━━
 security:
@@ -246,3 +256,53 @@ def get_config(config_path: Optional[Path] = None) -> CktClawConfig:
     if _config is None:
         _config = CktClawConfig(config_path=config_path)
     return _config
+
+
+def reset_config_cache() -> None:
+    """Drop the cached config so the next get_config() re-reads from disk.
+
+    Call this after writing ~/.cktclaw/config.yaml at runtime (e.g. when the user
+    saves a new API key via /model) so the change is picked up immediately.
+    """
+    global _config
+    _config = None
+
+
+def save_user_config(updates: Dict[str, Any]) -> Path:
+    """Deep-merge ``updates`` into ~/.cktclaw/config.yaml and persist it.
+
+    Returns the path written. Resets the in-memory config cache so subsequent
+    reads see the new values.
+    """
+    import yaml
+
+    path = DEFAULT_CONFIG_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing: Dict[str, Any] = {}
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                existing = yaml.safe_load(fh) or {}
+        except Exception:
+            existing = {}
+
+    def _deep_merge(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+        for k, v in extra.items():
+            if isinstance(v, dict) and isinstance(base.get(k), dict):
+                base[k] = _deep_merge(base[k], v)
+            else:
+                base[k] = v
+        return base
+
+    merged = _deep_merge(existing, updates)
+    with open(path, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(merged, fh, allow_unicode=True, sort_keys=False)
+
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+    reset_config_cache()
+    return path

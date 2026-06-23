@@ -25,6 +25,7 @@ from rich.console import Console
 from ..ui import (
     render_error,
     render_user_message,
+    render_assistant_message,
     render_completion_summary,
     Icons,
 )
@@ -322,6 +323,15 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
     """
     console = cli_state.console
 
+    # ━━━━━━━━━━ 0. Intent-based routing to chip-design orchestrator ━━━━━━━━━━
+    from .intent_router import detect_chip_design_intent
+    detected_skill = detect_chip_design_intent(user_message)
+    if detected_skill:
+        from .chip_design_handler import handle_chip_design
+        console.print(f"[dim]→ Auto-routed to {detected_skill}[/dim]")
+        await handle_chip_design(detected_skill, user_message, cli_state)
+        return
+
     # Check if we should use the v2 LLM providers
     if not _should_use_v3(cli_state):
         from .chat_handler_v2 import process_chat_v2
@@ -358,7 +368,15 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
     provider = router.current_provider
     current_provider_name = router.current_name
     if not provider:
-        render_error(console, "No LLM provider configured", error_type="error")
+        render_error(
+            console,
+            "No LLM provider configured. Set one of:\n"
+            "  • export DEEPSEEK_API_KEY=sk-...   (then restart)\n"
+            "  • export ANTHROPIC_API_KEY=sk-ant-... and: pip install anthropic\n"
+            "  • export OPENAI_API_KEY=sk-...\n"
+            "or run /model to switch providers.",
+            error_type="error",
+        )
         return
 
     registry = get_tool_registry()
@@ -410,14 +428,19 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
         try:
             from rich.live import Live
             from rich.text import Text
-            from rich.markdown import Markdown
+            from rich.spinner import Spinner
 
+            # Show a compact spinner while the model generates. We intentionally do
+            # NOT live-render the growing text here: a transient Live of long /
+            # multi-line (CJK) content cannot be reliably erased once it overflows
+            # the terminal, which previously left a raw duplicate above the final
+            # Markdown render. The full reply is rendered once, cleanly, below.
             with Live(
-                Text("", style="dim"),
+                Spinner("dots", text="[magenta]🤖 CktClaw 正在思考…[/magenta]"),
                 console=console,
-                refresh_per_second=15,
+                refresh_per_second=12,
                 transient=True,
-            ) as live:
+            ):
                 async for chunk in provider.chat_stream(
                     chat_messages,
                     tools=tool_schemas if tool_schemas else None,
@@ -426,7 +449,6 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
                 ):
                     if chunk.text_delta:
                         text_buffer += chunk.text_delta
-                        live.update(Text(text_buffer))
 
                     if chunk.tool_call_delta:
                         tc = chunk.tool_call_delta
@@ -538,10 +560,9 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
             )
             return
 
-        # Render streamed text as Markdown
+        # Render the model's reply once, in a styled assistant bubble.
         if text_buffer.strip():
-            from rich.markdown import Markdown
-            console.print(Markdown(text_buffer))
+            render_assistant_message(console, text_buffer)
 
         if tool_calls:
             # ━━━━━━━━━━ Execute tool calls (concurrent for read-only) ━━━━━━━━━━

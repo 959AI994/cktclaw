@@ -10,7 +10,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-267%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-372%20passing-brightgreen.svg)](tests/)
 
 [中文文档](README-CN.md) | **English**
 
@@ -29,7 +29,7 @@ CktClaw is a **multi-agent AI terminal for chip design**. Describe your task in 
 - **20+ EDA tools auto-detected** — Scans Yosys, Verilator, OpenSTA, NextPNR, etc. at startup and configures MCP servers automatically
 - **Intelligent context management** — 4-layer memory + automatic compression keeps critical info across long sessions
 - **Circuit reverse engineering** — AIG → Verilog semantic recovery with AI-powered Q&A
-- **Multi-engine support** — Local LogicRT, Local Qwen2.5-3B-Instruct, and Cloud DeepSeek — all switchable at runtime with `/model`
+- **Multi-provider LLM** — Cloud DeepSeek / Anthropic Claude / OpenAI (and any OpenAI-compatible local endpoint such as vLLM / Ollama), plus local LogicRT & Qwen2.5-3B — switch **and configure API keys** at runtime with `/model`
 ---
 
 <img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
@@ -229,20 +229,38 @@ CktClaw > /pareto circuit.aig 10  # Pareto multi-agent PPA negotiation
 | `/ai4eda` | AI4EDA data processing toolkit |
 | `/rltf [aig] [iter]` | RLTF reinforcement learning optimization |
 | `/pareto [aig] [rounds]` | Pareto multi-agent PPA negotiation |
-| `/chip-design-skills` | Manually browse 14 chip design domains |
-| `/model` | Switch AI engine (LogicRT / Qwen / DeepSeek) |
+| `/chip-design-skills` | Manually browse 15 chip design domains (+ pipeline meta) |
+| `/chip-pipeline [task]` | Cross-domain pipeline — verification↔RTL fix_request loop |
+| `/model` | Pick a provider (DeepSeek / Claude / OpenAI / Local), configure its API key, and choose a model |
 | `/session info` | View current session |
 | `/clear` | New session |
 | `/help` | Full help |
 
 ---
 
-## 🔗 14 Chip Design Domains
+## 🔬 RTL-CLAW Skills (5 Pipeline Skills)
 
-CktClaw covers the full chip design flow. Each domain has its own multi-stage orchestrator:
+RTL optimization pipeline developed by Tongji EDA Lab + CUHK, embedded directly in CktClaw:
+
+| Skill | Aliases | Description |
+|-------|---------|-------------|
+| `rtl-spec-analyzer` | `rtl-analyze`, `spec-analyze` | Analyze RTL + spec, extract Signal-to-Pin mappings |
+| `testbench-generator` | `tb-gen`, `testbench-gen` | Generate SystemVerilog testbench from analysis output |
+| `verilog-partition` | `rtl-partition`, `verilog-split` | Split RTL into sub-modules by always blocks |
+| `verilog-optimization` | `rtl-opt`, `verilog-opt` | Yosys-based optimization of partitioned sub-modules |
+| `verilog-merge` | `rtl-merge`, `verilog-join` | Merge optimized sub-modules back with equivalence check |
+
+Skills work in prompt mode without OpenClaw infra, or full execution mode when `RTL_CLAW_ROOT` is set.
+
+---
+
+## 🔗 15 Chip Design Domains (+ Meta Pipeline)
+
+CktClaw covers the full chip design flow. Each domain has its own multi-stage orchestrator, plus a **meta pipeline** for cross-domain feedback:
 
 | Domain | Example Keywords | Stages |
 |--------|-----------------|--------|
+| **Pipeline (meta)** | fix_requests, cross-domain loop | 6 stages |
 | **Architecture** | microarchitecture, PPA estimation | 6 stages |
 | **RTL Design** | Verilog module, lint, CDC | 6 stages |
 | **Verification** | UVM, testbench, coverage | 8 stages |
@@ -258,7 +276,15 @@ CktClaw covers the full chip design flow. Each domain has its own multi-stage or
 | **FPGA** | bitstream, NextPNR | 6 stages |
 | **Infrastructure** | tool detection, wrapper deploy | 5 stages |
 
-Each stage is LLM-driven. On failure, the orchestrator auto-loops back per configurable rules and escalates when the retry limit is reached.
+Each stage is LLM-driven. On failure, the orchestrator auto-loops back per configurable rules and escalates when the retry limit is reached. **P0 orchestration upgrades** (wired in Python, not template-only):
+
+| Mechanism | What it does |
+|-----------|----------------|
+| **`design_state.json`** | Shared blackboard — constraints, fix_requests, QoR snapshots, history (`orchestrator/design_state.py`) |
+| **Checkpoint resume** | After each stage, progress saved to `.cktclaw/runs/<run_id>/checkpoint.json`; resume on next run |
+| **LLM `loop_back_to`** | Stage JSON `recommendation: loop_back_to:<stage>` triggers dynamic rollback (not only FAIL) |
+| **Auto QoR extract** | Yosys / ABC / OpenSTA stdout parsed into stage QoR (`orchestrator/qor_extractor.py`) |
+| **`/chip-pipeline`** | Meta orchestrator for verification↔RTL fix_request closed loop |
 
 ---
 
@@ -284,10 +310,10 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │                                                                                       │
 │   ┌─────────────────────────────────────────────────────────────────────────────┐    │
 │   │  IntentRouter (handlers/intent_router.py)                                    │    │
-│   │  • Keyword-based first pass (40+ regex patterns, bilingual CN/EN)            │    │
+│   │  • Keyword-based routing (40+ regex patterns, bilingual CN/EN)               │    │
 │   │  • 14 chip-design domain routing                                             │    │
 │   │  • Stateless — no cross-turn state leak                                      │    │
-│   │  • Fallback to LLM classification for ambiguous inputs                       │    │
+│   │  • Bare-keyword guard — single generic terms fall through to normal chat     │    │
 │   └──────────────────────────────┬──────────────────────────────────────────────┘    │
 │                                  │                                                    │
 │   ┌──────────────────────────────▼──────────────────────────────────────────────┐    │
@@ -373,13 +399,15 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │                              LLM PROVIDER LAYER                                       │
 │                                                                                       │
 │   ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│   │  ModelRouter (llm/router.py)                                                   │  │
-│   │  ┌─────────────┐  ┌───────────────────┐  ┌─────────────────────────────────┐  │  │
-│   │  │ DeepSeek    │  │ OpenAI-Compatible │  │ Local (Qwen2.5 / LogicRT)       │  │  │
-│   │  │ (Cloud API) │  │ (Anthropic, etc.) │  │ (On-device inference)           │  │  │
-│   │  └─────────────┘  └───────────────────┘  └─────────────────────────────────┘  │  │
-│   │  • Streaming support      • Function calling      • Failover chain             │  │
-│   │  • Retry with jitter      • Context overflow detect + compress                 │  │
+│   │  ModelRouter (llm/router.py)  +  Credentials (api_credentials.py)              │  │
+│   │  ┌─────────────┐ ┌──────────┐ ┌────────────────┐ ┌──────────────────────────┐ │  │
+│   │  │ DeepSeek    │ │  Claude  │ │ OpenAI / compat│ │ Local (vLLM/Ollama/Qwen) │ │  │
+│   │  │ (Cloud API) │ │(Anthropic│ │  (Cloud API)   │ │ LogicRT (on-device)      │ │  │
+│   │  └─────────────┘ │  SDK)    │ └────────────────┘ └──────────────────────────┘ │  │
+│   │                  └──────────┘                                                   │  │
+│   │  • Runtime /model switch + in-CLI key setup → ~/.cktclaw/config.yaml           │  │
+│   │  • Key resolution: env → yaml → interactive   • OAuth-token / missing-SDK guard│  │
+│   │  • Streaming · Function calling · Failover chain · Retry w/ jitter · Compaction│  │
 │   └───────────────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -470,20 +498,37 @@ User Input
 
 | Module | Depends On | Provides |
 |--------|-----------|----------|
-| `main.py` | harness, handlers, llm, skills | CLI entry point, REPL |
+| `main.py` | harness, handlers, llm, skills | CLI entry point, REPL, RunContext wrapping |
 | `harness/` | — | Bootstrap, Tasks, Skills, Query, Coordinator |
-| `orchestrator/` | harness, llm, mcp | Multi-stage flow engine, JSON repair |
+| `orchestrator/` | harness, llm, mcp, capability_registry | Multi-stage flow engine, Pydantic plan schema, JSON repair |
 | `agents/` | llm, tools | WorkerAgent, AgentRuntime |
-| `llm/` | — | ModelRouter, Providers, Streaming, Failover |
+| `llm/` | api_credentials | ModelRouter, Providers, Streaming, Failover |
+| `api_credentials.py` | config_loader | Secure key resolution (env → yaml → interactive) |
+| `capability_registry.py` | tools, harness/skills, runtime | Unified Tool+Skill facade (audit/permissions/resilience) |
 | `tools/` | security | ToolRegistry, EDA/Agent/System tools, ToolRepair |
 | `security/` | — | PathSandbox, ThreatPatterns, Guardrails |
+| `runtime/` | config_loader | RunContext, audit, permissions, data egress policy, budget, resilience |
 | `eda_tools/` | — | ToolManifest, detect_all_tools, cold-start detection |
 | `cktmem/` | — | ContextManager, SemanticSearch, VectorStore |
 | `workflows/rltf/` | tools, llm | RLTFCoordinator, Executor, Reward |
 | `workflows/pareto_negotiation/` | tools, llm | NegotiationCoordinator, NashArbiter |
 | `loop/` (v3) | agents, tools, cktmem, llm | SystemLoopController, TaskGraph, Teams, EvolutionEngine |
 | `skills/` | harness, workflows, loop | Skill registration + executors |
-| `handlers/` | harness, skills, llm | IntentRouter, request dispatch |
+| `handlers/` | harness, skills, llm | IntentRouter, request dispatch, `/model`, `/doctor` |
+
+### Runtime Governance & Reliability (`runtime/`)
+
+Every invocation runs inside a **RunContext** (`.cktclaw/runs/<run_id>/`) that provides enterprise-grade controls for single-workstation deployments:
+
+| Component | File | Role |
+|-----------|------|------|
+| **RunContext** | `runtime/run_context.py` | Per-run id + directory, run-scoped exception logs |
+| **Audit trail** | `runtime/audit.py` | Append-only `events.jsonl`, secret redaction, arg hashing |
+| **Permissions** | `runtime/permissions.py` + `policy.default.yaml` | Capability/provider allow-deny via `default` / `restricted` / `ci` profiles |
+| **Data egress** | `runtime/data_policy.py` | IP/design classification, redaction, offline-mode enforcement |
+| **Budget** | `runtime/budget.py` | Per-run & per-day token/cost quotas |
+| **Resilience** | `runtime/resilience.py` | `with_timeout` · `CircuitBreaker` · `retry` (exp. backoff) |
+| **Health** | `handlers/doctor_handler.py` | `cktclaw --doctor` / `/doctor` environment report (also in CI) |
 
 ### Test Suite
 
@@ -494,45 +539,73 @@ User Input
 | `tests/test_stress_intent_routing.py` | 27 stress tests | Intent hijacking, bilingual routing, adversarial inputs, stateless routing |
 | `tests/test_stress_json_chaos.py` | 35 chaos tests | Truncated JSON, markdown contamination, trailing commas, WARN path, no infinite loops |
 | `tests/test_stress_cold_start.py` | 31 cold-start tests | Missing tools, empty PATH, ABC_PATH env, VerificationRunner graceful no-tool path |
-| **Total** | **319 tests** | **Full coverage: happy-path + adversarial + cold-start** |
+| `tests/test_task0..15_*.py` | enterprise hardening | Credentials, CapabilityRegistry, plan schema, MCP handshake, RunContext, audit, permissions, data egress, budget, resilience, doctor |
+| **Total** | **372 tests** | **Full coverage: happy-path + adversarial + cold-start + governance + orchestrator P0** |
 
 ---
 
-### DeepSeek Cloud Engine (default)
+## 🤖 Choosing & Configuring Models (`/model`)
+
+CktClaw resolves API keys in this order: **environment variable → `~/.cktclaw/config.yaml` → interactive setup via `/model`**. You never have to hardcode a key, and keys saved through `/model` persist across shells (no need to `source .env` each time).
+
+### Quickest start — set a key via environment
 
 ```bash
-export DEEPSEEK_API_KEY="your-api-key"
+export DEEPSEEK_API_KEY="sk-..."     # DeepSeek (default provider)
+export ANTHROPIC_API_KEY="sk-ant-api..."   # Anthropic Claude (also: pip install anthropic)
+export OPENAI_API_KEY="sk-..."       # OpenAI / OpenAI-compatible
 ```
 
-Or switch engines inside CktClaw:
+### Configure interactively inside CktClaw
 
 ```bash
 CktClaw > /model
+# ↑↓ to navigate, Enter to confirm, Esc to cancel
+
+╭───────────────────── 🔧 选择模型提供方 Provider ─────────────────────╮
+│  ❯  🐋  DeepSeek          ✅ 已就绪 ◀ 当前                            │
+│         云端 · 性价比高，中文友好                                     │
+│      🦋  Anthropic Claude  ⛔ 未配置                                  │
+│      🟢  OpenAI            ⛔ 未配置                                  │
+│      💻  本地 / 自定义      ⛔ 未配置                                  │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+- **Pick a ready provider** → switches instantly.
+- **Pick an unconfigured one** → CktClaw prompts for the API key (hidden input). For **Local / Custom** it asks for a Base URL + model (vLLM / Ollama / LM Studio). Values are saved to `~/.cktclaw/config.yaml` (chmod 600) and applied immediately — no restart.
+- **Then choose a model** from the provider's list, or type a custom model name.
+
+> 💡 A `sk-ant-oat...` value is a **Claude Code subscription OAuth token** and cannot call the API directly — CktClaw detects it and asks for a standard `sk-ant-api...` key instead.
+
+`~/.cktclaw/config.yaml` example:
+
+```yaml
+llm:
+  default_provider: deepseek
+  deepseek:
+    api_key: sk-...
+    model: deepseek-chat
+  claude:
+    api_key: sk-ant-api...
+    model: claude-sonnet-4-6
+```
+
+### Health check
+
+```bash
+cktclaw --doctor   # reports key/provider status, EDA tools, policy, offline mode
 ```
 
 ### Local Qwen Model (Privacy-First, No API Key)
 
-CktClaw supports [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct) as a lightweight local engine — no internet connection or API key required after download.
-
-**Download the model (~6 GB):**
+CktClaw also supports [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct) as a lightweight on-device engine — no internet or API key required after download.
 
 ```bash
 conda activate cktclaw
-python download_qwen.py   # auto-uses ModelScope mirror
+python download_qwen.py   # ~6 GB, auto-uses ModelScope mirror
 ```
 
-**Switch to Qwen inside CktClaw:**
-
-```bash
-CktClaw > /model
-# ↑↓ to navigate, Enter to confirm
-
-  ❯  🤖 Qwen    — 本地推理，Qwen2.5-3B-Instruct，轻量通用
-     💻 LogicRT  — 本地推理，基于 CodeV，快速且隐私
-     ☁️  DeepSeek — 云端 API，ByteDance Volcano Engine
-```
-
-Once selected, Qwen drives all EDA tool calls (Yosys, AI4EDA, etc.) entirely on-device:
+Once selected via `/model`, Qwen (or any local endpoint) drives all EDA tool calls (Yosys, AI4EDA, etc.) entirely on-device:
 
 <img src="figure/local-qwen-yosys&ai4eda.png" alt="Local Qwen driving Yosys and AI4EDA tool calls" width="100%" />
 

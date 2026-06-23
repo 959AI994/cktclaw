@@ -18,13 +18,22 @@ try:
     from ...config import DEEPSEEK_CONFIG
 except ImportError:
     DEEPSEEK_CONFIG = {
-        "api_key": "",
         "base_url": "https://api.deepseek.com",
         "default_model": "deepseek-chat",
         "timeout": 120,
         "temperature": 0.3,
         "max_tokens": 2000,
     }
+
+try:
+    from ...api_credentials import get_deepseek_api_key as _get_api_key, CredentialError
+except ImportError:
+    def _get_api_key(required=False):
+        import os
+        return os.environ.get("CKTCLAW_DEEPSEEK_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
+
+    class CredentialError(RuntimeError):
+        pass
 
 
 class DeepSeekProvider(BaseLLMProvider):
@@ -33,6 +42,10 @@ class DeepSeekProvider(BaseLLMProvider):
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
         self._tool_parser = ToolCallParser(verbose=verbose)
+        try:
+            self._api_key: str = _get_api_key(required=False) or ""
+        except CredentialError:
+            self._api_key = ""
 
     def _log(self, msg: str) -> None:
         if self.verbose:
@@ -53,7 +66,7 @@ class DeepSeekProvider(BaseLLMProvider):
         """Send multi-turn conversation to DeepSeek API."""
         try:
             headers = {
-                "Authorization": f"Bearer {DEEPSEEK_CONFIG['api_key']}",
+                "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
             }
 
@@ -135,7 +148,7 @@ class DeepSeekProvider(BaseLLMProvider):
 
         try:
             headers = {
-                "Authorization": f"Bearer {DEEPSEEK_CONFIG['api_key']}",
+                "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
             }
 

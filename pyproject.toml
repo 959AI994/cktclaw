@@ -28,6 +28,10 @@ dependencies = [
     "rich>=13.0",
     "pyyaml>=6.0",
     "requests>=2.28",
+    "pydantic>=2.0",
+    # Cloud LLM SDK — required for the claude provider. OpenAI/DeepSeek providers
+    # use plain HTTP (requests) and need no extra SDK.
+    "anthropic>=0.40",
 ]
 
 [project.optional-dependencies]

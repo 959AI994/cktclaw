@@ -74,7 +74,8 @@ class OrchestratorStateMachine:
         return stage_name
 
     def complete_stage(
-        self, stage: str, status: str, qor: Optional[dict] = None
+        self, stage: str, status: str, qor: Optional[dict] = None,
+        recommendation: Optional[str] = None,
     ) -> StageTransition:
         """
         Record stage outcome and determine the next transition.
@@ -83,6 +84,7 @@ class OrchestratorStateMachine:
             stage: stage name that just completed
             status: "PASS", "FAIL", or "WARN"
             qor: quality-of-results dict (metrics) from the stage
+            recommendation: optional LLM recommendation (e.g. loop_back_to:rtl_coding)
         """
         if stage not in self._stages:
             return StageTransition(action="escalate", reason=f"Unknown stage: {stage}")
@@ -92,6 +94,12 @@ class OrchestratorStateMachine:
 
         if status.upper() in ("PASS", "WARN"):
             ss.status = "passed"
+            loop_target = self._parse_loop_back_target(recommendation)
+            if loop_target:
+                return self._jump_to_stage(
+                    loop_target,
+                    reason=f"LLM recommendation: {recommendation}",
+                )
             return self._advance()
 
         # status == FAIL
@@ -99,6 +107,44 @@ class OrchestratorStateMachine:
         return self._handle_failure(stage)
 
     # ── Internal ──────────────────────────────────────────────────────
+
+    def _parse_loop_back_target(self, recommendation: Optional[str]) -> Optional[str]:
+        """Parse loop_back_to:<stage> from an LLM recommendation string."""
+        if not recommendation or not isinstance(recommendation, str):
+            return None
+        rec = recommendation.strip()
+        if rec.startswith("loop_back_to:"):
+            target = rec.split(":", 1)[1].strip()
+            if target in self._stages:
+                return target
+        return None
+
+    def _jump_to_stage(self, target: str, reason: str) -> StageTransition:
+        """Jump to a prior stage (LLM-driven loop-back)."""
+        if target not in self._stages:
+            return StageTransition(
+                action="escalate",
+                reason=f"Loop-back target '{target}' not in pipeline",
+            )
+        target_idx = self._stage_order.index(target)
+        self._current_idx = target_idx
+        self._stages[target].status = "running"
+        self._stages[target].attempts += 1
+        loop_key = f"recommendation→{target}"
+        count = self._loop_counts.get(loop_key, 0) + 1
+        self._loop_counts[loop_key] = count
+        if count > 5:
+            return StageTransition(
+                action="escalate",
+                reason=f"Max recommendation loop-backs to '{target}' exceeded",
+                loop_count=count,
+            )
+        return StageTransition(
+            action="loop_back",
+            next_stage=target,
+            reason=reason,
+            loop_count=count,
+        )
 
     def _advance(self) -> StageTransition:
         """Move to the next stage in sequence, or finish."""
@@ -208,7 +254,9 @@ class OrchestratorStateMachine:
         """Full state for persistence or display."""
         return {
             "current_stage": self.current_stage,
+            "current_idx": self._current_idx,
             "finished": self._finished,
+            "stage_order": list(self._stage_order),
             "stages": {
                 name: {
                     "status": ss.status,
@@ -219,3 +267,47 @@ class OrchestratorStateMachine:
             },
             "loop_counts": dict(self._loop_counts),
         }
+
+    def restore_from_snapshot(self, snapshot: dict) -> Optional[str]:
+        """
+        Restore internal state from a checkpoint snapshot.
+
+        Returns the stage name to resume from, or None if restoration failed.
+        """
+        if not snapshot:
+            return None
+        stage_order = snapshot.get("stage_order")
+        if stage_order and stage_order != self._stage_order:
+            logger_msg = "Checkpoint stage_order mismatch — ignoring restore"
+            import logging
+            logging.getLogger(__name__).warning(logger_msg)
+
+        stages_data = snapshot.get("stages", {})
+        for name, info in stages_data.items():
+            if name in self._stages and isinstance(info, dict):
+                ss = self._stages[name]
+                ss.status = info.get("status", ss.status)
+                ss.attempts = info.get("attempts", ss.attempts)
+                ss.qor = info.get("qor", {}) or {}
+
+        self._loop_counts = dict(snapshot.get("loop_counts", {}))
+        self._finished = bool(snapshot.get("finished", False))
+        self._current_idx = snapshot.get("current_idx", -1)
+
+        if self._finished:
+            return None
+
+        stage = self.current_stage
+        if stage and stage in self._stages:
+            self._stages[stage].status = "running"
+            return stage
+
+        # Fall back to first incomplete stage
+        for name in self._stage_order:
+            if self._stages[name].status in ("pending", "failed"):
+                self._current_idx = self._stage_order.index(name)
+                self._stages[name].status = "running"
+                self._stages[name].attempts += 1
+                self._finished = False
+                return name
+        return None

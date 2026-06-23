@@ -37,6 +37,7 @@ class PluginInfo:
     status: PluginStatus = PluginStatus.DISCOVERED
     error_message: Optional[str] = None
     contributions: Dict[PluginType, List[str]] = field(default_factory=dict)
+    skill_names: List[str] = field(default_factory=list)
 
 
 class PluginBase(ABC):

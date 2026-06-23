@@ -9,7 +9,8 @@ from .state_machine import (
     StageTransition,
     OrchestratorStateMachine,
 )
-from .engine import OrchestratorEngine
+from .engine import OrchestratorEngine, save_checkpoint, load_checkpoint
+from .design_state import DesignStateStore, resolve_design_state_path
 
 __all__ = [
     "OrchestratorSpec",
@@ -19,4 +20,8 @@ __all__ = [
     "StageTransition",
     "OrchestratorStateMachine",
     "OrchestratorEngine",
+    "save_checkpoint",
+    "load_checkpoint",
+    "DesignStateStore",
+    "resolve_design_state_path",
 ]

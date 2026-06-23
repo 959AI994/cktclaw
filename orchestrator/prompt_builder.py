@@ -23,6 +23,7 @@ def build_stage_messages(
     skill_md: str,
     manifest: Optional[ToolManifest] = None,
     tool_preference: Optional[dict[str, list[str]]] = None,
+    design_state_summary: Optional[str] = None,
 ) -> list[dict[str, str]]:
     """
     Build the messages list to send to the LLM for one stage.
@@ -37,7 +38,9 @@ def build_stage_messages(
         tool_preference: per-tool execution preference from MCPServerManager
     """
     system_content = _build_system_prompt(spec, skill_md, manifest, tool_preference)
-    user_content = _build_user_prompt(spec, state_machine, stage, user_task)
+    user_content = _build_user_prompt(
+        spec, state_machine, stage, user_task, design_state_summary=design_state_summary,
+    )
     return [
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
@@ -81,18 +84,19 @@ def _build_system_prompt(
         parts.append("")
 
     parts.append(
-        "## Response Format\n"
-        "IMPORTANT: You MUST end your response with EXACTLY this JSON block "
-        "(replace values as appropriate):\n"
+        "## Response Format (MANDATORY — orchestrator cannot advance without this)\n"
+        "Your response MUST end with EXACTLY one JSON block in this shape "
+        "(replace values; keep keys):\n"
         "```json\n"
-        '{"stage": "<stage_name>", "status": "PASS", "qor": {}, "issues": [], "recommendation": "proceed"}\n'
+        '{"stage": "<current_stage_name>", "status": "PASS", "qor": {}, '
+        '"issues": [], "recommendation": "proceed"}\n'
         "```\n"
         "Rules:\n"
-        '- status must be "PASS", "WARN", or "FAIL"\n'
-        '- recommendation must be "proceed", "loop_back_to:<stage>", or "escalate"\n'
-        "- qor can include numeric metrics like {\"area\": 100, \"delay\": 5.2}\n"
-        "- Always include this block even if you have nothing to report — just use the default above.\n"
-        "- Do NOT omit this block. It is required for the orchestrator to advance."
+        '- status must be "PASS", "WARN", or "FAIL" (uppercase)\n'
+        '- recommendation: "proceed", "loop_back_to:<stage>", or "escalate"\n'
+        "- qor: include numeric metrics from tool output (area_cells, and_nodes, wns_ns, etc.)\n"
+        "- Put prose/analysis BEFORE the JSON block; the JSON block must be the LAST thing.\n"
+        "- Never omit the JSON block — even if you only ran one quick check, still emit it."
     )
 
     return "\n".join(parts)
@@ -103,6 +107,7 @@ def _build_user_prompt(
     state_machine: OrchestratorStateMachine,
     stage: str,
     user_task: str,
+    design_state_summary: Optional[str] = None,
 ) -> str:
     ctx = state_machine.get_stage_context(stage)
     parts: list[str] = []
@@ -116,6 +121,9 @@ def _build_user_prompt(
         parts.append(f"**Attempt #{ctx['attempts']}** (previous attempt failed)")
 
     parts.append(f"\n### User Task\n{user_task}")
+
+    if design_state_summary:
+        parts.append(f"\n{design_state_summary}")
 
     if spec.sign_off_criteria:
         parts.append("\n### Sign-off Criteria for This Flow")
@@ -140,10 +148,16 @@ def _build_user_prompt(
     parts.append(f"Current position: **{stage}**")
 
     parts.append(
-        "\n\n**IMPORTANT — Tool Budget**: You have at most **8 tool calls** for this stage. "
-        "Be efficient: do not repeat the same command, do not run exhaustive sweeps. "
-        "Pick the most relevant 1-3 commands, observe the results, then conclude. "
-        "Execute this stage now and end your response with the JSON status block."
+        "\n\n**Stage completion checklist**:\n"
+        "1. Execute this stage (use listed tools when the stage requires EDA commands).\n"
+        "2. Summarize findings in prose.\n"
+        "3. End with the mandatory JSON block for stage **"
+        f"{stage}**:\n"
+        f"```json\n"
+        f'{{"stage": "{stage}", "status": "PASS", "qor": {{}}, '
+        f'"issues": [], "recommendation": "proceed"}}\n'
+        f"```\n"
+        "**Tool budget**: at most 8 tool calls — pick 1–3 relevant commands, then conclude."
     )
 
     return "\n".join(parts)

@@ -8,6 +8,7 @@ aiosqlite
 altair
 annotated-doc
 annotated-types
+anthropic
 anyio
 async-timeout
 attrs

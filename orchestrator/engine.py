@@ -12,7 +12,10 @@ Each stage:
 
 import asyncio
 import json
+import logging
+import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,32 +27,101 @@ from rich.markdown import Markdown
 from .parser import OrchestratorSpec, parse_orchestrator
 from .state_machine import OrchestratorStateMachine, StageTransition
 from .prompt_builder import build_stage_messages
+from .design_state import DesignStateStore
+from .qor_extractor import extract_qor_from_outputs, merge_qor
 from ..eda_tools.tool_detection import ToolManifest
 from ..mcp.mcp_manager import MCPServerManager
+
+logger = logging.getLogger(__name__)
+
+
+def save_checkpoint(state: dict) -> Optional[Path]:
+    """Persist orchestrator progress to ``<run_dir>/checkpoint.json``.
+
+    No-op (returns None) when there is no active run.
+    """
+    try:
+        from ..runtime.run_context import get_current_run
+        run = get_current_run()
+        if run is None:
+            return None
+        path = run.dir / "checkpoint.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+    except Exception as e:
+        logger.warning(f"save_checkpoint failed: {e}")
+        return None
+
+
+def load_checkpoint(run_id: str) -> Optional[dict]:
+    """Load a previously saved checkpoint for *run_id*, or None if absent."""
+    try:
+        from ..runtime.run_context import run_dir_for
+        path = run_dir_for(run_id) / "checkpoint.json"
+        if not path.is_file():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"load_checkpoint failed: {e}")
+        return None
 
 
 def _extract_stage_result(response: str) -> Optional[dict]:
     """
     Extract the JSON status block from the LLM's response.
 
-    Looks for the last ```json ... ``` fenced block containing 'stage' and 'status'.
+    Tries fenced ```json blocks, generic ``` fences, trailing inline JSON,
+    and loose objects containing a status field.
     """
-    blocks = re.findall(r"```json\s*\n(.*?)\n\s*```", response, re.DOTALL)
+    if not response or not isinstance(response, str):
+        return None
+
+    # 1. Fenced ```json ... ```
+    blocks = re.findall(r"```json\s*\n?(.*?)```", response, re.DOTALL | re.IGNORECASE)
     for block in reversed(blocks):
-        try:
-            data = json.loads(block)
-            if "status" in data:
-                return data
-        except json.JSONDecodeError:
-            continue
-    # Fallback: try to find inline JSON with status (supports one level of nesting)
-    m = re.search(r'\{(?:[^{}]|\{[^{}]*\})*"status"\s*:\s*"(PASS|FAIL|WARN)"(?:[^{}]|\{[^{}]*\})*\}', response)
+        parsed = _try_parse_status_json(block.strip())
+        if parsed:
+            return parsed
+
+    # 2. Fenced ``` without language tag
+    blocks = re.findall(r"```\s*\n?(.*?)```", response, re.DOTALL)
+    for block in reversed(blocks):
+        if "status" in block:
+            parsed = _try_parse_status_json(block.strip())
+            if parsed:
+                return parsed
+
+    # 3. Inline object with status field (one nesting level)
+    m = re.search(
+        r'\{(?:[^{}]|\{[^{}]*\})*"status"\s*:\s*"(PASS|FAIL|WARN)"(?:[^{}]|\{[^{}]*\})*\}',
+        response,
+        re.IGNORECASE,
+    )
     if m:
-        try:
-            return json.loads(m.group(0))
-        except json.JSONDecodeError:
-            pass
+        parsed = _try_parse_status_json(m.group(0))
+        if parsed:
+            return parsed
+
+    # 4. Last {...} blob in the response (LLM often appends JSON at the end)
+    for m in re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", response):
+        parsed = _try_parse_status_json(m.group(0))
+        if parsed:
+            return parsed
+
     return None
+
+
+def _try_parse_status_json(text: str) -> Optional[dict]:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or "status" not in data:
+        return None
+    if isinstance(data.get("status"), str):
+        data["status"] = data["status"].upper()
+    return data
 
 
 class OrchestratorEngine:
@@ -77,10 +149,17 @@ class OrchestratorEngine:
         self.manifest = manifest
         self.mcp_manager = mcp_manager
         self.state_machine = OrchestratorStateMachine(spec)
+        self.design_state = DesignStateStore()
+        self._resume_user_task: Optional[str] = None
 
-    async def run(self, user_task: str) -> dict:
+    async def run(self, user_task: str, auto_confirm: bool = False) -> dict:
         """
         Execute the full orchestrator flow.
+
+        Args:
+            user_task: Natural-language task description.
+            auto_confirm: Skip interactive requirement/confirm prompts (also enabled
+                when stdin is not a TTY or CKTCLAW_ORCHESTRATOR_AUTO_CONFIRM=1).
 
         Returns a summary dict with final state and per-stage results.
         """
@@ -95,38 +174,61 @@ class OrchestratorEngine:
             border_style="cyan",
         ))
 
-        # Interactive requirement gathering (async-safe via prompt_async)
-        try:
-            from prompt_toolkit import PromptSession
-            from prompt_toolkit.formatted_text import HTML
+        # ── Checkpoint resume (same orchestrator in active run dir) ──
+        resumed = self._try_resume_from_checkpoint(user_task)
+        if resumed:
+            user_task = resumed
+            console.print(
+                f"[dim]↻ Resuming from checkpoint at stage "
+                f"{self.state_machine.current_stage}[/dim]"
+            )
+            stage = self.state_machine.current_stage
+        else:
+            stage = None
 
-            session = PromptSession()
-
-            console.print("\n[yellow]请描述您的具体需求（直接回车使用默认任务描述）:[/yellow]")
-            user_input = (await session.prompt_async(
-                HTML("<ansicyan>需求</ansicyan> ❯ "), default=""
-            )).strip()
-
-            if user_input:
-                user_task = user_task + "\n\n用户补充需求：" + user_input
-                console.print("[green]✓ 已添加用户需求[/green]")
-
-            console.print(f"\n[yellow]将执行以下阶段：[/yellow] {' → '.join(self.spec.stages)}")
-            confirm = (await session.prompt_async(
-                HTML("<ansicyan>确认执行？[Y/n]</ansicyan> ❯ "), default="Y"
-            )).strip().lower()
-
-            if confirm == 'n':
-                console.print("[yellow]已取消执行[/yellow]")
-                return {"status": "cancelled", "stages": {}}
-        except (KeyboardInterrupt, EOFError):
-            console.print("\n[yellow]已取消执行[/yellow]")
-            return {"status": "cancelled", "stages": {}}
-
-        stage = self.state_machine.start()
         if not stage:
-            console.print("[yellow]No stages defined in orchestrator.[/yellow]")
-            return {"status": "empty", "stages": {}}
+            skip_interactive = (
+                auto_confirm
+                or os.environ.get("CKTCLAW_ORCHESTRATOR_AUTO_CONFIRM")
+                or not sys.stdin.isatty()
+            )
+            if skip_interactive:
+                stage = self.state_machine.start()
+                if not stage:
+                    console.print("[yellow]No stages defined in orchestrator.[/yellow]")
+                    return {"status": "empty", "stages": {}}
+            else:
+                try:
+                    from prompt_toolkit import PromptSession
+                    from prompt_toolkit.formatted_text import HTML
+
+                    session = PromptSession()
+
+                    console.print("\n[yellow]请描述您的具体需求（直接回车使用默认任务描述）:[/yellow]")
+                    user_input = (await session.prompt_async(
+                        HTML("<ansicyan>需求</ansicyan> ❯ "), default=""
+                    )).strip()
+
+                    if user_input:
+                        user_task = user_task + "\n\n用户补充需求：" + user_input
+                        console.print("[green]✓ 已添加用户需求[/green]")
+
+                    console.print(f"\n[yellow]将执行以下阶段：[/yellow] {' → '.join(self.spec.stages)}")
+                    confirm = (await session.prompt_async(
+                        HTML("<ansicyan>确认执行？[Y/n]</ansicyan> ❯ "), default="Y"
+                    )).strip().lower()
+
+                    if confirm == 'n':
+                        console.print("[yellow]已取消执行[/yellow]")
+                        return {"status": "cancelled", "stages": {}}
+                except (KeyboardInterrupt, EOFError):
+                    console.print("\n[yellow]已取消执行[/yellow]")
+                    return {"status": "cancelled", "stages": {}}
+
+                stage = self.state_machine.start()
+                if not stage:
+                    console.print("[yellow]No stages defined in orchestrator.[/yellow]")
+                    return {"status": "empty", "stages": {}}
 
         while not self.state_machine.is_finished():
             console.print(
@@ -138,11 +240,9 @@ class OrchestratorEngine:
 
             # Guard: _execute_stage should always return a dict
             if not isinstance(stage_result, dict):
-                import traceback as _tb
                 _msg = (f"_execute_stage returned non-dict ({type(stage_result).__name__}): "
                         f"{repr(stage_result)[:200]}")
-                with open("/tmp/cktclaw_orchestrator_error.log", "a") as _f:
-                    _f.write(_msg + "\n" + _tb.format_stack()[-4])
+                logger.warning(_msg)
                 stage_result = {"stage": stage, "status": "WARN", "qor": {},
                                 "issues": [{"severity": "WARN", "description": _msg}]}
 
@@ -153,7 +253,28 @@ class OrchestratorEngine:
 
             self._render_stage_result(console, stage, stage_result)
 
-            transition = self.state_machine.complete_stage(stage, status, qor)
+            recommendation = stage_result.get("recommendation")
+            transition = self.state_machine.complete_stage(
+                stage, status, qor, recommendation=recommendation,
+            )
+
+            # ── Shared blackboard + checkpoint ──
+            orch_name = self.spec.name or display_name
+            try:
+                self.design_state.merge_stage_qor(orch_name, stage, qor, status)
+                self.design_state.append_history(
+                    agent=orch_name,
+                    stage=stage,
+                    decision=transition.action,
+                    reason=transition.reason or status,
+                    qor=qor,
+                    recommendation=recommendation,
+                )
+                self.design_state.save()
+            except Exception as e:
+                logger.warning("design_state update failed: %s", e)
+
+            self._persist_checkpoint(user_task)
 
             if transition.action == "proceed":
                 stage = transition.next_stage
@@ -189,6 +310,16 @@ class OrchestratorEngine:
 
     async def _execute_stage(self, stage: str, user_task: str) -> dict:
         """Run one stage through LLM + tools and extract the result."""
+        from .plan_schema import validate_stage_result
+
+        def _validate(result: dict) -> dict:
+            try:
+                return validate_stage_result(result, stage)
+            except Exception as _ve:
+                logger.warning(f"Stage result validation error: {_ve}")
+                result.setdefault("stage", stage)
+                return result
+
         tool_prefs = self._get_tool_preferences()
 
         messages = build_stage_messages(
@@ -199,9 +330,11 @@ class OrchestratorEngine:
             skill_md=self.skill_md,
             manifest=self.manifest,
             tool_preference=tool_prefs,
+            design_state_summary=self.design_state.summary_for_prompt(),
         )
 
-        response = await self._call_llm(messages)
+        stage_tool_outputs: List[str] = []
+        response = await self._call_llm(messages, stage_tool_outputs=stage_tool_outputs)
 
         # Defensive: _call_llm must return str
         if not isinstance(response, str):
@@ -209,8 +342,9 @@ class OrchestratorEngine:
 
         result = _extract_stage_result(response)
         if isinstance(result, dict):
-            result.setdefault("stage", stage)
-            return result
+            extracted = extract_qor_from_outputs(stage_tool_outputs)
+            result["qor"] = merge_qor(result.get("qor", {}), extracted)
+            return _validate(result)
 
         # No JSON block found — ask the LLM to produce just the status block
         if response.strip():
@@ -226,21 +360,31 @@ class OrchestratorEngine:
                     ),
                 },
             ]
-            followup_resp = await self._call_llm(followup_msgs)
+            followup_resp = await self._call_llm(followup_msgs, stage_tool_outputs=stage_tool_outputs)
             if not isinstance(followup_resp, str):
                 followup_resp = str(followup_resp) if followup_resp is not None else ""
             result = _extract_stage_result(followup_resp)
             if isinstance(result, dict):
-                result.setdefault("stage", stage)
-                return result
+                extracted = extract_qor_from_outputs(stage_tool_outputs)
+                result["qor"] = merge_qor(result.get("qor", {}), extracted)
+                return _validate(result)
 
-        # LLM produced a response but still no JSON block — treat as PASS (stage did run)
+        # Third attempt: dedicated JSON-only recovery (no tools, low temperature)
+        if response.strip():
+            recovered = await self._recover_json_status_block(stage, response[:2000])
+            if isinstance(recovered, dict):
+                extracted = extract_qor_from_outputs(stage_tool_outputs)
+                recovered["qor"] = merge_qor(recovered.get("qor", {}), extracted)
+                logger.info("Stage %s: recovered JSON via dedicated follow-up", stage)
+                return _validate(recovered)
+
+        # LLM produced a response but still no JSON block — flag as WARN
         if response.strip():
             return {
                 "stage": stage,
-                "status": "PASS",
+                "status": "WARN",
                 "qor": {},
-                "issues": [],
+                "issues": [{"severity": "WARN", "description": "LLM response lacks structured status block"}],
                 "recommendation": "proceed",
                 "raw_response": response[:2000],
             }
@@ -254,7 +398,49 @@ class OrchestratorEngine:
             "recommendation": "proceed",
         }
 
-    async def _call_llm(self, messages: list[dict]) -> str:
+    async def _recover_json_status_block(self, stage: str, context_hint: str) -> Optional[dict]:
+        """
+        Last-resort JSON recovery: short LLM call with no tools, JSON-only instruction.
+        """
+        try:
+            from ..llm.router import get_model_router
+            from ..llm.base import ChatMessage
+            from ..llm.types import MessageRole
+
+            router = get_model_router()
+            provider = router.current_provider
+            if not provider:
+                return None
+
+            prompt = (
+                f"The orchestrator stage '{stage}' has finished. "
+                f"Based on the assistant output below, emit ONLY a JSON status block "
+                f"(no other text, no markdown except the json fence):\n\n"
+                f"```json\n"
+                f'{{"stage": "{stage}", "status": "PASS", "qor": {{}}, '
+                f'"issues": [], "recommendation": "proceed"}}\n'
+                f"```\n\n"
+                f"Use status PASS unless the output clearly indicates failure. "
+                f"Include numeric metrics in qor when present.\n\n"
+                f"Assistant output (truncated):\n{context_hint}"
+            )
+            msgs = [ChatMessage(role=MessageRole.USER, content=prompt)]
+            text = ""
+            async for chunk in provider.chat_stream(
+                msgs, temperature=0.1, max_tokens=512,
+            ):
+                if chunk.text_delta:
+                    text += chunk.text_delta
+            return _extract_stage_result(text)
+        except Exception as e:
+            logger.warning("JSON recovery failed for stage %s: %s", stage, e)
+            return None
+
+    async def _call_llm(
+        self,
+        messages: list[dict],
+        stage_tool_outputs: Optional[List[str]] = None,
+    ) -> str:
         """
         Call the LLM using the same infrastructure as chat_handler_v2.
         Returns the final text response.
@@ -264,7 +450,6 @@ class OrchestratorEngine:
         from .. import config as _ckt_config
         from ..harness.query.query_loop import create_query_loop
         from ..harness.query.query_types import QueryConfig, QueryStateEnum
-        from ..harness import get_skill_registry
         from ..ui import render_spinner, Icons
 
         cli_state = self.cli_state
@@ -276,8 +461,15 @@ class OrchestratorEngine:
                 verbose=_ckt_config.VERBOSE,
             )
 
-        skill_registry = get_skill_registry()
-        all_skills = await skill_registry.list_skills()
+        # Tool/skill lookup goes through the unified CapabilityRegistry facade.
+        # NOTE: the LLM call (llm_wrapper) below intentionally still uses the
+        # v2 path (chat_handler_v2._chat_with_messages); only the tool layer is
+        # unified here.
+        from ..capability_registry import get_capability_registry as _get_cap_reg
+
+        cap_registry = _get_cap_reg()
+        all_entries = await cap_registry.list_all(user_invocable_only=True)
+
         # Skills excluded from chip-design orchestrator:
         # - chip-*: prevent recursive nesting
         # - rltf / pareto-negotiate / reverse: not yet stable enough for automated orchestration
@@ -289,27 +481,11 @@ class OrchestratorEngine:
             # Built-in tool names the LLM may hallucinate — not real skills
             "Read", "Write", "Bash", "Edit", "Glob", "Grep",
         }
-        tools = []
-        for skill in all_skills:
-            if skill.user_invocable and not skill.name.startswith("chip-") \
-                    and skill.name not in _ORCHESTRATOR_EXCLUDED:
-                tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": skill.name,
-                        "description": f"{skill.description}\n使用场景: {skill.when_to_use}",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "args": {
-                                    "type": "string",
-                                    "description": f"参数格式: {skill.argument_hint}\n参数名: {', '.join(skill.argument_names)}",
-                                }
-                            },
-                            "required": ["args"],
-                        },
-                    },
-                })
+        tools = [
+            entry.to_openai_schema()
+            for entry in all_entries
+            if not entry.name.startswith("chip-") and entry.name not in _ORCHESTRATOR_EXCLUDED
+        ]
 
         async def llm_wrapper(msgs):
             llm_resp = await asyncio.to_thread(
@@ -336,26 +512,11 @@ class OrchestratorEngine:
             return {"role": "assistant", "content": str(llm_resp) if llm_resp else ""}
 
         async def tool_executor(tool_name, tool_args):
-            try:
-                skill = await skill_registry.get_skill(tool_name)
-                if skill and skill.executor:
-                    ctx = {"cli_state": cli_state}
-                    # tool_args can be a bare string when LLM serialises the argument
-                    # as a JSON string rather than a JSON object {"args": "..."}
-                    if isinstance(tool_args, str):
-                        args_str = tool_args
-                    else:
-                        args_str = tool_args.get("args", "") if isinstance(tool_args, dict) else str(tool_args)
-                    result = await skill.executor(args_str, ctx)
-                    if isinstance(result, list):
-                        return "\n".join(
-                            item.get("text", str(item))
-                            for item in result if isinstance(item, dict)
-                        )
-                    return str(result)
-            except Exception:
-                pass
-            return f"Tool '{tool_name}' not available."
+            ctx = {"cli_state": cli_state}
+            result = await cap_registry.execute(tool_name, tool_args, ctx)
+            if stage_tool_outputs is not None:
+                stage_tool_outputs.append(str(result))
+            return result
 
         # Divide the total turn budget across stages; cap at 10 per stage to
         # prevent a single stage from monopolising all available turns.
@@ -387,6 +548,37 @@ class OrchestratorEngine:
         if result and result.final_response:
             return result.final_response
         return ""
+
+    def _try_resume_from_checkpoint(self, user_task: str) -> Optional[str]:
+        """Load checkpoint from active run dir if it matches this orchestrator."""
+        try:
+            from ..runtime.run_context import get_current_run
+            run = get_current_run()
+            if run is None:
+                return None
+            cp = load_checkpoint(run.run_id)
+            if not cp or cp.get("orchestrator_name") != self.spec.name:
+                return None
+            sm_snap = cp.get("state_machine")
+            if not sm_snap:
+                return None
+            resumed_stage = self.state_machine.restore_from_snapshot(sm_snap)
+            if not resumed_stage:
+                return None
+            return cp.get("user_task", user_task)
+        except Exception as e:
+            logger.warning("checkpoint resume failed: %s", e)
+            return None
+
+    def _persist_checkpoint(self, user_task: str) -> None:
+        """Save orchestrator progress after each stage."""
+        payload = {
+            "orchestrator_name": self.spec.name,
+            "user_task": user_task,
+            "state_machine": self.state_machine.get_state_snapshot(),
+            "design_state_path": str(self.design_state.path),
+        }
+        save_checkpoint(payload)
 
     def _get_tool_preferences(self) -> dict[str, list[str]]:
         if not self.mcp_manager or not self.manifest:

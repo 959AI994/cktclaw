@@ -104,6 +104,11 @@ def _plugin_install(console: Console, source: str) -> None:
             from ..plugins.base import PluginType
             for ptype, items in info.contributions.items():
                 console.print(f"  [dim]{ptype.value}s: {', '.join(items)}[/dim]")
+        if info.skill_names:
+            names = info.skill_names[:8]
+            extra = len(info.skill_names) - 8
+            suffix = f" ... (+{extra} more)" if extra > 0 else ""
+            console.print(f"  [dim]skills registered: {', '.join(names)}{suffix}[/dim]")
 
         # Register plugin tools in the ToolRegistry
         _register_plugin_tools(info.name)

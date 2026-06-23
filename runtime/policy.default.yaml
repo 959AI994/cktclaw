@@ -1,0 +1,35 @@
+# CktClaw default permission policy (single-user CLI).
+#
+# Select the active profile via:
+#   - security.profile in ~/.cktclaw/config.yaml, or
+#   - the CKTCLAW_PROFILE environment variable (overrides config).
+#
+# Safe-by-default: an unknown/missing profile resolves to the most restrictive
+# known profile (never "allow *").
+
+security:
+  # When true, only local LLM providers are allowed and all cloud egress is
+  # hard-blocked. Can also be forced at runtime via CKTCLAW_OFFLINE=1.
+  offline: false
+  # When true, design content (RTL/netlist) is redacted before being sent to a
+  # cloud provider.
+  redact_design_egress: false
+
+profiles:
+  # Full local workstation use.
+  default:
+    allow_tools: ["*"]
+    deny_tools: []
+    allow_providers: ["*"]
+
+  # Hardened: only core EDA tools, local LLM only, no shell.
+  restricted:
+    allow_tools: ["yosys", "abc", "opensta", "verilator", "sta"]
+    deny_tools: ["bash", "shell", "exec"]
+    allow_providers: ["local"]
+
+  # CI / automation: read-mostly analysis tools, local provider, no shell.
+  ci:
+    allow_tools: ["yosys", "abc", "opensta", "sta", "verilator"]
+    deny_tools: ["bash", "shell", "exec"]
+    allow_providers: ["local"]

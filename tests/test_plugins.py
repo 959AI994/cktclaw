@@ -180,3 +180,140 @@ class TestPluginManager:
         mgr = PluginManager(plugin_dirs=[tmp_path])
         loaded = mgr.discover_and_load_all()
         assert loaded == []
+
+
+class TestSkillMdParser:
+    """Test SKILL.md frontmatter parsing."""
+
+    def test_parse_skill_md_frontmatter(self, tmp_path):
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\nname: my-skill\ndescription: Does things\nwhen_to_use: always\n---\n# Content\nHello.",
+            encoding="utf-8",
+        )
+
+        from cktclaw.plugins.skill_loader import parse_skill_md
+        skill_def = parse_skill_md(skill_md, "test-plugin")
+        assert skill_def is not None
+        assert skill_def.name == "my-skill"
+        assert skill_def.description == "Does things"
+        assert skill_def.when_to_use == "always"
+        assert skill_def.source == "test-plugin"
+        assert "Hello." in skill_def.markdown_content
+
+    def test_parse_skill_md_no_frontmatter_uses_dir_name(self, tmp_path):
+        skill_dir = tmp_path / "fallback-skill"
+        skill_dir.mkdir()
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text("# No frontmatter here", encoding="utf-8")
+
+        from cktclaw.plugins.skill_loader import parse_skill_md
+        skill_def = parse_skill_md(skill_md, "plugin-x")
+        assert skill_def is not None
+        assert skill_def.name == "fallback-skill"
+
+
+class TestAutoScanSkills:
+    """Test auto-scan of skills/*/SKILL.md."""
+
+    def test_auto_scan_skills_dir(self, tmp_path):
+        # Plugin with skills dir but empty manifest.skills list
+        plugin_dir = tmp_path / "my-plugin"
+        plugin_dir.mkdir()
+        with open(plugin_dir / "plugin.yaml", "w") as f:
+            yaml.dump({"name": "my-plugin", "version": "1.0.0"}, f)
+
+        skills_dir = plugin_dir / "skills" / "foo"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "---\nname: foo-skill\ndescription: Foo\n---\n# Foo",
+            encoding="utf-8",
+        )
+
+        from cktclaw.harness.skills import get_skill_registry
+        import asyncio
+
+        manifest = PluginManifest.from_yaml(plugin_dir / "plugin.yaml")
+        loader = PluginLoader()
+        info = loader.load_plugin(plugin_dir, manifest)
+
+        assert "foo-skill" in info.skill_names
+        assert PluginType.SKILL in info.contributions
+
+        reg = get_skill_registry()
+        skills = asyncio.run(reg.list_skills())
+        names = [s.name for s in skills]
+        assert "foo-skill" in names
+
+
+class TestJsonManifestDiscovery:
+    """Test that .claude-plugin/plugin.json and plugin.json are discovered."""
+
+    def test_json_manifest_discovery_claude_plugin(self, tmp_path):
+        plugin_dir = tmp_path / "superpowers"
+        plugin_dir.mkdir()
+        claude_plugin_dir = plugin_dir / ".claude-plugin"
+        claude_plugin_dir.mkdir()
+        import json
+        (claude_plugin_dir / "plugin.json").write_text(
+            json.dumps({"name": "superpowers", "version": "1.2.3", "description": "Super"}),
+            encoding="utf-8",
+        )
+
+        loader = PluginLoader()
+        discovered = loader.discover_plugins([tmp_path])
+        assert len(discovered) == 1
+        assert discovered[0][1].name == "superpowers"
+        assert discovered[0][1].version == "1.2.3"
+
+    def test_json_manifest_discovery_root_level(self, tmp_path):
+        plugin_dir = tmp_path / "my-ext"
+        plugin_dir.mkdir()
+        import json
+        (plugin_dir / "plugin.json").write_text(
+            json.dumps({"name": "my-ext", "version": "0.5.0"}),
+            encoding="utf-8",
+        )
+
+        loader = PluginLoader()
+        discovered = loader.discover_plugins([tmp_path])
+        assert len(discovered) == 1
+        assert discovered[0][1].name == "my-ext"
+
+
+class TestPluginUnloadUnregistersSkills:
+    """Test that unloading a plugin removes its skills from SkillRegistry."""
+
+    def test_plugin_unload_unregisters_skills(self, tmp_path):
+        import asyncio
+        from cktclaw.harness.skills import get_skill_registry
+        from cktclaw.harness.skills.skill_registry import SkillNotFoundError
+
+        plugin_dir = tmp_path / "transient-plugin"
+        plugin_dir.mkdir()
+        with open(plugin_dir / "plugin.yaml", "w") as f:
+            yaml.dump({"name": "transient-plugin", "version": "1.0.0"}, f)
+
+        skills_dir = plugin_dir / "skills" / "bye-skill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "---\nname: bye-skill\ndescription: Goes away\n---\n# Bye",
+            encoding="utf-8",
+        )
+
+        manifest = PluginManifest.from_yaml(plugin_dir / "plugin.yaml")
+        loader = PluginLoader()
+        info = loader.load_plugin(plugin_dir, manifest)
+        assert "bye-skill" in info.skill_names
+
+        # Skill should be in registry
+        reg = get_skill_registry()
+        skill = asyncio.run(reg.get_skill("bye-skill"))
+        assert skill.name == "bye-skill"
+
+        # Now unload — skill should be gone
+        loader.unload_plugin(info)
+        with pytest.raises(SkillNotFoundError):
+            asyncio.run(reg.get_skill("bye-skill"))

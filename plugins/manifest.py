@@ -145,6 +145,23 @@ class PluginManifest:
             metadata=raw.get("metadata", {}),
         )
 
+    @classmethod
+    def from_json(cls, path: Path) -> "PluginManifest":
+        """Parse a plugin.json manifest (Claude Code / superpowers format)."""
+        import json
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        name = raw.get("name") or path.parent.parent.name  # fallback to dir name
+        version = str(raw.get("version", "0.0.0"))
+        author_raw = raw.get("author", "")
+        author = author_raw if isinstance(author_raw, str) else author_raw.get("name", "")
+        return cls(
+            name=name,
+            version=version,
+            description=raw.get("description", ""),
+            author=author,
+            # No tools/skills/hooks in this format — auto-scan will handle them
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize manifest back to dict for writing."""
         result: Dict[str, Any] = {

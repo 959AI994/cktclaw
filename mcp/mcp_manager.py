@@ -36,6 +36,66 @@ class MCPServerHandle:
             except Exception:
                 self.proc.kill()
 
+    def _rpc(self, request_obj: dict, timeout: float) -> Optional[dict]:
+        """Send one JSON-RPC request and read a single response line."""
+        if not self.is_alive():
+            return None
+        try:
+            payload = json.dumps(request_obj) + "\n"
+            self.proc.stdin.write(payload)
+            self.proc.stdin.flush()
+
+            lines: list = []
+            done = threading.Event()
+
+            def _read():
+                try:
+                    line = self.proc.stdout.readline()
+                    if line:
+                        lines.append(line)
+                except Exception:
+                    pass
+                finally:
+                    done.set()
+
+            threading.Thread(target=_read, daemon=True).start()
+            done.wait(timeout=timeout)
+            if not lines:
+                return None
+            return json.loads(lines[0])
+        except Exception:
+            return None
+
+    def send_initialize(self, timeout: float = 5.0) -> bool:
+        """Perform the JSON-RPC `initialize` handshake. Returns True on success."""
+        data = self._rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "cktclaw", "version": "1.0"},
+                },
+            },
+            timeout=timeout,
+        )
+        if data is None:
+            return False
+        return "result" in data or "id" in data
+
+    def list_tools(self, timeout: float = 5.0) -> list:
+        """Query the server for its tool list via `tools/list`."""
+        data = self._rpc(
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            timeout=timeout,
+        )
+        if not isinstance(data, dict):
+            return []
+        result = data.get("result", {})
+        return result.get("tools", []) if isinstance(result, dict) else []
+
 
 class MCPServerManager:
     """
@@ -75,8 +135,12 @@ class MCPServerManager:
             h = self._handles.get(server_name)
             return h is not None and h.is_alive()
 
-    def start_server(self, server_name: str) -> bool:
-        """Start an MCP server. Returns True on success."""
+    def start_server(self, server_name: str, handshake_timeout: float = 5.0) -> bool:
+        """Start an MCP server and verify it via the initialize handshake.
+
+        Returns True only after the JSON-RPC `initialize` handshake succeeds.
+        On handshake failure the subprocess is terminated and no handle is kept.
+        """
         with self._lock:
             if server_name in self._handles and self._handles[server_name].is_alive():
                 return True
@@ -102,10 +166,17 @@ class MCPServerManager:
                     text=True,
                     env=env,
                 )
-                self._handles[server_name] = MCPServerHandle(server_name, proc, cfg)
-                return True
             except (FileNotFoundError, OSError):
                 return False
+
+            handle = MCPServerHandle(server_name, proc, cfg)
+            if not handle.send_initialize(timeout=handshake_timeout):
+                handle.stop()
+                self._handles.pop(server_name, None)
+                return False
+
+            self._handles[server_name] = handle
+            return True
 
     def stop_server(self, server_name: str) -> None:
         with self._lock:
