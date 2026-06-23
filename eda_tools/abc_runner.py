@@ -16,15 +16,28 @@ from typing import List
 from .base_runner import BaseRunner
 
 
+def _is_readable_file(path: Path) -> bool:
+    """Return True if path is a regular file; never raise on permission errors."""
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _find_abc_executable() -> str:
-    """Resolve ABC path: ABC_PATH env > oss-cad-suite yosys-abc > system abc."""
+    """Resolve ABC path: ABC_PATH env > deps/oss-cad-suite > PATH lookup."""
     env = os.environ.get("ABC_PATH", "").strip()
     if env:
         return env
-    oss_abc = Path("/root/oss-cad-suite/bin/yosys-abc")
-    if oss_abc.is_file():
-        return str(oss_abc)
-    return shutil.which("abc") or "abc"
+    pkg_root = Path(__file__).resolve().parent.parent
+    deps_abc = pkg_root / "deps" / "oss-cad-suite" / "bin" / "yosys-abc"
+    if _is_readable_file(deps_abc):
+        return str(deps_abc)
+    for candidate in ("abc", "yosys-abc"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return "abc"
 
 
 class ABCRunner(BaseRunner):
