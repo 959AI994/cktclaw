@@ -1,13 +1,13 @@
 """
 FPGA-Agent-skills — 8 Vivado/Vitis PROMPT skills.
 
-Loads SKILL.md from FPGA-Agent-skills/ (sibling repo or FPGA_AGENT_SKILLS_ROOT).
+SKILL.md is bundled under skills/fpga_agent_bundled/ (pip-install friendly).
+Set FPGA_AGENT_SKILLS_ROOT to an external clone for REFERENCE.md / examples.
 """
 
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, List
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
@@ -22,11 +22,7 @@ from cktclaw.harness import (
 
 from .prompt_skill_utils import make_prompt_executor
 
-_WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-_FPGA_ROOT = Path(os.environ.get(
-    "FPGA_AGENT_SKILLS_ROOT",
-    str(_WORKSPACE_ROOT / "FPGA-Agent-skills"),
-))
+_SKILLS_DIR = Path(__file__).parent / "fpga_agent_bundled"
 
 # (skill_subdir, name, display_name, aliases, description, when_to_use)
 _FPGA_SKILL_SPECS = [
@@ -99,6 +95,18 @@ _FPGA_SKILL_SPECS = [
 FPGA_AGENT_SKILL_NAMES: set[str] = set()
 
 
+def _resolve_skill_dir(skill_subdir: str) -> Path:
+    """
+    Prefer external FPGA_AGENT_SKILLS_ROOT when it has SKILL.md; else bundled copy.
+    """
+    env_root = os.environ.get("FPGA_AGENT_SKILLS_ROOT", "").strip()
+    if env_root:
+        ext = Path(env_root).expanduser() / skill_subdir
+        if (ext / "SKILL.md").is_file():
+            return ext
+    return _SKILLS_DIR / skill_subdir
+
+
 def _build_fpga_skill(
     skill_subdir: str,
     name: str,
@@ -107,7 +115,8 @@ def _build_fpga_skill(
     description: str,
     when_to_use: str,
 ) -> SkillDefinition:
-    skill_path = _FPGA_ROOT / skill_subdir / "SKILL.md"
+    skill_dir = _resolve_skill_dir(skill_subdir)
+    skill_path = skill_dir / "SKILL.md"
     return SkillDefinition(
         name=name,
         skill_type=SkillType.PROMPT,
@@ -121,28 +130,33 @@ def _build_fpga_skill(
         user_invocable=True,
         loaded_from=LoadedFrom.BUNDLED,
         source="FPGA-Agent-skills",
-        skill_root=str(_FPGA_ROOT / skill_subdir),
+        skill_root=str(skill_dir),
         executor=make_prompt_executor(skill_path, display_name),
     )
 
 
-FPGA_AGENT_SKILLS = [_build_fpga_skill(*spec) for spec in _FPGA_SKILL_SPECS]
+def _build_all_fpga_skills() -> list[SkillDefinition]:
+    return [_build_fpga_skill(*spec) for spec in _FPGA_SKILL_SPECS]
+
+
+FPGA_AGENT_SKILLS = _build_all_fpga_skills()
 
 
 async def register_fpga_agent_skills():
-    """Register all 8 FPGA-Agent-skills PROMPT skills."""
+    """Register all 8 FPGA-Agent-skills PROMPT skills from bundled SKILL.md."""
     global FPGA_AGENT_SKILL_NAMES
     FPGA_AGENT_SKILL_NAMES = set()
 
-    if not _FPGA_ROOT.is_dir():
-        print(
-            f"  ⚠ FPGA-Agent-skills not found at {_FPGA_ROOT} "
-            f"(set FPGA_AGENT_SKILLS_ROOT to override)"
-        )
+    missing = [
+        spec[0] for spec in _FPGA_SKILL_SPECS
+        if not (_SKILLS_DIR / spec[0] / "SKILL.md").is_file()
+    ]
+    if missing:
+        print(f"  ⚠ Bundled FPGA skills missing SKILL.md: {', '.join(missing)}")
         return 0
 
     count = 0
-    for skill in FPGA_AGENT_SKILLS:
+    for skill in _build_all_fpga_skills():
         await register_skill(skill)
         FPGA_AGENT_SKILL_NAMES.add(skill.name)
         for alias in skill.aliases:

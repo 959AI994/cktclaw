@@ -452,6 +452,10 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "erie-verilog": "erie-verilog-generator",
             "verilog-gen": "erie-verilog-generator",
             "verilog-generator": "erie-verilog-generator",
+            "verilog-lint": "verilog-lint",
+            "erie-lint": "verilog-lint",
+            "verilog-tb-gen": "verilog-tb-gen",
+            "tb-generator": "verilog-tb-gen",
             "about": "about",
             "clear": "clear",
             "session": "session",
@@ -497,6 +501,7 @@ class LogicRTCLI:
                 register_chip_design_skills,
                 register_rtl_claw_skills,
                 register_fpga_agent_skills,
+                register_verilog_generator_skill,
                 register_external_skills,
             )
             # Register innovation skills
@@ -518,6 +523,7 @@ class LogicRTCLI:
                 asyncio.run(register_system_loop_skill())
                 asyncio.run(register_rtl_claw_skills())
                 asyncio.run(register_fpga_agent_skills())
+                asyncio.run(register_verilog_generator_skill())
                 asyncio.run(register_external_skills(verbose=config.VERBOSE))
             except RuntimeError:
                 # Already in async context
@@ -535,7 +541,8 @@ class LogicRTCLI:
                     future10 = executor.submit(asyncio.run, register_system_loop_skill())
                     future11 = executor.submit(asyncio.run, register_rtl_claw_skills())
                     future12 = executor.submit(asyncio.run, register_fpga_agent_skills())
-                    future13 = executor.submit(
+                    future13 = executor.submit(asyncio.run, register_verilog_generator_skill())
+                    future14 = executor.submit(
                         asyncio.run, register_external_skills(config.VERBOSE)
                     )
                     future1.result()
@@ -551,6 +558,7 @@ class LogicRTCLI:
                     future11.result()
                     future12.result()
                     future13.result()
+                    future14.result()
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
@@ -816,6 +824,7 @@ class LogicRTCLI:
             "vivado-tcl", "vivado-synth", "vivado-sim", "vivado-impl",
             "vivado-analysis", "vivado-constraints", "vivado-debug",
             "vitis-hls-synthesis", "erie-verilog-generator",
+            "verilog-lint", "verilog-tb-gen",
         ):
             from .handlers.workflow_skill_handler import process_workflow_skill
             self._run_async_handler(

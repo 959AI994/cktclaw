@@ -18,6 +18,11 @@ from .chip_design_skills import CHIP_DESIGN_SKILLS, register_chip_design_skills
 from .system_loop_skill import SYSTEM_LOOP_SKILL, register_system_loop_skill
 from .rtl_claw_skill import RTL_CLAW_SKILLS, register_rtl_claw_skills
 from .fpga_agent_skills import FPGA_AGENT_SKILLS, register_fpga_agent_skills, FPGA_AGENT_SKILL_NAMES
+from .verilog_generator_skill import (
+    register_verilog_generator_skill,
+    VERILOG_GENERATOR_SKILL_NAMES,
+    get_verilog_generator_root,
+)
 from .external_skill_loader import register_external_skills, EXTERNAL_PROMPT_SKILL_NAMES
 
 __all__ = [
@@ -43,6 +48,9 @@ __all__ = [
     "FPGA_AGENT_SKILLS",
     "register_fpga_agent_skills",
     "FPGA_AGENT_SKILL_NAMES",
+    "register_verilog_generator_skill",
+    "VERILOG_GENERATOR_SKILL_NAMES",
+    "get_verilog_generator_root",
     "register_external_skills",
     "EXTERNAL_PROMPT_SKILL_NAMES",
 ]

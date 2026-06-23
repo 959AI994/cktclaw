@@ -18,10 +18,6 @@ from cktclaw.plugins.skill_loader import parse_skill_md
 
 from .prompt_skill_utils import make_prompt_executor
 
-# Workspace root: .../cktclaw/ (contains verilog-generator, FPGA-Agent-skills)
-_WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERILOG_GENERATOR = _WORKSPACE_ROOT / "verilog-generator"
-
 # Populated after register_external_skills() for slash-command dispatch
 EXTERNAL_PROMPT_SKILL_NAMES: Set[str] = set()
 
@@ -76,8 +72,9 @@ def get_skill_search_paths() -> List[Path]:
     if user_skills.is_dir():
         paths.append(user_skills)
 
-    if _DEFAULT_VERILOG_GENERATOR.is_dir():
-        paths.append(_DEFAULT_VERILOG_GENERATOR)
+    env_vg = os.environ.get("VERILOG_GENERATOR_ROOT", "").strip()
+    if env_vg:
+        paths.append(Path(env_vg))
 
     # De-dupe while preserving order
     unique: List[Path] = []
@@ -106,9 +103,7 @@ def skill_definition_from_md(skill_path: Path, source: str = "external") -> Opti
     base.argument_names = ["task"]
 
     if base.name == "erie-verilog-generator":
-        base.aliases = list(dict.fromkeys(
-            base.aliases + ["verilog-gen", "verilog-generator", "erie-verilog"]
-        ))
+        return None  # bundled via verilog_generator_skill
 
     base.executor = make_prompt_executor(skill_path, display)
     return base
