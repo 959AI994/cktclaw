@@ -1,7 +1,6 @@
 """
-CktClaw Web Dashboard — real-time read-only monitoring via WebSocket.
+CktClaw Web Dashboard — real-time monitoring + streaming chat + management UI.
 """
+from .server import create_app, start_web_server, emit_event
 
-from .server import create_app, start_web_server
-
-__all__ = ["create_app", "start_web_server"]
+__all__ = ["create_app", "start_web_server", "emit_event"]

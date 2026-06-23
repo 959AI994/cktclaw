@@ -1,11 +1,16 @@
 """
-Web Server — FastAPI app with WebSocket for live CLI monitoring.
+Web Server — FastAPI app with WebSocket for live monitoring + chat.
+
+WebSocket multiplexes two message streams on a single connection:
+  - System events (agent spawn/stop, plugin install, etc.)
+  - Chat messages (streaming LLM with tool call visualization)
 """
 
 import asyncio
 import json
 import logging
 import threading
+import traceback
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -15,15 +20,16 @@ logger = logging.getLogger(__name__)
 _STATIC_DIR = Path(__file__).parent / "static"
 _DEFAULT_PORT = 8741
 
-# Global event bus for CLI → WebSocket
 _event_queue: deque = deque(maxlen=1000)
 _ws_clients: Set[Any] = set()
+_chat_tasks: Dict[str, asyncio.Task] = {}
 
 
 def emit_event(event_type: str, data: Dict[str, Any]) -> None:
-    """Emit an event from CLI to all connected WebSocket clients."""
+    """Emit a system event to all connected WebSocket clients."""
     event = {
-        "type": event_type,
+        "type": "event",
+        "event_type": event_type,
         "data": data,
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
@@ -31,100 +37,177 @@ def emit_event(event_type: str, data: Dict[str, Any]) -> None:
 
 
 def create_app():
-    """Create the FastAPI application."""
     try:
+        from contextlib import asynccontextmanager
+
         from fastapi import FastAPI, WebSocket, WebSocketDisconnect
         from fastapi.staticfiles import StaticFiles
         from fastapi.responses import HTMLResponse
     except ImportError:
         raise ImportError(
-            "FastAPI required for web dashboard. Install: pip install 'cktclaw[full]'"
+            "FastAPI required. Install: pip install 'cktclaw[web]'"
         )
 
-    app = FastAPI(title="CktClaw Dashboard", version="1.0.0")
+    @asynccontextmanager
+    async def lifespan(app_instance):
+        from .bootstrap import ensure_runtime_bootstrapped
+        ensure_runtime_bootstrapped()
+        yield
 
-    # Serve static files
+    app = FastAPI(title="CktClaw Dashboard", version="2.0.0", lifespan=lifespan)
+
     if _STATIC_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+    # ── Register API routers ──
+    from .routers import register_routers
+    register_routers(app)
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
-        """Serve the dashboard page."""
         index_path = _STATIC_DIR / "index.html"
         if index_path.is_file():
             return index_path.read_text()
         return _fallback_html()
 
-    @app.get("/api/status")
-    async def get_status():
-        """Get current agent and session status."""
-        try:
-            from ..agents import get_agent_runtime
-            from ..tools import get_tool_registry
-            from ..llm import get_model_router
-
-            runtime = get_agent_runtime()
-            registry = get_tool_registry()
-            router = get_model_router()
-
-            return {
-                "agents": runtime.list_agents(),
-                "tools": registry.list_names(),
-                "model": router.current_name,
-                "available_models": router.available_providers,
-            }
-        except Exception as e:
-            return {"error": str(e)}
-
     @app.get("/api/events")
     async def get_recent_events():
-        """Get recent events (fallback for non-WebSocket clients)."""
         return list(_event_queue)[-50:]
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        """WebSocket endpoint for real-time event streaming."""
         await websocket.accept()
         _ws_clients.add(websocket)
-        logger.info(f"WebSocket client connected ({len(_ws_clients)} total)")
+        logger.info(f"WebSocket connected ({len(_ws_clients)} total)")
 
         try:
-            # Send recent history
+            # Send recent event history
             for event in list(_event_queue)[-20:]:
                 await websocket.send_json(event)
 
-            # Stream new events
-            last_idx = len(_event_queue)
+            # Main multiplex loop — receives both chat commands and processes events
+            last_event_idx = len(_event_queue)
+
             while True:
-                await asyncio.sleep(0.1)
+                # Check for new system events
                 current_len = len(_event_queue)
-                if current_len > last_idx:
-                    new_events = list(_event_queue)[last_idx:]
+                if current_len > last_event_idx:
+                    new_events = list(_event_queue)[last_event_idx:]
                     for event in new_events:
-                        await websocket.send_json(event)
-                    last_idx = current_len
+                        await _safe_send_json(websocket, event)
+                    last_event_idx = current_len
+
+                # Non-blocking receive with timeout
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
+
+                try:
+                    msg = json.loads(data)
+                except json.JSONDecodeError:
+                    await _safe_send_json(websocket, {
+                        "type": "chat:error", "error": "Invalid JSON"
+                    })
+                    continue
+
+                msg_type = msg.get("type", "")
+
+                if msg_type == "ping":
+                    await _safe_send_json(websocket, {"type": "pong"})
+
+                elif msg_type == "chat:send":
+                    await _handle_chat_send(websocket, msg)
+
+                elif msg_type == "chat:abort":
+                    session_id = msg.get("session_id", "default")
+                    task_key = f"{id(websocket)}:{session_id}"
+                    task = _chat_tasks.pop(task_key, None)
+                    if task and not task.done():
+                        task.cancel()
+                        await _safe_send_json(websocket, {
+                            "type": "chat:error",
+                            "session_id": session_id,
+                            "error": "Aborted",
+                        })
+
         except WebSocketDisconnect:
             pass
         except Exception:
-            pass
+            logger.error(f"WebSocket error: {traceback.format_exc()}")
         finally:
             _ws_clients.discard(websocket)
-            logger.info(f"WebSocket client disconnected ({len(_ws_clients)} remaining)")
+            # Clean up any running chat tasks for this connection
+            prefix = f"{id(websocket)}:"
+            for key in list(_chat_tasks):
+                if key.startswith(prefix):
+                    task = _chat_tasks.pop(key)
+                    if not task.done():
+                        task.cancel()
+            logger.info(f"WebSocket disconnected ({len(_ws_clients)} remaining)")
 
     return app
 
 
-def start_web_server(port: int = _DEFAULT_PORT) -> threading.Thread:
-    """
-    Start the web server in a background thread.
+async def _handle_chat_send(websocket, msg: dict):
+    """Launch a streaming chat task for the given message."""
+    from .chat_handler import stream_chat
 
-    Returns the thread (already started).
-    """
+    session_id = msg.get("session_id", "default")
+    user_message = msg.get("message", "")
+    use_tools = msg.get("use_tools", False)
+    provider_name = msg.get("provider", None)
+
+    if not user_message.strip():
+        await _safe_send_json(websocket, {
+            "type": "chat:error",
+            "session_id": session_id,
+            "error": "Empty message",
+        })
+        return
+
+    async def _run():
+        try:
+            async for chunk in stream_chat(
+                session_id=session_id,
+                user_message=user_message,
+                use_tools=use_tools,
+                provider_name=provider_name,
+            ):
+                await _safe_send_json(websocket, chunk)
+        except asyncio.CancelledError:
+            await _safe_send_json(websocket, {
+                "type": "chat:error",
+                "session_id": session_id,
+                "error": "Cancelled",
+            })
+        except Exception as e:
+            logger.error(f"Chat task error: {traceback.format_exc()}")
+            await _safe_send_json(websocket, {
+                "type": "chat:error",
+                "session_id": session_id,
+                "error": str(e),
+            })
+
+    task = asyncio.create_task(_run())
+    task_key = f"{id(websocket)}:{session_id}"
+    _chat_tasks[task_key] = task
+
+
+async def _safe_send_json(websocket, data: dict):
+    """Send JSON to a WebSocket, ignoring disconnection errors."""
+    try:
+        await websocket.send_json(data)
+    except Exception:
+        pass
+
+
+def start_web_server(port: int = _DEFAULT_PORT) -> threading.Thread:
     def _run_server():
         try:
             import uvicorn
             app = create_app()
-            uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+            uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
         except ImportError:
             logger.error("uvicorn required. Install: pip install uvicorn")
         except Exception as e:
@@ -132,18 +215,19 @@ def start_web_server(port: int = _DEFAULT_PORT) -> threading.Thread:
 
     thread = threading.Thread(target=_run_server, daemon=True)
     thread.start()
-    logger.info(f"Web dashboard running at http://localhost:{port}")
+    logger.info(f"Web dashboard at http://localhost:{port}")
     return thread
 
 
 def _fallback_html() -> str:
-    """Minimal fallback HTML if static files are missing."""
     return """<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CktClaw Dashboard</title>
     <style>
-        body { background: #1a1b26; color: #a9b1d6; font-family: monospace; padding: 2rem; }
+        body { background: #1a1b26; color: #a9b1d6; font-family: 'JetBrains Mono', monospace; padding: 2rem; }
         h1 { color: #7aa2f7; }
         #events { max-height: 70vh; overflow-y: auto; background: #24283b; padding: 1rem; border-radius: 8px; }
         .event { padding: 4px 0; border-bottom: 1px solid #414868; }
@@ -153,22 +237,26 @@ def _fallback_html() -> str:
 </head>
 <body>
     <h1>CktClaw Dashboard</h1>
-    <p>Real-time monitoring (read-only)</p>
+    <p>Real-time monitoring + chat</p>
     <div id="status">Connecting...</div>
     <div id="events"></div>
     <script>
         const ws = new WebSocket(`ws://${location.host}/ws`);
         const eventsDiv = document.getElementById('events');
         const statusDiv = document.getElementById('status');
-        ws.onopen = () => { statusDiv.textContent = 'Connected'; };
-        ws.onclose = () => { statusDiv.textContent = 'Disconnected'; };
+        ws.onopen = () => { statusDiv.textContent = '✓ Connected'; };
+        ws.onclose = () => { statusDiv.textContent = '✗ Disconnected'; };
         ws.onmessage = (e) => {
-            const event = JSON.parse(e.data);
+            const msg = JSON.parse(e.data);
             const div = document.createElement('div');
             div.className = 'event';
-            div.innerHTML = `<span class="timestamp">${event.timestamp}</span> <span class="event-type">[${event.type}]</span> ${JSON.stringify(event.data).slice(0, 200)}`;
-            eventsDiv.prepend(div);
-            if (eventsDiv.children.length > 200) eventsDiv.lastChild.remove();
+            const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+            if (msg.type === 'event') {
+                div.innerHTML = `<span class="timestamp">${ts}</span> <span class="event-type">[${msg.event_type}]</span> ${JSON.stringify(msg.data).slice(0, 200)}`;
+            } else if (msg.type && msg.type.startsWith('chat:')) {
+                div.innerHTML = `<span class="timestamp">${ts}</span> <span class="event-type">[${msg.type}]</span> ${JSON.stringify(msg).slice(0, 200)}`;
+            }
+            if (div.innerHTML) { eventsDiv.prepend(div); if (eventsDiv.children.length > 200) eventsDiv.lastChild.remove(); }
         };
     </script>
 </body>

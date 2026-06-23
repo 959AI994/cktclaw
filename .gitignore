@@ -79,3 +79,6 @@ deps/
 bin/
 __pycache__/
 .cktclaw/
+
+# React frontend
+web/frontend/node_modules/

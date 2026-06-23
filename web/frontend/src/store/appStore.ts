@@ -1,0 +1,503 @@
+import { create } from 'zustand'
+import type {
+  AgentInfo,
+  MemoryEntry,
+  MemorySearchResult,
+  PluginInfo,
+  ProviderInfo,
+  SessionInfo,
+  SessionMemoryEntry,
+  SkillInfo,
+  SkillStats,
+  SystemEvent,
+  SystemStatus,
+  TabId,
+  Toast,
+  ToastLevel,
+  ToolInfo,
+} from '../types/api'
+import { fetchJSON, postJSON } from '../lib/api'
+
+const TAB_TITLES: Record<TabId, string> = {
+  overview: 'Dashboard Overview',
+  chat: 'Chat',
+  agents: 'Agents',
+  sessions: 'Sessions',
+  tools: 'Tools',
+  skills: 'Skills',
+  plugins: 'Plugins',
+  memory: 'Semantic Memory',
+  settings: 'Settings',
+  config: 'Raw Config',
+}
+
+interface AppState {
+  tab: TabId
+  tabTitle: string
+  connected: boolean
+  sidebarOpen: boolean
+  theme: 'dark' | 'light'
+  status: SystemStatus
+  providers: Record<string, ProviderInfo>
+  currentModel: string
+  toasts: Toast[]
+  events: SystemEvent[]
+
+  agents: AgentInfo[]
+  sessions: SessionInfo[]
+  tools: ToolInfo[]
+  toolsLoading: boolean
+  toolsError: string | null
+  skills: SkillInfo[]
+  skillsLoading: boolean
+  skillsError: string | null
+  skillStats: SkillStats
+  plugins: PluginInfo[]
+  pluginsLoading: boolean
+  memoryEntries: MemoryEntry[]
+  memoryNote: string | null
+  memorySources: { vector?: number; session?: number }
+  sessionMemoryEntries: SessionMemoryEntry[]
+  memResults: MemorySearchResult[]
+  memQuery: string
+  configText: string
+
+  showSpawn: boolean
+  showInstall: boolean
+  spawnForm: { name: string; task: string; system_prompt: string; model: string }
+  installForm: { source_path: string; git_url: string }
+
+  setTab: (tab: TabId) => void
+  setConnected: (v: boolean) => void
+  toggleSidebar: () => void
+  toggleTheme: () => void
+  applyTheme: () => void
+  toast: (level: ToastLevel, message: string) => void
+  removeToast: (id: number) => void
+  addEvent: (event_type: string, data: unknown, timestamp?: string) => void
+
+  fetchOverview: () => Promise<void>
+  fetchProviders: () => Promise<void>
+  fetchAgents: () => Promise<void>
+  fetchSessions: () => Promise<void>
+  fetchTools: () => Promise<void>
+  fetchSkills: () => Promise<void>
+  fetchPlugins: () => Promise<void>
+  fetchMemory: () => Promise<void>
+  fetchSessionMemory: (sessionId: string) => Promise<void>
+  fetchConfig: () => Promise<void>
+  searchMemory: () => Promise<void>
+  setMemQuery: (q: string) => void
+
+  spawnAgent: () => Promise<void>
+  stopAgent: (id: string) => Promise<void>
+  viewAgent: (id: string) => Promise<void>
+  deleteSession: (id: string) => Promise<void>
+  viewSession: (id: string) => Promise<void>
+  installPlugin: () => Promise<void>
+  reloadPlugins: () => Promise<void>
+  saveProvider: (name: string, updates: { api_key?: string; base_url?: string; model?: string }) => Promise<void>
+  switchModel: (provider: string) => Promise<void>
+  saveConfig: () => Promise<void>
+  setShowSpawn: (v: boolean) => void
+  setShowInstall: (v: boolean) => void
+  setSpawnForm: (f: Partial<AppState['spawnForm']>) => void
+  setInstallForm: (f: Partial<AppState['installForm']>) => void
+  setConfigText: (t: string) => void
+  loadTab: (tab: TabId) => void
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
+  tab: (localStorage.getItem('cktclaw-tab') as TabId) || 'overview',
+  tabTitle: TAB_TITLES[(localStorage.getItem('cktclaw-tab') as TabId) || 'overview'],
+  connected: false,
+  sidebarOpen: true,
+  theme: (localStorage.getItem('cktclaw-theme') as 'dark' | 'light') || 'dark',
+  status: {},
+  providers: {},
+  currentModel: '',
+  toasts: [],
+  events: [],
+
+  agents: [],
+  sessions: [],
+  tools: [],
+  toolsLoading: false,
+  toolsError: null,
+  skills: [],
+  skillsLoading: false,
+  skillsError: null,
+  skillStats: {},
+  plugins: [],
+  pluginsLoading: false,
+  memoryEntries: [],
+  memoryNote: null,
+  memorySources: {},
+  sessionMemoryEntries: [],
+  memResults: [],
+  memQuery: '',
+  configText: '',
+
+  showSpawn: false,
+  showInstall: false,
+  spawnForm: { name: '', task: '', system_prompt: '', model: '' },
+  installForm: { source_path: '', git_url: '' },
+
+  setTab: (tab) => {
+    localStorage.setItem('cktclaw-tab', tab)
+    set({ tab, tabTitle: TAB_TITLES[tab] })
+    get().loadTab(tab)
+  },
+
+  setConnected: (connected) => set({ connected }),
+
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+
+  toggleTheme: () => {
+    const theme = get().theme === 'dark' ? 'light' : 'dark'
+    localStorage.setItem('cktclaw-theme', theme)
+    set({ theme })
+    get().applyTheme()
+  },
+
+  applyTheme: () => {
+    document.documentElement.setAttribute('data-theme', get().theme)
+  },
+
+  toast: (level, message) => {
+    const id = Date.now() + Math.random()
+    set((s) => ({ toasts: [...s.toasts, { id, level, message }] }))
+    setTimeout(() => get().removeToast(id), 3500)
+  },
+
+  removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  addEvent: (event_type, data, timestamp) => {
+    set((s) => ({
+      events: [{ event_type, data, timestamp }, ...s.events].slice(0, 300),
+    }))
+  },
+
+  fetchOverview: async () => {
+    try {
+      const status = await fetchJSON<SystemStatus>('/api/status')
+      status.agents = status.agents || []
+      set({ status })
+    } catch {
+      set({ status: {} })
+    }
+  },
+
+  fetchProviders: async () => {
+    try {
+      const d = await fetchJSON<{ providers?: Record<string, ProviderInfo> }>('/api/models/providers')
+      const providers = d.providers || {}
+      const cur = Object.entries(providers).find(([, v]) => v.is_current)
+      set({ providers, currentModel: cur ? cur[0] : '' })
+    } catch {
+      set({ providers: {} })
+    }
+  },
+
+  fetchAgents: async () => {
+    try {
+      const agents = await fetchJSON<AgentInfo[]>('/api/agents')
+      set({ agents: agents || [] })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  fetchSessions: async () => {
+    try {
+      const sessions = await fetchJSON<SessionInfo[]>('/api/sessions')
+      set({ sessions: sessions || [] })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  fetchTools: async () => {
+    set({ toolsLoading: true, toolsError: null })
+    try {
+      const tools = await fetchJSON<ToolInfo[]>('/api/tools')
+      set({ tools: tools || [], toolsLoading: false })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed'
+      set({ toolsLoading: false, toolsError: msg })
+      get().toast('error', msg)
+    }
+  },
+
+  fetchSkills: async () => {
+    set({ skillsLoading: true, skillsError: null })
+    try {
+      const [skills, stats] = await Promise.all([
+        fetchJSON<SkillInfo[]>('/api/skills'),
+        fetchJSON<SkillStats>('/api/skills/stats'),
+      ])
+      set({ skills: skills || [], skillStats: stats, skillsLoading: false })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed'
+      set({ skillsLoading: false, skillsError: msg })
+      get().toast('error', msg)
+    }
+  },
+
+  fetchPlugins: async () => {
+    set({ pluginsLoading: true })
+    try {
+      const plugins = await fetchJSON<PluginInfo[]>('/api/plugins')
+      set({ plugins: plugins || [], pluginsLoading: false })
+    } catch (e) {
+      set({ pluginsLoading: false })
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  fetchMemory: async () => {
+    try {
+      const d = await fetchJSON<{ entries?: MemoryEntry[]; note?: string; sources?: { vector?: number; session?: number } }>(
+        '/api/memory',
+      )
+      set({ memoryEntries: d.entries || [], memoryNote: d.note || null, memorySources: d.sources || {} })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  fetchSessionMemory: async (sessionId) => {
+    if (!sessionId) {
+      set({ sessionMemoryEntries: [] })
+      return
+    }
+    try {
+      const d = await fetchJSON<{ entries?: SessionMemoryEntry[] }>(
+        `/api/memory/session?session_id=${encodeURIComponent(sessionId)}`,
+      )
+      set({ sessionMemoryEntries: d.entries || [] })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  fetchConfig: async () => {
+    try {
+      const d = await fetchJSON<unknown>('/api/config')
+      const configText = typeof d === 'string' ? d : JSON.stringify(d, null, 2)
+      set({ configText })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  searchMemory: async () => {
+    const query = get().memQuery.trim()
+    if (!query) return
+    try {
+      const d = await postJSON<{ results?: MemorySearchResult[] }>('/api/memory/search', {
+        query,
+        top_k: 10,
+      })
+      set({ memResults: d.results || [] })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  setMemQuery: (memQuery) => set({ memQuery }),
+
+  spawnAgent: async () => {
+    const { spawnForm } = get()
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: spawnForm.name || 'web-agent',
+          task: spawnForm.task,
+          system_prompt: spawnForm.system_prompt || null,
+          model: spawnForm.model || null,
+        }),
+      })
+      if (res.ok) {
+        set({ showSpawn: false, spawnForm: { name: '', task: '', system_prompt: '', model: '' } })
+        get().toast('success', 'Agent spawned')
+        get().fetchAgents()
+      } else {
+        const e = await res.json()
+        get().toast('error', e.detail || 'Spawn failed')
+      }
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  stopAgent: async (id) => {
+    if (!confirm(`Stop agent ${id}?`)) return
+    try {
+      await fetch(`/api/agents/${id}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      get().toast('info', 'Stop requested')
+      get().fetchAgents()
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  viewAgent: async (id) => {
+    try {
+      const d = await fetchJSON<unknown>(`/api/agents/${id}`)
+      alert(JSON.stringify(d, null, 2))
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  deleteSession: async (id) => {
+    if (!confirm(`Delete session ${id}?`)) return
+    try {
+      await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      get().toast('info', 'Deleted')
+      get().fetchSessions()
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  viewSession: async (id) => {
+    try {
+      const msgs = await fetchJSON<{ role?: string; content?: string }[]>(
+        `/api/sessions/${id}/messages?limit=30`,
+      )
+      const text = msgs.map((m) => `[${m.role || '?'}] ${m.content || ''}`).join('\n\n---\n\n')
+      const w = window.open('', '_blank', 'width=800,height=600')
+      if (w) {
+        w.document.write(
+          `<pre style="background:#0d1117;color:#e6edf3;padding:1.5rem;font-family:monospace;font-size:0.82rem;white-space:pre-wrap;line-height:1.5">${text.replace(/</g, '&lt;')}</pre>`,
+        )
+      }
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  installPlugin: async () => {
+    const { installForm } = get()
+    const body: Record<string, string> = {}
+    if (installForm.git_url) body.git_url = installForm.git_url
+    else if (installForm.source_path) body.source_path = installForm.source_path
+    else {
+      get().toast('error', 'Provide a path or Git URL')
+      return
+    }
+    try {
+      const res = await fetch('/api/plugins/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        set({ showInstall: false, installForm: { source_path: '', git_url: '' } })
+        get().toast('success', 'Installed')
+        get().fetchPlugins()
+      } else {
+        const e = await res.json()
+        get().toast('error', e.detail || 'Failed')
+      }
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  reloadPlugins: async () => {
+    try {
+      await fetch('/api/plugins/reload', { method: 'POST' })
+      get().toast('success', 'Reloaded')
+      get().fetchPlugins()
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  saveProvider: async (name, updates) => {
+    if (!Object.keys(updates).length) {
+      get().toast('error', 'No changes to save')
+      return
+    }
+    try {
+      const res = await fetch('/api/models/update-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: name, ...updates }),
+      })
+      if (res.ok) {
+        get().toast('success', `${name} config saved`)
+        await get().fetchProviders()
+      } else {
+        const e = await res.json()
+        get().toast('error', e.detail || 'Save failed')
+      }
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  switchModel: async (provider) => {
+    try {
+      const res = await fetch('/api/models/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      })
+      if (res.ok) {
+        get().toast('success', `Switched to ${provider}`)
+        set({ currentModel: provider })
+        await get().fetchProviders()
+        get().fetchOverview()
+      } else {
+        const e = await res.json()
+        get().toast('error', e.detail || 'Switch failed. Set the API key first.')
+      }
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  saveConfig: async () => {
+    try {
+      const json = JSON.parse(get().configText)
+      await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(json),
+      })
+      get().toast('success', 'Config saved')
+    } catch (e) {
+      get().toast('error', `Invalid JSON or save failed: ${e instanceof Error ? e.message : 'unknown'}`)
+    }
+  },
+
+  setShowSpawn: (showSpawn) => set({ showSpawn }),
+  setShowInstall: (showInstall) => set({ showInstall }),
+  setSpawnForm: (f) => set((s) => ({ spawnForm: { ...s.spawnForm, ...f } })),
+  setInstallForm: (f) => set((s) => ({ installForm: { ...s.installForm, ...f } })),
+  setConfigText: (configText) => set({ configText }),
+
+  loadTab: (tab) => {
+    const loaders: Partial<Record<TabId, () => void>> = {
+      overview: () => {
+        get().fetchOverview()
+        get().fetchSkills()
+      },
+      agents: () => get().fetchAgents(),
+      sessions: () => get().fetchSessions(),
+      tools: () => get().fetchTools(),
+      skills: () => get().fetchSkills(),
+      plugins: () => get().fetchPlugins(),
+      memory: () => get().fetchMemory(),
+      settings: () => get().fetchProviders(),
+      config: () => get().fetchConfig(),
+    }
+    loaders[tab]?.()
+  },
+}))
