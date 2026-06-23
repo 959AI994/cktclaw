@@ -65,6 +65,4 @@ include = ["cktclaw*"]
 [tool.setuptools.package-data]
 cktclaw = [
     "skills/rtl_claw_skills/**/*.md",
-    "skills/fpga_agent_bundled/**/*.md",
-    "skills/verilog_generator_bundled/**",
 ]

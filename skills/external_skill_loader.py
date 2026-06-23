@@ -72,10 +72,6 @@ def get_skill_search_paths() -> List[Path]:
     if user_skills.is_dir():
         paths.append(user_skills)
 
-    env_vg = os.environ.get("VERILOG_GENERATOR_ROOT", "").strip()
-    if env_vg:
-        paths.append(Path(env_vg))
-
     # De-dupe while preserving order
     unique: List[Path] = []
     seen: Set[str] = set()

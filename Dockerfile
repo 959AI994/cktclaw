@@ -87,6 +87,10 @@ RUN git clone --depth 1 https://github.com/chuanseng-ng/digital-chip-design-agen
 RUN git clone --depth 1 https://github.com/959AI994/AI4EDA-OpenABC-Data-Toolkit.git && \
     cd AI4EDA-OpenABC-Data-Toolkit && pip install --no-cache-dir -e .
 
+RUN git clone --depth 1 https://github.com/Eriemon/verilog-generator.git
+
+RUN git clone --depth 1 https://github.com/adeleempurpled290/FPGA-Agent-skills.git
+
 # ── Install CktClaw ──────────────────────────────────────────────────
 WORKDIR /opt/cktclaw
 
@@ -104,6 +108,8 @@ ENV TERM=xterm-256color
 ENV PYTHONUNBUFFERED=1
 ENV CHIP_AGENTS_ROOT=/opt/digital-chip-design-agents/plugins
 ENV AI4EDA_BIN=/opt/AI4EDA-OpenABC-Data-Toolkit/ai4eda-toolkit
+ENV VERILOG_GENERATOR_ROOT=/opt/verilog-generator
+ENV FPGA_AGENT_SKILLS_ROOT=/opt/FPGA-Agent-skills
 
 WORKDIR /workspace
 

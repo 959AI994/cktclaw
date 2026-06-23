@@ -14,8 +14,9 @@
 #   4. 从源码编译 OpenSTA
 #   5. 克隆 digital-chip-design-agents（14 域 Orchestrator）
 #   6. 克隆 AI4EDA-OpenABC-Data-Toolkit
-#   7. 生成 .env + activate.sh
-#   8. 验证安装
+#   7. 克隆 verilog-generator + FPGA-Agent-skills
+#   8. 生成 .env + activate.sh
+#   9. 验证安装
 ################################################################################
 
 set -e
@@ -73,7 +74,7 @@ echo ""
 # ══════════════════════════════════════════════════════════════════════
 # Step 1: Conda 环境
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 1/6: Conda 环境"
+log_step "Step 1/8: Conda 环境"
 
 if ! command_exists conda; then
     log_error "未检测到 Conda"
@@ -99,7 +100,7 @@ log_success "已激活: $(python --version) @ $(which python)"
 # ══════════════════════════════════════════════════════════════════════
 # Step 2: 安装 CktClaw（pip install -e .）
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 2/6: 安装 CktClaw"
+log_step "Step 2/8: 安装 CktClaw"
 
 cd "${PROJECT_ROOT}"
 pip install --upgrade pip -q
@@ -135,7 +136,7 @@ log_success "cktclaw 命令已注册: $(which cktclaw)"
 # ══════════════════════════════════════════════════════════════════════
 # Step 3: EDA 工具
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 3/6: EDA 工具"
+log_step "Step 3/8: EDA 工具"
 
 mkdir -p "${DEPS_DIR}"
 OSS_DIR="${DEPS_DIR}/oss-cad-suite"
@@ -265,7 +266,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════
 # Step 4: digital-chip-design-agents（14 域 Orchestrator 模板）
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 4/6: Chip Design Agents"
+log_step "Step 4/8: Chip Design Agents"
 
 AGENTS_DIR="${DEPS_DIR}/digital-chip-design-agents"
 if [ -d "${AGENTS_DIR}/plugins" ]; then
@@ -279,7 +280,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════
 # Step 5: AI4EDA-OpenABC-Data-Toolkit
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 5/6: AI4EDA Toolkit"
+log_step "Step 5/8: AI4EDA Toolkit"
 
 AI4EDA_DIR="${DEPS_DIR}/AI4EDA-OpenABC-Data-Toolkit"
 if [ -d "${AI4EDA_DIR}" ]; then
@@ -299,9 +300,32 @@ find "${AI4EDA_DIR}" -maxdepth 2 \( -name "ai4eda-toolkit" -o -name "*.sh" \) \
 log_success "AI4EDA Toolkit 就绪: ${AI4EDA_DIR}/ai4eda-toolkit"
 
 # ══════════════════════════════════════════════════════════════════════
-# Step 6: 生成 .env + activate.sh
+# Step 6: verilog-generator + FPGA-Agent-skills
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 6/6: 环境配置"
+log_step "Step 6/8: Verilog Generator + FPGA Agent Skills"
+
+VERILOG_GEN_DIR="${DEPS_DIR}/verilog-generator"
+if [ -f "${VERILOG_GEN_DIR}/SKILL.md" ]; then
+    log_success "verilog-generator 已存在"
+else
+    log_info "克隆 verilog-generator..."
+    git clone --depth 1 https://github.com/Eriemon/verilog-generator.git "${VERILOG_GEN_DIR}"
+    log_success "verilog-generator 就绪"
+fi
+
+FPGA_SKILLS_DIR="${DEPS_DIR}/FPGA-Agent-skills"
+if [ -f "${FPGA_SKILLS_DIR}/vivado-tcl/SKILL.md" ]; then
+    log_success "FPGA-Agent-skills 已存在"
+else
+    log_info "克隆 FPGA-Agent-skills..."
+    git clone --depth 1 https://github.com/adeleempurpled290/FPGA-Agent-skills.git "${FPGA_SKILLS_DIR}"
+    log_success "FPGA-Agent-skills 就绪"
+fi
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 7: 生成 .env + activate.sh
+# ══════════════════════════════════════════════════════════════════════
+log_step "Step 7/8: 环境配置"
 
 cd "${PROJECT_ROOT}"
 
@@ -333,6 +357,10 @@ export CHIP_AGENTS_ROOT="${AGENTS_DIR}/plugins"
 # AI4EDA 工具
 export AI4EDA_BIN="${AI4EDA_DIR}/ai4eda-toolkit"
 export CKTCLAW_AI4EDA_PATH="${AI4EDA_DIR}"
+
+# Verilog Generator + FPGA Agent Skills
+export VERILOG_GENERATOR_ROOT="${VERILOG_GEN_DIR}"
+export FPGA_AGENT_SKILLS_ROOT="${FPGA_SKILLS_DIR}"
 
 # ABC 可执行文件（优先使用 oss-cad-suite 附带的 yosys-abc）
 export ABC_PATH="${ABC_BIN}"
@@ -369,7 +397,7 @@ log_success "已生成: activate.sh"
 # 验证
 # ══════════════════════════════════════════════════════════════════════
 echo ""
-log_step "验证安装"
+log_step "Step 8/8: 验证安装"
 
 source "${PROJECT_ROOT}/.env"
 

@@ -1,11 +1,10 @@
 """
 FPGA-Agent-skills — 8 Vivado/Vitis PROMPT skills.
 
-SKILL.md is bundled under skills/fpga_agent_bundled/ (pip-install friendly).
-Set FPGA_AGENT_SKILLS_ROOT to an external clone for REFERENCE.md / examples.
+Loads from deps/FPGA-Agent-skills/ (cloned by setup.sh).
+Override with FPGA_AGENT_SKILLS_ROOT.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -20,9 +19,8 @@ from cktclaw.harness import (
     register_skill,
 )
 
+from .deps_roots import get_fpga_agent_skills_root
 from .prompt_skill_utils import make_prompt_executor
-
-_SKILLS_DIR = Path(__file__).parent / "fpga_agent_bundled"
 
 # (skill_subdir, name, display_name, aliases, description, when_to_use)
 _FPGA_SKILL_SPECS = [
@@ -95,16 +93,8 @@ _FPGA_SKILL_SPECS = [
 FPGA_AGENT_SKILL_NAMES: set[str] = set()
 
 
-def _resolve_skill_dir(skill_subdir: str) -> Path:
-    """
-    Prefer external FPGA_AGENT_SKILLS_ROOT when it has SKILL.md; else bundled copy.
-    """
-    env_root = os.environ.get("FPGA_AGENT_SKILLS_ROOT", "").strip()
-    if env_root:
-        ext = Path(env_root).expanduser() / skill_subdir
-        if (ext / "SKILL.md").is_file():
-            return ext
-    return _SKILLS_DIR / skill_subdir
+def _fpga_root() -> Path:
+    return get_fpga_agent_skills_root()
 
 
 def _build_fpga_skill(
@@ -115,7 +105,8 @@ def _build_fpga_skill(
     description: str,
     when_to_use: str,
 ) -> SkillDefinition:
-    skill_dir = _resolve_skill_dir(skill_subdir)
+    root = _fpga_root()
+    skill_dir = root / skill_subdir
     skill_path = skill_dir / "SKILL.md"
     return SkillDefinition(
         name=name,
@@ -143,16 +134,24 @@ FPGA_AGENT_SKILLS = _build_all_fpga_skills()
 
 
 async def register_fpga_agent_skills():
-    """Register all 8 FPGA-Agent-skills PROMPT skills from bundled SKILL.md."""
+    """Register all 8 FPGA-Agent-skills from deps/FPGA-Agent-skills."""
     global FPGA_AGENT_SKILL_NAMES
     FPGA_AGENT_SKILL_NAMES = set()
 
+    root = _fpga_root()
+    if not root.is_dir():
+        print(
+            f"  ⚠ FPGA-Agent-skills not found at {root} "
+            f"(run setup.sh or set FPGA_AGENT_SKILLS_ROOT)"
+        )
+        return 0
+
     missing = [
         spec[0] for spec in _FPGA_SKILL_SPECS
-        if not (_SKILLS_DIR / spec[0] / "SKILL.md").is_file()
+        if not (root / spec[0] / "SKILL.md").is_file()
     ]
     if missing:
-        print(f"  ⚠ Bundled FPGA skills missing SKILL.md: {', '.join(missing)}")
+        print(f"  ⚠ FPGA-Agent-skills incomplete (missing SKILL.md): {', '.join(missing)}")
         return 0
 
     count = 0

@@ -76,7 +76,8 @@ trajectory:
 # ━━━━━━━━━━ External Agent Skills ━━━━━━━━━━
 skills:
   # Codex-style SKILL.md search paths (absolute paths recommended).
-  # Also scanned: ~/.cktclaw/skills/, VERILOG_GENERATOR_ROOT if set.
+  # Skill runtimes live in deps/ (verilog-generator, FPGA-Agent-skills) — see setup.sh.
+  # Also scanned: ~/.cktclaw/skills/
   # Env override: CKTCLAW_SKILL_PATHS (colon-separated).
   search_paths: []
   # Example external full clone (runtime/scripts — optional):

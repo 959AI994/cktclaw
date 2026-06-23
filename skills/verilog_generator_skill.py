@@ -1,12 +1,11 @@
 """
-Erie Verilog Generator — bundled PROMPT skill + local tool scripts.
+Erie Verilog Generator — PROMPT skill + local tool scripts.
 
-Bundles SKILL.md, runtime/, scripts/, integration/, config/, assets/, references/
-under skills/verilog_generator_bundled/. Override with VERILOG_GENERATOR_ROOT.
+Loads from deps/verilog-generator/ (cloned by setup.sh).
+Override with VERILOG_GENERATOR_ROOT.
 """
 
 import asyncio
-import os
 import shlex
 import sys
 from pathlib import Path
@@ -27,26 +26,16 @@ from cktclaw.harness import (
 )
 from cktclaw.plugins.skill_loader import parse_skill_md
 
+from .deps_roots import get_verilog_generator_root as _resolve_vg_root
 from .prompt_skill_utils import make_prompt_executor
 
-_BUNDLED_DIR = Path(__file__).parent / "verilog_generator_bundled"
 _SKILL_NAME = "erie-verilog-generator"
 
 VERILOG_GENERATOR_SKILL_NAMES: set[str] = set()
 
 
 def get_verilog_generator_root() -> Path:
-    """Return active verilog-generator root (bundled or VERILOG_GENERATOR_ROOT)."""
-    return _resolve_skill_root()
-
-
-def _resolve_skill_root() -> Path:
-    env_root = os.environ.get("VERILOG_GENERATOR_ROOT", "").strip()
-    if env_root:
-        ext = Path(env_root).expanduser()
-        if (ext / "SKILL.md").is_file():
-            return ext
-    return _BUNDLED_DIR
+    return _resolve_vg_root()
 
 
 def _ensure_root_on_path(root: Path) -> None:
@@ -62,7 +51,7 @@ async def _run_bundled_script(
 ) -> List[Dict[str, Any]]:
     task_manager = get_task_manager()
     task = await task_manager.create_task(TaskType.LOCAL_BASH, label)
-    root = _resolve_skill_root()
+    root = _resolve_vg_root()
     script = root / script_rel
 
     if not script.is_file():
@@ -123,7 +112,7 @@ def _make_script_tool(
         user_invocable=True,
         loaded_from=LoadedFrom.BUNDLED,
         source="verilog-generator",
-        skill_root=str(_resolve_skill_root()),
+        skill_root=str(_resolve_vg_root()),
         executor=executor,
     )
 
@@ -152,7 +141,7 @@ def _build_tool_skills() -> List[SkillDefinition]:
 
 
 def _build_verilog_generator_skill() -> SkillDefinition:
-    skill_root = _resolve_skill_root()
+    skill_root = _resolve_vg_root()
     skill_path = skill_root / "SKILL.md"
     parsed = parse_skill_md(skill_path, "verilog-generator")
     display = parsed.user_facing_name() if parsed else "Erie Verilog Generator"
@@ -183,18 +172,19 @@ def _build_verilog_generator_skill() -> SkillDefinition:
 
 
 async def register_verilog_generator_skill() -> int:
-    """Register PROMPT skill + bundled tool scripts (lint, tb scaffold)."""
+    """Register PROMPT skill + tool scripts from deps/verilog-generator."""
     global VERILOG_GENERATOR_SKILL_NAMES
     VERILOG_GENERATOR_SKILL_NAMES = set()
 
-    if not (_BUNDLED_DIR / "SKILL.md").is_file():
-        print(f"  ⚠ Bundled verilog-generator SKILL.md missing: {_BUNDLED_DIR}")
+    root = _resolve_vg_root()
+    if not (root / "SKILL.md").is_file():
+        print(f"  ⚠ verilog-generator not found at {root} (run setup.sh or set VERILOG_GENERATOR_ROOT)")
         return 0
-    if not (_BUNDLED_DIR / "runtime" / "verilog_generator").is_dir():
-        print(f"  ⚠ Bundled verilog-generator runtime missing under {_BUNDLED_DIR}")
+    if not (root / "runtime" / "verilog_generator").is_dir():
+        print(f"  ⚠ verilog-generator runtime missing under {root}")
         return 0
 
-    _ensure_root_on_path(_resolve_skill_root())
+    _ensure_root_on_path(root)
 
     count = 0
     for skill in [_build_verilog_generator_skill(), *_build_tool_skills()]:

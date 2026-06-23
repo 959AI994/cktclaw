@@ -30,6 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pydantic pyyaml prompt_toolkit rich requests
 
+      - name: Clone skill deps (same layout as setup.sh)
+        run: |
+          mkdir -p cktclaw/deps
+          git clone --depth 1 https://github.com/Eriemon/verilog-generator.git cktclaw/deps/verilog-generator
+          git clone --depth 1 https://github.com/adeleempurpled290/FPGA-Agent-skills.git cktclaw/deps/FPGA-Agent-skills
+
       - name: Run test suite
         run: pytest cktclaw/tests/ -q
 
