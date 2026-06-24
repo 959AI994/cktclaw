@@ -52,6 +52,82 @@ def _emit(event_type: str, data: dict) -> None:
     except Exception:
         pass
     update_run_state(event_type, data)
+    emit_chat_progress_from_event(event_type, data)
+
+
+def emit_chat_progress_from_event(event_type: str, data: dict) -> None:
+    """Bridge orchestrator system events to chat-channel WS messages."""
+    run_id = data.get("run_id")
+    if not run_id:
+        return
+    state = _orchestrator_runs.get(run_id)
+    if state is None:
+        return
+
+    from ..server import broadcast_chat
+
+    if event_type == "orchestrator:started":
+        broadcast_chat(state.session_id, {
+            "type": "chat:orchestrator_progress",
+            "run_id": run_id,
+            "skill": state.skill,
+            "task": state.task[:200],
+            "status": "running",
+            "log_delta": "Orchestrator started.",
+        })
+    elif event_type == "orchestrator:log":
+        msg = data.get("message", "")
+        if msg:
+            broadcast_chat(state.session_id, {
+                "type": "chat:orchestrator_progress",
+                "run_id": run_id,
+                "skill": state.skill,
+                "status": state.status,
+                "stage": state.current_stage,
+                "stage_index": state.stage_index,
+                "stage_total": state.stage_total,
+                "log_delta": msg,
+                "logs_tail": state.logs[-30:],
+            })
+    elif event_type == "orchestrator:stage_start":
+        broadcast_chat(state.session_id, {
+            "type": "chat:orchestrator_progress",
+            "run_id": run_id,
+            "skill": state.skill,
+            "status": "running",
+            "stage": data.get("stage"),
+            "stage_index": data.get("index"),
+            "stage_total": data.get("total"),
+            "log_delta": f"Stage: {data.get('stage')} ({data.get('index')}/{data.get('total')})",
+        })
+
+
+async def emit_chat_done(
+    state: OrchestratorRunState,
+    summary: str,
+    *,
+    artifacts: Optional[List[dict]] = None,
+    snapshot: Optional[dict] = None,
+) -> None:
+    from ..server import _broadcast_chat
+    await _broadcast_chat(state.session_id, {
+        "type": "chat:orchestrator_done",
+        "run_id": state.run_id,
+        "skill": state.skill,
+        "summary": summary,
+        "artifacts": artifacts or [],
+        "snapshot": snapshot if snapshot is not None else state.snapshot,
+    })
+
+
+async def emit_chat_failed(state: OrchestratorRunState, error: str) -> None:
+    from ..server import _broadcast_chat
+    await _broadcast_chat(state.session_id, {
+        "type": "chat:orchestrator_failed",
+        "run_id": state.run_id,
+        "skill": state.skill,
+        "error": error,
+    })
 
 
 def _active_run_count() -> int:
@@ -145,6 +221,12 @@ async def _execute_orchestrator(state: OrchestratorRunState) -> None:
         "run_id": state.run_id,
         "skill": state.skill,
         "task": state.task[:200],
+        "session_id": state.session_id,
+    })
+    _emit("orchestrator:log", {
+        "run_id": state.run_id,
+        "session_id": state.session_id,
+        "message": "Initializing orchestrator (MCP, tools)...",
     })
 
     run_ctx = new_run(kind="orchestrator")
@@ -160,9 +242,14 @@ async def _execute_orchestrator(state: OrchestratorRunState) -> None:
             result = await skill.executor(state.task.strip(), {"cli_state": cli_state})
 
         rendered_parts: List[str] = []
+        orchestrator_snapshot: Optional[dict] = None
         if isinstance(result, list):
             for item in result:
-                if isinstance(item, dict) and "text" in item:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "orchestrator_result":
+                    orchestrator_snapshot = item.get("snapshot")
+                elif "text" in item:
                     rendered_parts.append(str(item["text"]))
         else:
             rendered_parts.append(str(result))
@@ -170,14 +257,27 @@ async def _execute_orchestrator(state: OrchestratorRunState) -> None:
         assistant_content = "\n\n".join(p for p in rendered_parts if p.strip())
         await _persist_messages(state.session_id, state.skill, state.task, assistant_content)
 
-        state.snapshot = {"output": assistant_content[:2000]}
+        artifacts: List[dict] = []
+        if isinstance(orchestrator_snapshot, dict):
+            raw_artifacts = orchestrator_snapshot.get("artifacts") or []
+            artifacts = [a for a in raw_artifacts if isinstance(a, dict)]
+            state.snapshot = orchestrator_snapshot
+        else:
+            state.snapshot = {"output": assistant_content}
         state.status = "completed"
         state.finished_at = datetime.now().isoformat()
         _emit("orchestrator:done", {
             "run_id": state.run_id,
             "skill": state.skill,
             "status": "completed",
+            "session_id": state.session_id,
         })
+        await emit_chat_done(
+            state,
+            assistant_content,
+            artifacts=artifacts,
+            snapshot=state.snapshot,
+        )
     except asyncio.CancelledError:
         state.status = "aborted"
         state.error = "Aborted by user"
@@ -186,7 +286,9 @@ async def _execute_orchestrator(state: OrchestratorRunState) -> None:
             "run_id": state.run_id,
             "skill": state.skill,
             "error": state.error,
+            "session_id": state.session_id,
         })
+        await emit_chat_failed(state, state.error)
         raise
     except Exception as e:
         logger.exception(f"Orchestrator run {state.run_id} failed")
@@ -197,7 +299,9 @@ async def _execute_orchestrator(state: OrchestratorRunState) -> None:
             "run_id": state.run_id,
             "skill": state.skill,
             "error": state.error,
+            "session_id": state.session_id,
         })
+        await emit_chat_failed(state, state.error)
     finally:
         _orchestrator_tasks.pop(state.run_id, None)
 
@@ -217,24 +321,42 @@ async def start_run(body: RunRequest):
 
     ensure_runtime_bootstrapped()
 
-    skill_name = body.skill.strip()
+    try:
+        return await launch_orchestrator_from_chat(
+            skill=body.skill,
+            task=body.task,
+            session_id=body.session_id,
+            attachment_ids=body.attachment_ids,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+
+
+async def launch_orchestrator_from_chat(
+    *,
+    skill: str,
+    task: str,
+    session_id: Optional[str] = None,
+    attachment_ids: Optional[list[str]] = None,
+) -> dict:
+    """Start an orchestrator run (shared by REST API and WebSocket chat confirm)."""
+    skill_name = skill.strip()
     if not skill_name.startswith("chip-"):
-        raise HTTPException(status_code=400, detail="Only chip-* specialist skills are supported")
+        raise ValueError("Only chip-* specialist skills are supported")
 
     if _active_run_count() >= MAX_CONCURRENT_RUNS:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Max concurrent orchestrator runs ({MAX_CONCURRENT_RUNS}) reached",
-        )
+        raise RuntimeError(f"Max concurrent orchestrator runs ({MAX_CONCURRENT_RUNS}) reached")
 
     run_id = f"orch-{uuid.uuid4().hex[:12]}"
-    session_id = body.session_id or uuid.uuid4().hex[:16]
+    resolved_session = session_id or uuid.uuid4().hex[:16]
 
-    task_text = body.task.strip()
-    upload_session = body.session_id or session_id
-    if body.attachment_ids:
+    task_text = task.strip()
+    upload_session = session_id or resolved_session
+    if attachment_ids:
         from ..uploads import build_attachment_context, resolve_uploads
-        uploads = resolve_uploads(upload_session, body.attachment_ids)
+        uploads = resolve_uploads(upload_session, attachment_ids)
         block = build_attachment_context(uploads)
         if block:
             task_text = task_text + block
@@ -243,14 +365,20 @@ async def start_run(body: RunRequest):
         run_id=run_id,
         skill=skill_name,
         task=task_text,
-        session_id=session_id,
+        session_id=resolved_session,
     )
     _orchestrator_runs[run_id] = state
 
-    task = asyncio.create_task(_execute_orchestrator(state))
-    _orchestrator_tasks[run_id] = task
+    bg_task = asyncio.create_task(_execute_orchestrator(state))
+    _orchestrator_tasks[run_id] = bg_task
 
-    return {"run_id": run_id, "status": "started", "session_id": session_id}
+    return {
+        "run_id": run_id,
+        "status": "started",
+        "session_id": resolved_session,
+        "skill": skill_name,
+        "task": task_text,
+    }
 
 
 @router.get("/runs/{run_id}")

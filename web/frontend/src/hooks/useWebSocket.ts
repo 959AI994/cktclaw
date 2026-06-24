@@ -95,12 +95,45 @@ class WebSocketManager {
     this.send({ type: 'ping' })
   }
 
-  sendChat(sessionId: string, message: string, useTools = false, attachmentIds?: string[]) {
+  sendChat(
+    sessionId: string,
+    message: string,
+    opts: { skipOrchestratorConfirm?: boolean; disableTools?: boolean } = {},
+    attachmentIds?: string[],
+  ) {
     this.send({
       type: 'chat:send',
       session_id: sessionId,
       message,
-      use_tools: useTools,
+      use_tools: !opts.disableTools,
+      disable_tools: opts.disableTools ?? false,
+      skip_orchestrator_confirm: opts.skipOrchestratorConfirm ?? false,
+      attachment_ids: attachmentIds || [],
+    })
+  }
+
+  confirmOrchestrator(sessionId: string, skill: string, task: string, attachmentIds?: string[]) {
+    this.send({
+      type: 'chat:orchestrator_confirm',
+      session_id: sessionId,
+      skill,
+      task,
+      attachment_ids: attachmentIds || [],
+    })
+  }
+
+  cancelOrchestrator(
+    sessionId: string,
+    task: string,
+    opts: { disableTools?: boolean } = {},
+    attachmentIds?: string[],
+  ) {
+    this.send({
+      type: 'chat:orchestrator_cancel',
+      session_id: sessionId,
+      task,
+      use_tools: !opts.disableTools,
+      disable_tools: opts.disableTools ?? false,
       attachment_ids: attachmentIds || [],
     })
   }
@@ -187,8 +220,32 @@ export function useWebSocket() {
   }, [setConnected, addEvent, fetchAgents, fetchOverview, handleOrchestratorWsEvent])
 
   const sendChat = useCallback(
-    (sessionId: string, message: string, useTools: boolean, attachmentIds?: string[]) => {
-      wsRef.current?.sendChat(sessionId, message, useTools, attachmentIds)
+    (
+      sessionId: string,
+      message: string,
+      opts: { skipOrchestratorConfirm?: boolean; disableTools?: boolean },
+      attachmentIds?: string[],
+    ) => {
+      wsRef.current?.sendChat(sessionId, message, opts, attachmentIds)
+    },
+    [],
+  )
+
+  const confirmOrchestrator = useCallback(
+    (sessionId: string, skill: string, task: string, attachmentIds?: string[]) => {
+      wsRef.current?.confirmOrchestrator(sessionId, skill, task, attachmentIds)
+    },
+    [],
+  )
+
+  const cancelOrchestrator = useCallback(
+    (
+      sessionId: string,
+      task: string,
+      opts: { disableTools?: boolean },
+      attachmentIds?: string[],
+    ) => {
+      wsRef.current?.cancelOrchestrator(sessionId, task, opts, attachmentIds)
     },
     [],
   )
@@ -203,5 +260,5 @@ export function useWebSocket() {
     return () => ws.offChat(sessionId, handler)
   }, [setConnected])
 
-  return { sendChat, abortChat, onChat }
+  return { sendChat, abortChat, onChat, confirmOrchestrator, cancelOrchestrator }
 }

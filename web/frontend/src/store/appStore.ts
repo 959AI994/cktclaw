@@ -489,7 +489,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   fetchOrchestratorRuns: async () => {
     try {
       const runs = await fetchJSON<OrchestratorRun[]>('/api/orchestrator/runs')
-      set({ orchestratorRuns: runs || [] })
+      set((s) => {
+        const apiRuns = runs || []
+        const merged = apiRuns.map((apiRun) => {
+          const local = s.orchestratorRuns.find((r) => r.run_id === apiRun.run_id)
+          if (!local) return apiRun
+          return {
+            ...apiRun,
+            logs: (local.logs?.length ? local.logs : apiRun.logs) || [],
+            current_stage: apiRun.current_stage || local.current_stage,
+            stage_index: apiRun.stage_index || local.stage_index,
+            stage_total: apiRun.stage_total || local.stage_total,
+            status: apiRun.status || local.status,
+          }
+        })
+        for (const local of s.orchestratorRuns) {
+          if (!merged.some((r) => r.run_id === local.run_id)) {
+            merged.unshift(local)
+          }
+        }
+        return { orchestratorRuns: merged }
+      })
     } catch (e) {
       get().toast('error', e instanceof Error ? e.message : 'Failed to load orchestrator runs')
     }

@@ -131,6 +131,15 @@ def create_app():
                             "error": "Aborted",
                         })
 
+                elif msg_type == "chat:orchestrator_confirm":
+                    await _handle_orchestrator_confirm(websocket, msg)
+
+                elif msg_type == "chat:orchestrator_cancel":
+                    await _handle_orchestrator_cancel(websocket, msg)
+
+                elif msg_type == "chat:orchestrator_edit":
+                    await _handle_orchestrator_confirm(websocket, msg)
+
         except WebSocketDisconnect:
             pass
         except Exception:
@@ -155,7 +164,10 @@ async def _handle_chat_send(websocket, msg: dict):
 
     session_id = msg.get("session_id", "default")
     user_message = msg.get("message", "")
-    use_tools = msg.get("use_tools", False)
+    # Tools enabled by default; legacy use_tools=false only disables when explicit
+    disable_tools = msg.get("disable_tools", False)
+    use_tools = msg.get("use_tools", True) and not disable_tools
+    skip_orchestrator_confirm = msg.get("skip_orchestrator_confirm", False)
     provider_name = msg.get("provider", None)
     attachment_ids = msg.get("attachment_ids") or []
 
@@ -173,6 +185,8 @@ async def _handle_chat_send(websocket, msg: dict):
                 session_id=session_id,
                 user_message=user_message,
                 use_tools=use_tools,
+                disable_tools=disable_tools,
+                skip_orchestrator_confirm=skip_orchestrator_confirm,
                 provider_name=provider_name,
                 attachment_ids=attachment_ids,
             ):
@@ -194,6 +208,108 @@ async def _handle_chat_send(websocket, msg: dict):
     task = asyncio.create_task(_run())
     task_key = f"{id(websocket)}:{session_id}"
     _chat_tasks[task_key] = task
+
+
+async def _handle_orchestrator_confirm(websocket, msg: dict):
+    """User confirmed an orchestrator proposal — start the run."""
+    from .routers.orchestrator import launch_orchestrator_from_chat
+
+    session_id = msg.get("session_id", "default")
+    skill = msg.get("skill", "")
+    task = msg.get("task", "")
+    attachment_ids = msg.get("attachment_ids") or []
+
+    if not skill or not task:
+        await _safe_send_json(websocket, {
+            "type": "chat:error",
+            "session_id": session_id,
+            "error": "Missing skill or task for orchestrator confirm",
+        })
+        return
+
+    try:
+        run_info = await launch_orchestrator_from_chat(
+            skill=skill,
+            task=task,
+            session_id=session_id,
+            attachment_ids=attachment_ids,
+        )
+        await _safe_send_json(websocket, {
+            "type": "chat:orchestrator_started",
+            "session_id": session_id,
+            "run_id": run_info["run_id"],
+            "skill": run_info.get("skill", skill),
+            "task": run_info.get("task", task),
+        })
+        await _safe_send_json(websocket, {
+            "type": "chat:done",
+            "session_id": session_id,
+            "usage": {"orchestrator": True},
+        })
+    except (ValueError, RuntimeError) as e:
+        await _safe_send_json(websocket, {
+            "type": "chat:error",
+            "session_id": session_id,
+            "error": str(e),
+        })
+
+
+async def _handle_orchestrator_cancel(websocket, msg: dict):
+    """User cancelled orchestrator — fall back to normal agent loop."""
+    from .chat_handler import stream_chat
+
+    session_id = msg.get("session_id", "default")
+    user_message = msg.get("task") or msg.get("message", "")
+    disable_tools = msg.get("disable_tools", False)
+    use_tools = msg.get("use_tools", True) and not disable_tools
+    attachment_ids = msg.get("attachment_ids") or []
+
+    if not user_message.strip():
+        await _safe_send_json(websocket, {
+            "type": "chat:done",
+            "session_id": session_id,
+            "usage": {},
+        })
+        return
+
+    async def _run():
+        try:
+            async for chunk in stream_chat(
+                session_id=session_id,
+                user_message=user_message,
+                use_tools=use_tools,
+                disable_tools=disable_tools,
+                force_agent=True,
+                attachment_ids=attachment_ids,
+            ):
+                await _safe_send_json(websocket, chunk)
+        except Exception as e:
+            await _safe_send_json(websocket, {
+                "type": "chat:error",
+                "session_id": session_id,
+                "error": str(e),
+            })
+
+    task = asyncio.create_task(_run())
+    task_key = f"{id(websocket)}:{session_id}"
+    _chat_tasks[task_key] = task
+
+
+async def _broadcast_chat(session_id: str, payload: dict) -> None:
+    """Broadcast a chat-channel message to all connected WebSocket clients."""
+    msg = dict(payload)
+    msg.setdefault("session_id", session_id)
+    for ws in list(_ws_clients):
+        await _safe_send_json(ws, msg)
+
+
+def broadcast_chat(session_id: str, payload: dict) -> None:
+    """Schedule chat broadcast from sync code (e.g. WebConsole.print)."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_broadcast_chat(session_id, payload))
+    except RuntimeError:
+        pass
 
 
 async def _safe_send_json(websocket, data: dict):

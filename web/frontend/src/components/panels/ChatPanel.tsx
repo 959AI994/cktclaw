@@ -17,20 +17,27 @@ export function ChatPanel() {
   const pendingAttachments = useChatStore((s) => s.pendingAttachments)
   const streamBuffer = useChatStore((s) => s.streamBuffer)
   const streaming = useChatStore((s) => s.streaming)
-  const useTools = useChatStore((s) => s.useTools)
+  const skipOrchestratorConfirm = useChatStore((s) => s.skipOrchestratorConfirm)
+  const disableTools = useChatStore((s) => s.disableTools)
+  const orchestratorProposal = useChatStore((s) => s.orchestratorProposal)
+  const activeOrchestratorRun = useChatStore((s) => s.activeOrchestratorRun)
   const pendingToolCalls = useChatStore((s) => s.pendingToolCalls)
   const setInputText = useChatStore((s) => s.setInputText)
-  const setUseTools = useChatStore((s) => s.setUseTools)
+  const setSkipOrchestratorConfirm = useChatStore((s) => s.setSkipOrchestratorConfirm)
+  const setDisableTools = useChatStore((s) => s.setDisableTools)
   const setPendingAttachments = useChatStore((s) => s.setPendingAttachments)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const abortChat = useChatStore((s) => s.abortChat)
+  const confirmOrchestrator = useChatStore((s) => s.confirmOrchestrator)
+  const cancelOrchestrator = useChatStore((s) => s.cancelOrchestrator)
   const handleChatMessage = useChatStore((s) => s.handleChatMessage)
   const initChat = useChatStore((s) => s.initChat)
   const fetchAvailableSessions = useChatStore((s) => s.fetchAvailableSessions)
   const newSession = useChatStore((s) => s.newSession)
   const setSessionId = useChatStore((s) => s.setSessionId)
 
-  const { sendChat, abortChat: wsAbort, onChat } = useWebSocket()
+  const { sendChat, abortChat: wsAbort, onChat, confirmOrchestrator: wsConfirm, cancelOrchestrator: wsCancel } =
+    useWebSocket()
 
   const handleDropFiles = useAttachmentUploadHandler(
     sessionId,
@@ -113,16 +120,22 @@ export function ChatPanel() {
           streamBuffer={streamBuffer}
           streaming={streaming}
           pendingToolCalls={pendingToolCalls}
+          orchestratorProposal={orchestratorProposal}
+          activeOrchestratorRun={activeOrchestratorRun}
+          onOrchestratorConfirm={(task) => confirmOrchestrator(wsConfirm, task)}
+          onOrchestratorCancel={() => cancelOrchestrator(wsCancel)}
         />
         <ChatInputBar
           value={inputText}
           streaming={streaming}
-          useTools={useTools}
+          skipOrchestratorConfirm={skipOrchestratorConfirm}
+          disableTools={disableTools}
           sessionId={sessionId}
           pendingAttachments={pendingAttachments}
           onAttachmentsChange={setPendingAttachments}
           onChange={setInputText}
-          onUseToolsChange={setUseTools}
+          onSkipOrchestratorConfirmChange={setSkipOrchestratorConfirm}
+          onDisableToolsChange={setDisableTools}
           onSend={() => sendMessage(sendChat)}
           onAbort={() => abortChat(wsAbort)}
         />

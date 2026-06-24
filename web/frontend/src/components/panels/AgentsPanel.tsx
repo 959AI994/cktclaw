@@ -314,14 +314,18 @@ function SpecialistTab() {
         )}
       </Table>
 
-      {selectedRun && (selectedRun.logs?.length || selectedRun.error) ? (
+      {selectedRun ? (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-3">
           <div className="text-xs text-[var(--color-text-secondary)] mb-2">
             Logs — {selectedRun.run_id}
             {selectedRun.error ? ` · Error: ${selectedRun.error}` : ''}
           </div>
           <pre className="text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto text-[var(--color-text-secondary)]">
-            {(selectedRun.logs || []).join('\n\n')}
+            {(selectedRun.logs || []).length
+              ? (selectedRun.logs || []).join('\n\n')
+              : selectedRun.status === 'running' || selectedRun.status === 'pending'
+                ? 'Running — waiting for output...'
+                : '(no logs)'}
           </pre>
         </div>
       ) : null}

@@ -47,6 +47,12 @@ export interface AgentInfo {
   }
 }
 
+export interface OrchestratorArtifact {
+  path: string
+  kind: string
+  size?: number
+}
+
 export interface OrchestratorRun {
   run_id: string
   skill: string
@@ -189,10 +195,49 @@ export interface WsChatMessage {
   type: string
   session_id?: string
   delta?: string
+  content?: string
   tool_call?: { id?: string; name?: string; arguments?: unknown }
   tool_call_id?: string
-  content?: string
   error?: string
+  proposal_id?: string
+  skill?: string
+  task?: string
+  confidence?: number
+  estimated_stages?: number
+  estimated_minutes?: number
+  run_id?: string
+  usage?: Record<string, unknown>
+  status?: string
+  stage?: string
+  stage_index?: number
+  stage_total?: number
+  log_delta?: string
+  logs_tail?: string[]
+  summary?: string
+  snapshot?: Record<string, unknown>
+  artifacts?: OrchestratorArtifact[]
+}
+
+export interface OrchestratorProposal {
+  proposal_id: string
+  skill: string
+  task: string
+  confidence: number
+  estimated_stages?: number
+  estimated_minutes?: number
+}
+
+export interface ActiveOrchestratorRun {
+  run_id: string
+  skill: string
+  task?: string
+  status: 'running' | 'completed' | 'failed' | 'aborted'
+  stage?: string
+  stage_index?: number
+  stage_total?: number
+  logs: string[]
+  error?: string
+  summary?: string
 }
 
 export type ToastLevel = 'success' | 'error' | 'info'

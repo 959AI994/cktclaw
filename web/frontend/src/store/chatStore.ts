@@ -1,6 +1,17 @@
 import { create } from 'zustand'
-import type { ChatAttachmentRef, ChatMessage, SessionInfo, ToolCallInfo, UploadMeta, WsChatMessage } from '../types/api'
+import type {
+  ActiveOrchestratorRun,
+  ChatAttachmentRef,
+  ChatMessage,
+  OrchestratorProposal,
+  SessionInfo,
+  ToolCallInfo,
+  UploadMeta,
+  WsChatMessage,
+} from '../types/api'
 import { fetchJSON } from '../lib/api'
+
+const MAX_RUN_LOGS = 30
 
 interface ChatState {
   sessionId: string
@@ -12,11 +23,17 @@ interface ChatState {
   streamBuffer: string
   streaming: boolean
   useTools: boolean
+  skipOrchestratorConfirm: boolean
+  disableTools: boolean
+  orchestratorProposal: OrchestratorProposal | null
+  activeOrchestratorRun: ActiveOrchestratorRun | null
   pendingToolCalls: Record<string, ToolCallInfo>
 
   setSessionId: (id: string) => void
   setInputText: (t: string) => void
   setUseTools: (v: boolean) => void
+  setSkipOrchestratorConfirm: (v: boolean) => void
+  setDisableTools: (v: boolean) => void
   setPendingAttachments: (attachments: UploadMeta[]) => void
   addPendingAttachments: (attachments: UploadMeta[]) => void
   removePendingAttachment: (id: string) => void
@@ -26,9 +43,21 @@ interface ChatState {
   loadSession: () => Promise<void>
   newSession: () => void
   sendMessage: (
-    sendChat: (sessionId: string, message: string, useTools: boolean, attachmentIds?: string[]) => void,
+    sendChat: (
+      sessionId: string,
+      message: string,
+      opts: { skipOrchestratorConfirm: boolean; disableTools: boolean },
+      attachmentIds?: string[],
+    ) => void,
   ) => void
   abortChat: (abortChat: (sessionId: string) => void) => void
+  confirmOrchestrator: (
+    confirmFn: (sessionId: string, skill: string, task: string, attachmentIds?: string[]) => void,
+    task?: string,
+  ) => void
+  cancelOrchestrator: (
+    cancelFn: (sessionId: string, task: string, opts: { disableTools: boolean }, attachmentIds?: string[]) => void,
+  ) => void
   handleChatMessage: (msg: WsChatMessage) => void
   reset: () => void
 }
@@ -50,6 +79,43 @@ function toAttachmentRefs(attachments: UploadMeta[]): ChatAttachmentRef[] {
   }))
 }
 
+function mergeRunProgress(
+  existing: ActiveOrchestratorRun | null,
+  msg: WsChatMessage,
+): ActiveOrchestratorRun {
+  const runId = msg.run_id || existing?.run_id || ''
+  const logs = [...(existing?.logs || [])]
+  if (msg.logs_tail?.length) {
+    return {
+      run_id: runId,
+      skill: msg.skill || existing?.skill || '?',
+      task: msg.task || existing?.task,
+      status: (msg.status as ActiveOrchestratorRun['status']) || existing?.status || 'running',
+      stage: msg.stage ?? existing?.stage,
+      stage_index: msg.stage_index ?? existing?.stage_index,
+      stage_total: msg.stage_total ?? existing?.stage_total,
+      logs: msg.logs_tail.slice(-MAX_RUN_LOGS),
+      error: existing?.error,
+      summary: existing?.summary,
+    }
+  }
+  if (msg.log_delta) {
+    logs.push(msg.log_delta)
+  }
+  return {
+    run_id: runId,
+    skill: msg.skill || existing?.skill || '?',
+    task: msg.task || existing?.task,
+    status: (msg.status as ActiveOrchestratorRun['status']) || existing?.status || 'running',
+    stage: msg.stage ?? existing?.stage,
+    stage_index: msg.stage_index ?? existing?.stage_index,
+    stage_total: msg.stage_total ?? existing?.stage_total,
+    logs: logs.slice(-MAX_RUN_LOGS),
+    error: existing?.error,
+    summary: existing?.summary,
+  }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessionId: '',
   availableSessions: [],
@@ -59,16 +125,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingAttachments: [],
   streamBuffer: '',
   streaming: false,
-  useTools: false,
+  useTools: true,
+  skipOrchestratorConfirm: false,
+  disableTools: false,
+  orchestratorProposal: null,
+  activeOrchestratorRun: null,
   pendingToolCalls: {},
 
   setSessionId: (sessionId) => {
-    set({ sessionId, pendingAttachments: [] })
+    set({ sessionId, pendingAttachments: [], orchestratorProposal: null, activeOrchestratorRun: null })
     get().loadSession()
   },
 
   setInputText: (inputText) => set({ inputText }),
   setUseTools: (useTools) => set({ useTools }),
+  setSkipOrchestratorConfirm: (skipOrchestratorConfirm) => set({ skipOrchestratorConfirm }),
+  setDisableTools: (disableTools) => set({ disableTools }),
   setPendingAttachments: (pendingAttachments) => set({ pendingAttachments }),
   addPendingAttachments: (attachments) =>
     set((s) => ({ pendingAttachments: [...s.pendingAttachments, ...attachments] })),
@@ -112,7 +184,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadSession: async () => {
     const { sessionId } = get()
     if (!sessionId) {
-      set({ messages: [], pendingAttachments: [] })
+      set({ messages: [], pendingAttachments: [], orchestratorProposal: null, activeOrchestratorRun: null })
       return
     }
     try {
@@ -126,9 +198,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           content: m.content || '',
           tool_calls: m.tool_calls || [],
         }))
-      set({ messages, streamBuffer: '', streaming: false, pendingToolCalls: {}, pendingAttachments: [] })
+      set({
+        messages,
+        streamBuffer: '',
+        streaming: false,
+        pendingToolCalls: {},
+        pendingAttachments: [],
+        orchestratorProposal: null,
+        activeOrchestratorRun: null,
+      })
     } catch {
-      set({ messages: [], pendingAttachments: [] })
+      set({ messages: [], pendingAttachments: [], orchestratorProposal: null, activeOrchestratorRun: null })
     }
   },
 
@@ -142,11 +222,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamBuffer: '',
       streaming: false,
       pendingToolCalls: {},
+      orchestratorProposal: null,
+      activeOrchestratorRun: null,
     }))
   },
 
   sendMessage: (sendChat) => {
-    const { inputText, streaming, sessionId, useTools, pendingAttachments } = get()
+    const { inputText, streaming, sessionId, skipOrchestratorConfirm, disableTools, pendingAttachments } = get()
     const text = inputText.trim()
     if ((!text && !pendingAttachments.length) || streaming || !sessionId) return
 
@@ -168,8 +250,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamBuffer: '',
       streaming: true,
       pendingToolCalls: {},
+      orchestratorProposal: null,
+      activeOrchestratorRun: null,
     }))
-    sendChat(sessionId, text, useTools, attachmentIds.length ? attachmentIds : undefined)
+    sendChat(
+      sessionId,
+      text,
+      { skipOrchestratorConfirm, disableTools },
+      attachmentIds.length ? attachmentIds : undefined,
+    )
   },
 
   abortChat: (abortChat) => {
@@ -181,10 +270,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: [...s.messages, { role: 'assistant', content: streamBuffer + ' [aborted]', tool_calls: [] }],
         streamBuffer: '',
         streaming: false,
+        orchestratorProposal: null,
+        activeOrchestratorRun: null,
       }))
     } else {
-      set({ streaming: false })
+      set({ streaming: false, orchestratorProposal: null, activeOrchestratorRun: null })
     }
+  },
+
+  confirmOrchestrator: (confirmFn, taskOverride) => {
+    const { sessionId, orchestratorProposal, pendingAttachments } = get()
+    if (!sessionId || !orchestratorProposal) return
+    const task = taskOverride ?? orchestratorProposal.task
+    const attachmentIds = pendingAttachments.map((a) => a.id)
+    set({ streaming: false, orchestratorProposal: null })
+    confirmFn(sessionId, orchestratorProposal.skill, task, attachmentIds.length ? attachmentIds : undefined)
+  },
+
+  cancelOrchestrator: (cancelFn) => {
+    const { sessionId, orchestratorProposal, disableTools } = get()
+    if (!sessionId || !orchestratorProposal) return
+    set({ streaming: true, orchestratorProposal: null, activeOrchestratorRun: null })
+    cancelFn(sessionId, orchestratorProposal.task, { disableTools })
   },
 
   handleChatMessage: (msg) => {
@@ -192,6 +299,87 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     if (type === 'chat:chunk') {
       set((s) => ({ streamBuffer: s.streamBuffer + (msg.delta || '') }))
+    } else if (type === 'chat:content_replace') {
+      set({ streamBuffer: msg.content || '' })
+    } else if (type === 'chat:orchestrator_proposal') {
+      set({
+        orchestratorProposal: {
+          proposal_id: msg.proposal_id || '',
+          skill: msg.skill || '',
+          task: msg.task || '',
+          confidence: msg.confidence ?? 0,
+          estimated_stages: msg.estimated_stages,
+          estimated_minutes: msg.estimated_minutes,
+        },
+        streaming: false,
+        streamBuffer: '',
+        activeOrchestratorRun: null,
+      })
+    } else if (type === 'chat:orchestrator_started') {
+      set({
+        activeOrchestratorRun: {
+          run_id: msg.run_id || '',
+          skill: msg.skill || '?',
+          task: msg.task,
+          status: 'running',
+          logs: ['Orchestrator 已启动，正在初始化...'],
+        },
+        streaming: false,
+        streamBuffer: '',
+        orchestratorProposal: null,
+      })
+    } else if (type === 'chat:orchestrator_progress') {
+      set((s) => ({
+        activeOrchestratorRun: mergeRunProgress(s.activeOrchestratorRun, msg),
+        streaming: false,
+      }))
+    } else if (type === 'chat:orchestrator_done') {
+      const summary = msg.summary || '(Orchestrator completed with no summary)'
+      const artifactLines = (msg.artifacts || [])
+        .map((a) => `- \`${a.path}\` (${a.kind}${a.size != null ? `, ${a.size} B` : ''})`)
+        .join('\n')
+      const content =
+        summary.startsWith('## Orchestrator') || summary.startsWith('## ')
+          ? summary
+          : `## Orchestrator 完成 — ${msg.skill || 'orchestrator'}\n\n${summary}`
+      const withArtifacts =
+        artifactLines && !summary.includes('**产物文件：**')
+          ? `${content}\n\n**产物文件（Web）：**\n${artifactLines}`
+          : content
+      set((s) => ({
+        activeOrchestratorRun: null,
+        streaming: false,
+        messages: [
+          ...s.messages,
+          {
+            role: 'assistant' as const,
+            content: withArtifacts,
+            tool_calls: [],
+          },
+        ],
+      }))
+    } else if (type === 'chat:orchestrator_failed') {
+      const errText = msg.error || 'unknown error'
+      set((s) => ({
+        activeOrchestratorRun: s.activeOrchestratorRun
+          ? { ...s.activeOrchestratorRun, status: 'failed', error: errText }
+          : {
+              run_id: msg.run_id || '',
+              skill: msg.skill || '?',
+              status: 'failed',
+              logs: [],
+              error: errText,
+            },
+        streaming: false,
+        messages: [
+          ...s.messages,
+          {
+            role: 'assistant' as const,
+            content: `**Orchestrator 失败** (\`${msg.skill}\` · \`${msg.run_id}\`)\n\n*${errText}*`,
+            tool_calls: [],
+          },
+        ],
+      }))
     } else if (type === 'chat:tool_call') {
       const tc = msg.tool_call || {}
       if (tc.id) {
@@ -218,16 +406,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } else if (type === 'chat:done') {
       set((s) => {
+        if (s.orchestratorProposal) {
+          return { streaming: false }
+        }
         const toolCalls = Object.values(s.pendingToolCalls)
+        const hasStream = s.streamBuffer.length > 0
+        if (!hasStream && toolCalls.length === 0 && (msg.usage?.orchestrator || s.activeOrchestratorRun)) {
+          return { streaming: false, pendingToolCalls: {} }
+        }
         return {
-          messages: [
-            ...s.messages,
-            {
-              role: 'assistant' as const,
-              content: s.streamBuffer || '(empty response)',
-              tool_calls: toolCalls,
-            },
-          ],
+          messages: hasStream || toolCalls.length
+            ? [
+                ...s.messages,
+                {
+                  role: 'assistant' as const,
+                  content: s.streamBuffer || '(empty response)',
+                  tool_calls: toolCalls,
+                },
+              ]
+            : s.messages,
           streamBuffer: '',
           streaming: false,
           pendingToolCalls: {},
@@ -244,6 +441,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           streamBuffer: '',
           streaming: false,
           pendingToolCalls: {},
+          orchestratorProposal: null,
+          activeOrchestratorRun: null,
         }
       })
     }
@@ -259,5 +458,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamBuffer: '',
       streaming: false,
       pendingToolCalls: {},
+      orchestratorProposal: null,
+      activeOrchestratorRun: null,
     }),
 }))

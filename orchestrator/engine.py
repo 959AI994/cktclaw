@@ -29,6 +29,7 @@ from .state_machine import OrchestratorStateMachine, StageTransition
 from .prompt_builder import build_stage_messages
 from .design_state import DesignStateStore
 from .qor_extractor import extract_qor_from_outputs, merge_qor
+from .artifacts import enrich_snapshot_with_artifacts
 from ..eda_tools.tool_detection import ToolManifest
 from ..mcp.mcp_manager import MCPServerManager
 
@@ -265,10 +266,14 @@ class OrchestratorEngine:
                     return {"status": "empty", "stages": {}}
 
         while not self.state_machine.is_finished():
+            stage_idx = self.spec.stages.index(stage) + 1
+            stage_total = len(self.spec.stages)
             console.print(
                 f"\n[bold cyan]━━━ Stage: {stage} "
-                f"({self.spec.stages.index(stage) + 1}/{len(self.spec.stages)}) ━━━[/bold cyan]"
+                f"({stage_idx}/{stage_total}) ━━━[/bold cyan]"
             )
+            if hasattr(console, "emit_stage"):
+                console.emit_stage(stage, stage_idx, stage_total)
 
             stage_result = await self._execute_stage(stage, user_task)
 
@@ -284,6 +289,10 @@ class OrchestratorEngine:
             qor = stage_result.get("qor", {})
             if not isinstance(qor, dict):
                 qor = {}
+
+            status, stage_result = self._reconcile_pass_with_tool_errors(
+                console, stage, status, qor, stage_result,
+            )
 
             self._render_stage_result(console, stage, stage_result)
 
@@ -339,8 +348,19 @@ class OrchestratorEngine:
                 break
 
         snapshot = self.state_machine.get_state_snapshot()
-        self._render_summary(console, snapshot, display_name)
-        return snapshot
+        run_dir = None
+        try:
+            from ..runtime.run_context import get_current_run
+            run = get_current_run()
+            if run is not None:
+                run_dir = run.dir
+        except Exception:
+            pass
+        enriched = enrich_snapshot_with_artifacts(
+            snapshot, task=user_task, run_dir=run_dir,
+        )
+        self._render_summary(console, enriched, display_name)
+        return enriched
 
     async def _execute_stage(self, stage: str, user_task: str) -> dict:
         """Run one stage through LLM + tools and extract the result."""
@@ -672,9 +692,49 @@ class OrchestratorEngine:
             border_style=color,
         ))
 
+    def _reconcile_pass_with_tool_errors(
+        self,
+        console: Console,
+        stage: str,
+        status: str,
+        qor: dict,
+        stage_result: dict,
+    ) -> tuple[str, dict]:
+        """Downgrade LLM PASS when tool logs report errors inconsistent with pass."""
+        if status.upper() != "PASS" or not qor:
+            return status, stage_result
+        downgraded = False
+        if qor.get("yosys_error"):
+            console.print(
+                f"[yellow]⚠ {stage}: yosys_error={qor.get('yosys_error')} "
+                f"but LLM reported PASS — downgrading to WARN[/yellow]"
+            )
+            downgraded = True
+        verr = qor.get("verilator_lint_errors")
+        if isinstance(verr, (int, float)) and verr > 0:
+            console.print(
+                f"[yellow]⚠ {stage}: verilator_lint_errors={verr} "
+                f"but LLM reported PASS — downgrading to WARN[/yellow]"
+            )
+            downgraded = True
+        if downgraded:
+            stage_result = dict(stage_result)
+            stage_result["status"] = "WARN"
+            status = "WARN"
+        return status, stage_result
+
     def _render_summary(self, console: Console, snapshot: dict, name: str) -> None:
+        from .artifacts import build_completion_report
+
+        report = build_completion_report(snapshot, skill=name, task="", display_name=name)
+        artifacts = snapshot.get("artifacts") or []
+        warnings = snapshot.get("warnings") or []
+
         stages_info = snapshot.get("stages", {})
-        passed = sum(1 for s in stages_info.values() if s["status"] == "passed")
+        passed = sum(
+            1 for s in stages_info.values()
+            if isinstance(s, dict) and s.get("status") == "passed"
+        )
         total = len(stages_info)
 
         body = (
@@ -682,18 +742,29 @@ class OrchestratorEngine:
             f"Final state: {snapshot.get('current_stage', 'N/A')}\n"
             f"Finished: {snapshot.get('finished', False)}"
         )
-        try:
-            from ..runtime.run_context import get_current_run
-            run = get_current_run()
-            if run is not None:
-                ws = run.dir / "workspace"
-                if ws.is_dir() and any(ws.iterdir()):
-                    body += f"\n[dim]Artifacts: {ws.resolve()}[/dim]"
-        except Exception:
-            pass
+        if snapshot.get("workdir"):
+            body += f"\nWorkdir: {snapshot['workdir']}"
+        if snapshot.get("run_dir"):
+            body += f"\nRun dir: {snapshot['run_dir']}"
+        if artifacts:
+            body += f"\n\n[bold]Deliverables ({len(artifacts)}):[/bold]"
+            for item in artifacts[:12]:
+                if isinstance(item, dict):
+                    body += f"\n  • {item.get('path', '?')} ({item.get('kind', 'file')})"
+                else:
+                    body += f"\n  • {item}"
+            if len(artifacts) > 12:
+                body += f"\n  … +{len(artifacts) - 12} more"
+        else:
+            body += "\n\n[yellow]No deliverable files found on disk.[/yellow]"
+        if warnings:
+            body += "\n\n[yellow]Warnings:[/yellow]"
+            for w in warnings[:5]:
+                body += f"\n  ⚠ {w}"
 
         console.print(Panel(
             body,
             title="[cyan]Orchestrator Summary[/cyan]",
             border_style="cyan",
         ))
+        console.print(Markdown(report))

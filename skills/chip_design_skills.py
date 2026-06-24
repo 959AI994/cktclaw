@@ -207,11 +207,21 @@ def _make_executor(
                 mcp_manager=mcp_mgr,
             )
 
-            snapshot = await engine.run(args.strip())
+            user_task = args.strip()
+            snapshot = await engine.run(user_task, auto_confirm=True)
 
             await task_manager.update_task_status(task.task_id, TaskStatus.COMPLETED)
-            import json
-            return [{"type": "text", "text": f"## Orchestrator Complete\n\n```json\n{json.dumps(snapshot, indent=2)}\n```"}]
+            from cktclaw.orchestrator.artifacts import build_completion_report
+            report = build_completion_report(
+                snapshot,
+                skill=skill_name,
+                task=user_task,
+                display_name=display_name,
+            )
+            return [
+                {"type": "text", "text": report},
+                {"type": "orchestrator_result", "snapshot": snapshot},
+            ]
 
         except Exception as e:
             from ..runtime.run_context import log_exception

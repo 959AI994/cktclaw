@@ -157,13 +157,20 @@ class CapabilityRegistry:
         Returns an IntentRoute-shaped dict or None.
         """
         try:
+            from .handlers.intent_router import detect_chip_design_intent_with_confidence
+            route = detect_chip_design_intent_with_confidence(intent)
+            if route:
+                return route
+            # Legacy fallback
             from .handlers.intent_router import detect_chip_design_intent
             skill_id = detect_chip_design_intent(intent)
             if skill_id:
                 return {
                     "skill_id": skill_id,
-                    "confidence": "keyword",
+                    "confidence": 0.75,
+                    "score": 1,
                     "needs_orchestrator": skill_id.startswith("chip-"),
+                    "task": intent,
                     "rationale": "keyword fast-path match",
                 }
         except Exception as e:

@@ -1,27 +1,45 @@
 import { useEffect, useRef } from 'react'
-import type { ChatAttachmentRef, ChatMessage } from '../../types/api'
+import type { ActiveOrchestratorRun, ChatAttachmentRef, ChatMessage, OrchestratorProposal } from '../../types/api'
 import { isImageMime, uploadUrl } from '../../lib/uploads'
 import { MarkdownContent } from './MarkdownContent'
 import { ToolCallCard } from './ToolCallCard'
+import { OrchestratorProposalCard } from './OrchestratorProposalCard'
+import { OrchestratorRunCard } from './OrchestratorRunCard'
 
 interface ChatThreadProps {
   messages: ChatMessage[]
   streamBuffer: string
   streaming: boolean
   pendingToolCalls: Record<string, { name: string; arguments?: unknown; result?: string | null }>
+  orchestratorProposal?: OrchestratorProposal | null
+  activeOrchestratorRun?: ActiveOrchestratorRun | null
+  onOrchestratorConfirm?: (task: string) => void
+  onOrchestratorCancel?: () => void
 }
 
-export function ChatThread({ messages, streamBuffer, streaming, pendingToolCalls }: ChatThreadProps) {
+export function ChatThread({
+  messages,
+  streamBuffer,
+  streaming,
+  pendingToolCalls,
+  orchestratorProposal,
+  activeOrchestratorRun,
+  onOrchestratorConfirm,
+  onOrchestratorCancel,
+}: ChatThreadProps) {
   const threadRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const el = threadRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, streamBuffer, streaming, pendingToolCalls])
+  }, [messages, streamBuffer, streaming, pendingToolCalls, activeOrchestratorRun])
+
+  const showEmpty =
+    messages.length === 0 && !streaming && !orchestratorProposal && !activeOrchestratorRun
 
   return (
     <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-      {messages.length === 0 && !streaming && (
+      {showEmpty && (
         <div className="flex flex-col items-center justify-center h-full text-[var(--color-text-dim)]">
           <div className="text-3xl mb-2">✦</div>
           Start a conversation with your AI agent
@@ -32,6 +50,18 @@ export function ChatThread({ messages, streamBuffer, streaming, pendingToolCalls
       {messages.map((msg, i) => (
         <MessageBubble key={i} msg={msg} />
       ))}
+
+      {orchestratorProposal && onOrchestratorConfirm && onOrchestratorCancel && (
+        <OrchestratorProposalCard
+          proposal={orchestratorProposal}
+          onConfirm={onOrchestratorConfirm}
+          onCancel={onOrchestratorCancel}
+        />
+      )}
+
+      {activeOrchestratorRun && !orchestratorProposal && (
+        <OrchestratorRunCard run={activeOrchestratorRun} />
+      )}
 
       {streaming && (
         <div className="flex gap-3">

@@ -6,12 +6,14 @@ import { Button } from '../ui/Button'
 interface ChatInputProps {
   value: string
   streaming: boolean
-  useTools: boolean
+  skipOrchestratorConfirm: boolean
+  disableTools: boolean
   sessionId: string
   pendingAttachments: UploadMeta[]
   onAttachmentsChange: (attachments: UploadMeta[]) => void
   onChange: (v: string) => void
-  onUseToolsChange: (v: boolean) => void
+  onSkipOrchestratorConfirmChange: (v: boolean) => void
+  onDisableToolsChange: (v: boolean) => void
   onSend: () => void
   onAbort: () => void
 }
@@ -19,12 +21,14 @@ interface ChatInputProps {
 export function ChatInputBar({
   value,
   streaming,
-  useTools,
+  skipOrchestratorConfirm,
+  disableTools,
   sessionId,
   pendingAttachments,
   onAttachmentsChange,
   onChange,
-  onUseToolsChange,
+  onSkipOrchestratorConfirmChange,
+  onDisableToolsChange,
   onSend,
   onAbort,
 }: ChatInputProps) {
@@ -57,11 +61,25 @@ export function ChatInputBar({
         onKeyDown={handleKeyDown}
         disabled={streaming}
       />
-      <div className="flex items-center justify-between mt-2">
-        <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] cursor-pointer">
-          <input type="checkbox" checked={useTools} onChange={(e) => onUseToolsChange(e.target.checked)} />
-          Tools
-        </label>
+      <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={skipOrchestratorConfirm}
+              onChange={(e) => onSkipOrchestratorConfirmChange(e.target.checked)}
+            />
+            Orchestrator 免确认
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-dim)] cursor-pointer" title="Advanced">
+            <input
+              type="checkbox"
+              checked={disableTools}
+              onChange={(e) => onDisableToolsChange(e.target.checked)}
+            />
+            Disable tools
+          </label>
+        </div>
         <div className="flex gap-2">
           {streaming && (
             <Button variant="danger" size="sm" onClick={onAbort}>

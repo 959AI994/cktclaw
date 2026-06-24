@@ -16,6 +16,12 @@ def _emit(event_type: str, data: dict) -> None:
         emit_event(event_type, data)
     except Exception:
         pass
+    try:
+        from .routers.orchestrator import emit_chat_progress_from_event, update_run_state
+        update_run_state(event_type, data)
+        emit_chat_progress_from_event(event_type, data)
+    except Exception:
+        pass
 
 
 _STAGE_RE = re.compile(r"Stage:\s*(\S+)")
@@ -24,9 +30,28 @@ _STAGE_RE = re.compile(r"Stage:\s*(\S+)")
 class WebConsole:
     """Rich Console wrapper that forwards output to WebSocket events."""
 
-    def __init__(self, run_id: str = ""):
+    def __init__(self, run_id: str = "", session_id: str = ""):
         self.run_id = run_id
+        self.session_id = session_id
         self._console = Console(force_terminal=False, width=120, highlight=False)
+
+    def _base_payload(self) -> dict:
+        payload: dict = {"run_id": self.run_id}
+        if self.session_id:
+            payload["session_id"] = self.session_id
+        return payload
+
+    def emit_stage(self, stage: str, index: int, total: int) -> None:
+        """Explicit stage notification (used by OrchestratorEngine)."""
+        _emit(
+            "orchestrator:stage_start",
+            {
+                **self._base_payload(),
+                "stage": stage,
+                "index": index,
+                "total": total,
+            },
+        )
 
     def print(self, *args, **kwargs) -> None:
         with self._console.capture() as capture:
@@ -35,17 +60,20 @@ class WebConsole:
         if not text:
             return
 
-        payload = {"run_id": self.run_id, "message": text}
+        payload = {**self._base_payload(), "message": text}
         _emit("orchestrator:log", payload)
 
         stage_match = _STAGE_RE.search(text)
-        if "━━━ Stage:" in text and stage_match:
+        has_stage_marker = "━━━ Stage:" in text or (
+            "Stage:" in text and re.search(r"\(\d+/\d+\)", text)
+        )
+        if has_stage_marker and stage_match:
             stage = stage_match.group(1)
             idx_match = re.search(r"\((\d+)/(\d+)\)", text)
             _emit(
                 "orchestrator:stage_start",
                 {
-                    "run_id": self.run_id,
+                    **self._base_payload(),
                     "stage": stage,
                     "index": int(idx_match.group(1)) if idx_match else 0,
                     "total": int(idx_match.group(2)) if idx_match else 0,
@@ -74,9 +102,12 @@ class WebCLIState:
             from .deps import get_web_storage
             self.storage = get_web_storage()
         if self.console is None:
-            self.console = WebConsole(run_id=self.run_id)
-        elif isinstance(self.console, WebConsole) and self.run_id:
-            self.console.run_id = self.run_id
+            self.console = WebConsole(run_id=self.run_id, session_id=self.session_id)
+        elif isinstance(self.console, WebConsole):
+            if self.run_id:
+                self.console.run_id = self.run_id
+            if self.session_id:
+                self.console.session_id = self.session_id
 
         try:
             from ..llm import get_model_router

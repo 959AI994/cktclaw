@@ -178,3 +178,47 @@ def detect_chip_design_intent(user_input: str) -> Optional[str]:
         return best_skill
 
     return None
+
+
+def detect_chip_design_intent_with_confidence(user_input: str) -> Optional[dict]:
+    """
+    Like detect_chip_design_intent but returns routing metadata with numeric confidence.
+
+    confidence mapping:
+      - score >= 2  -> 0.92
+      - score == 1  -> 0.75
+    """
+    text = user_input.strip()
+
+    if len(text) < 6:
+        return None
+
+    if _CHAT_INDICATORS.search(text):
+        return None
+
+    if _is_bare_keyword(text):
+        return None
+
+    scores: dict[str, int] = {}
+    for skill, patterns in _COMPILED_RULES:
+        hits = sum(len(p.findall(text)) for p in patterns)
+        if hits:
+            scores[skill] = hits
+
+    if not scores:
+        return None
+
+    best_skill = max(scores, key=scores.get)
+    best_score = scores[best_skill]
+    if best_score < 1:
+        return None
+
+    confidence = 0.92 if best_score >= 2 else 0.75
+    return {
+        "skill_id": best_skill,
+        "confidence": confidence,
+        "score": best_score,
+        "needs_orchestrator": best_skill.startswith("chip-"),
+        "task": text,
+        "rationale": "keyword fast-path match",
+    }
