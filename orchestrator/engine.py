@@ -368,7 +368,7 @@ class OrchestratorEngine:
         )
 
         stage_tool_outputs: List[str] = []
-        response = await self._call_llm(messages, stage_tool_outputs=stage_tool_outputs)
+        response = await self._call_llm(stage, messages, stage_tool_outputs=stage_tool_outputs)
 
         # Defensive: _call_llm must return str
         if not isinstance(response, str):
@@ -394,7 +394,7 @@ class OrchestratorEngine:
                     ),
                 },
             ]
-            followup_resp = await self._call_llm(followup_msgs, stage_tool_outputs=stage_tool_outputs)
+            followup_resp = await self._call_llm(stage, followup_msgs, stage_tool_outputs=stage_tool_outputs)
             if not isinstance(followup_resp, str):
                 followup_resp = str(followup_resp) if followup_resp is not None else ""
             result = _extract_stage_result(followup_resp)
@@ -472,6 +472,7 @@ class OrchestratorEngine:
 
     async def _call_llm(
         self,
+        stage: str,
         messages: list[dict],
         stage_tool_outputs: Optional[List[str]] = None,
     ) -> str:

@@ -18,10 +18,12 @@ def resolve_async(v):
 
 
 def register_routers(app: FastAPI) -> None:
-    from . import system, agents, tools, skills, sessions, models, tasks, plugins, memory, config
+    from . import system, agents, tools, skills, sessions, models, tasks, plugins, memory, config, orchestrator, uploads
 
     app.include_router(system.router)
     app.include_router(agents.router)
+    app.include_router(orchestrator.router)
+    app.include_router(uploads.router)
     app.include_router(tools.router)
     app.include_router(skills.router)
     app.include_router(sessions.router)

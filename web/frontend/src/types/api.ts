@@ -39,8 +39,31 @@ export interface AgentInfo {
   name?: string
   status?: string
   model?: string
-  budget?: { turns_used?: number; max_turns?: number }
+  budget?: {
+    turns_used?: number
+    max_turns?: number
+    tokens_used?: number
+    max_tokens?: number
+  }
 }
+
+export interface OrchestratorRun {
+  run_id: string
+  skill: string
+  task: string
+  session_id?: string
+  status: string
+  current_stage?: string | null
+  stage_index?: number
+  stage_total?: number
+  snapshot?: { output?: string } | null
+  error?: string | null
+  logs?: string[]
+  started_at?: string
+  finished_at?: string | null
+}
+
+export type AgentsSubTab = 'worker' | 'specialist'
 
 export interface SessionInfo {
   session_id?: string
@@ -64,6 +87,25 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   tool_calls?: ToolCallInfo[]
+  attachments?: ChatAttachmentRef[]
+}
+
+export interface UploadMeta {
+  id: string
+  filename: string
+  path: string
+  mime: string
+  size: number
+  session_id?: string
+  url: string
+}
+
+export interface ChatAttachmentRef {
+  id: string
+  filename: string
+  mime: string
+  url: string
+  session_id?: string
 }
 
 export interface ToolCallInfo {

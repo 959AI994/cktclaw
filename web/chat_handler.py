@@ -82,6 +82,7 @@ async def stream_chat(
     user_message: str,
     use_tools: bool = False,
     provider_name: Optional[str] = None,
+    attachment_ids: Optional[List[str]] = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Process a chat message and yield WebSocket-compatible dicts.
@@ -92,6 +93,17 @@ async def stream_chat(
     from ..llm.base import ChatMessage
 
     ensure_runtime_bootstrapped()
+
+    from .uploads import build_attachment_context, resolve_uploads
+
+    uploads = resolve_uploads(session_id, attachment_ids)
+    attachment_block = build_attachment_context(uploads)
+    enriched_message = user_message.strip()
+    if attachment_block:
+        enriched_message = (enriched_message + attachment_block) if enriched_message else attachment_block.strip()
+    if not enriched_message:
+        yield {"type": "chat:error", "session_id": session_id, "error": "Empty message"}
+        return
 
     router = _get_model_router()
     router.initialize()
@@ -109,13 +121,13 @@ async def stream_chat(
         logger.warning(f"ensure_session failed: {e}")
 
     try:
-        context_messages = await context_manager.build_context(session_id, user_message)
+        context_messages = await context_manager.build_context(session_id, enriched_message)
         messages = _cktmem_to_llm(context_messages)
     except Exception as e:
         logger.error(f"build_context failed: {e}")
         messages = [
             ChatMessage(role=LLMRole.SYSTEM, content=context_manager.system_prompt),
-            ChatMessage(role=LLMRole.USER, content=user_message),
+            ChatMessage(role=LLMRole.USER, content=enriched_message),
         ]
 
     tools = None
@@ -148,8 +160,10 @@ async def stream_chat(
                     yield {"type": "chat:tool_call", "session_id": session_id, "tool_call": tool_call}
 
                     try:
+                        from ..tools.base import ToolContext
                         cap_reg = await _get_capability_registry()
-                        result = await cap_reg.execute(tool_call["name"], tool_call["arguments"], {})
+                        ctx = ToolContext(session_id=session_id, working_dir=os.getcwd())
+                        result = await cap_reg.execute(tool_call["name"], tool_call["arguments"], ctx)
                         result_str = str(result) if result else ""
                         yield {
                             "type": "chat:tool_result",
@@ -182,7 +196,7 @@ async def stream_chat(
         if full_content:
             try:
                 await storage.add_message(
-                    session_id, MessageRole.USER, user_message,
+                    session_id, MessageRole.USER, enriched_message,
                     msg_type=MessageType.CHAT, layer=ContextLayer.TURN,
                 )
                 await storage.add_message(
@@ -200,7 +214,7 @@ async def stream_chat(
 
     try:
         await storage.add_message(
-            session_id, MessageRole.USER, user_message,
+            session_id, MessageRole.USER, enriched_message,
             msg_type=MessageType.CHAT, layer=ContextLayer.TURN,
         )
         if full_content:

@@ -95,8 +95,14 @@ class WebSocketManager {
     this.send({ type: 'ping' })
   }
 
-  sendChat(sessionId: string, message: string, useTools = false) {
-    this.send({ type: 'chat:send', session_id: sessionId, message, use_tools: useTools })
+  sendChat(sessionId: string, message: string, useTools = false, attachmentIds?: string[]) {
+    this.send({
+      type: 'chat:send',
+      session_id: sessionId,
+      message,
+      use_tools: useTools,
+      attachment_ids: attachmentIds || [],
+    })
   }
 
   abortChat(sessionId: string) {
@@ -120,6 +126,9 @@ function getManager(onConnectionChange?: (connected: boolean) => void) {
 export function useWebSocket() {
   const setConnected = useAppStore((s) => s.setConnected)
   const addEvent = useAppStore((s) => s.addEvent)
+  const fetchAgents = useAppStore((s) => s.fetchAgents)
+  const fetchOverview = useAppStore((s) => s.fetchOverview)
+  const handleOrchestratorWsEvent = useAppStore((s) => s.handleOrchestratorWsEvent)
   const wsRef = useRef<WebSocketManager | null>(null)
 
   useEffect(() => {
@@ -132,19 +141,57 @@ export function useWebSocket() {
     }
     ws.on('*', onAll)
 
+    const onAgentSpawned = () => {
+      fetchAgents()
+      fetchOverview()
+    }
+    const onAgentStopped = () => {
+      fetchAgents()
+      fetchOverview()
+    }
+    const onOrchEvent = (data: unknown, _ts?: string, evtType?: string) => {
+      if (evtType) handleOrchestratorWsEvent(evtType, data)
+    }
+
+    ws.on('agent:spawned', onAgentSpawned)
+    ws.on('agent:stopped', onAgentStopped)
+    for (const evt of [
+      'orchestrator:started',
+      'orchestrator:stage_start',
+      'orchestrator:log',
+      'orchestrator:done',
+      'orchestrator:failed',
+    ]) {
+      ws.on(evt, onOrchEvent)
+    }
+
     const pingInterval = setInterval(() => {
       if (ws.isConnected()) ws.ping()
     }, 30000)
 
     return () => {
       ws.off('*', onAll)
+      ws.off('agent:spawned', onAgentSpawned)
+      ws.off('agent:stopped', onAgentStopped)
+      for (const evt of [
+        'orchestrator:started',
+        'orchestrator:stage_start',
+        'orchestrator:log',
+        'orchestrator:done',
+        'orchestrator:failed',
+      ]) {
+        ws.off(evt, onOrchEvent)
+      }
       clearInterval(pingInterval)
     }
-  }, [setConnected, addEvent])
+  }, [setConnected, addEvent, fetchAgents, fetchOverview, handleOrchestratorWsEvent])
 
-  const sendChat = useCallback((sessionId: string, message: string, useTools: boolean) => {
-    wsRef.current?.sendChat(sessionId, message, useTools)
-  }, [])
+  const sendChat = useCallback(
+    (sessionId: string, message: string, useTools: boolean, attachmentIds?: string[]) => {
+      wsRef.current?.sendChat(sessionId, message, useTools, attachmentIds)
+    },
+    [],
+  )
 
   const abortChat = useCallback((sessionId: string) => {
     wsRef.current?.abortChat(sessionId)

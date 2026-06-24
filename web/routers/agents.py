@@ -3,18 +3,20 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 logger = logging.getLogger(__name__)
 
 
 class SpawnRequest(BaseModel):
-    name: str
-    task: str
+    name: str = "web-agent"
+    task: str = Field(..., min_length=1)
     system_prompt: Optional[str] = None
     model: Optional[str] = None
     allowed_tools: Optional[list[str]] = None
+    session_id: Optional[str] = None
+    attachment_ids: Optional[list[str]] = None
 
 
 class StopRequest(BaseModel):
@@ -46,14 +48,27 @@ async def list_agents():
 
 @router.post("")
 async def spawn_agent(body: SpawnRequest):
+    from ..bootstrap import ensure_runtime_bootstrapped
+
+    ensure_runtime_bootstrapped()
     runtime = _get_runtime()
+
+    task = body.task.strip()
+    upload_session = body.session_id or "web-agents"
+    if body.attachment_ids:
+        from ..uploads import build_attachment_context, resolve_uploads
+        uploads = resolve_uploads(upload_session, body.attachment_ids)
+        block = build_attachment_context(uploads)
+        if block:
+            task = task + block
+
     try:
-        agent_id = runtime.spawn_worker(
-            name=body.name,
-            task=body.task,
-            system_prompt=body.system_prompt,
+        agent_id = await runtime.spawn_worker(
+            name=body.name or "web-agent",
+            task=task,
+            system_prompt=body.system_prompt or "",
             allowed_tools=body.allowed_tools,
-            model=body.model,
+            model=body.model or "deepseek",
         )
         _emit("agent:spawned", {"agent_id": agent_id, "name": body.name, "task": body.task[:200]})
         return {"agent_id": agent_id, "status": "spawned"}
@@ -81,7 +96,7 @@ async def get_agent(agent_id: str):
 async def stop_agent(agent_id: str, body: StopRequest = StopRequest()):
     runtime = _get_runtime()
     try:
-        ok = runtime.stop_agent(agent_id, reason=body.reason)
+        ok = await runtime.stop_agent(agent_id, reason=body.reason)
         if ok:
             _emit("agent:stopped", {"agent_id": agent_id, "reason": body.reason})
             return {"status": "stopped"}

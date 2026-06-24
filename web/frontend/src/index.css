@@ -196,3 +196,110 @@ body {
 .field-input:focus {
   border-color: var(--color-accent);
 }
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(122, 162, 247, 0.12);
+  border: 2px dashed var(--color-accent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.drop-overlay-inner {
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  background: var(--color-bg-overlay);
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.attachment-upload-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  border: 1px dashed var(--color-border);
+  background: var(--color-bg-root);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.attachment-upload-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.attachment-upload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-root);
+  max-width: 220px;
+}
+.attachment-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.attachment-file-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+.attachment-chip-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.attachment-chip-name {
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-chip-size {
+  font-size: 0.65rem;
+  color: var(--color-text-dim);
+}
+.attachment-chip-remove {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.attachment-chip-remove:hover {
+  color: var(--color-danger, #f7768e);
+}
+
+.message-attachment-img {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+.message-attachment-file {
+  font-size: 0.75rem;
+  text-decoration: underline;
+  color: inherit;
+  opacity: 0.9;
+}
+.message-attachment--user .message-attachment-file {
+  color: white;
+}

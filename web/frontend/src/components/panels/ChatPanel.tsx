@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useChatStore } from '../../store/chatStore'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useDragDrop } from '../../hooks/useDragDrop'
 import { ChatThread } from '../chat/ChatThread'
 import { ChatInputBar } from '../chat/ChatInput'
+import { useAttachmentUploadHandler } from '../upload/AttachmentUploader'
 import { Button } from '../ui/Button'
 import { sessionId as formatSessionId } from '../../lib/utils'
 
@@ -12,12 +14,14 @@ export function ChatPanel() {
   const sessionsLoading = useChatStore((s) => s.sessionsLoading)
   const messages = useChatStore((s) => s.messages)
   const inputText = useChatStore((s) => s.inputText)
+  const pendingAttachments = useChatStore((s) => s.pendingAttachments)
   const streamBuffer = useChatStore((s) => s.streamBuffer)
   const streaming = useChatStore((s) => s.streaming)
   const useTools = useChatStore((s) => s.useTools)
   const pendingToolCalls = useChatStore((s) => s.pendingToolCalls)
   const setInputText = useChatStore((s) => s.setInputText)
   const setUseTools = useChatStore((s) => s.setUseTools)
+  const setPendingAttachments = useChatStore((s) => s.setPendingAttachments)
   const sendMessage = useChatStore((s) => s.sendMessage)
   const abortChat = useChatStore((s) => s.abortChat)
   const handleChatMessage = useChatStore((s) => s.handleChatMessage)
@@ -27,6 +31,25 @@ export function ChatPanel() {
   const setSessionId = useChatStore((s) => s.setSessionId)
 
   const { sendChat, abortChat: wsAbort, onChat } = useWebSocket()
+
+  const handleDropFiles = useAttachmentUploadHandler(
+    sessionId,
+    pendingAttachments,
+    setPendingAttachments,
+    streaming || !sessionId,
+  )
+
+  const onDropFiles = useCallback(
+    (files: File[]) => {
+      void handleDropFiles(files)
+    },
+    [handleDropFiles],
+  )
+
+  const { isDragging, onDragEnter, onDragLeave, onDragOver, onDrop } = useDragDrop(
+    onDropFiles,
+    streaming || !sessionId,
+  )
 
   useEffect(() => {
     initChat()
@@ -73,7 +96,18 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-h-0 border border-[var(--color-border)] rounded-lg mx-5 mb-5 overflow-hidden bg-[var(--color-bg-surface)]">
+      <div
+        className="relative flex-1 flex flex-col min-h-0 border border-[var(--color-border)] rounded-lg mx-5 mb-5 overflow-hidden bg-[var(--color-bg-surface)]"
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        {isDragging && (
+          <div className="drop-overlay">
+            <div className="drop-overlay-inner">Drop files here</div>
+          </div>
+        )}
         <ChatThread
           messages={messages}
           streamBuffer={streamBuffer}
@@ -84,6 +118,9 @@ export function ChatPanel() {
           value={inputText}
           streaming={streaming}
           useTools={useTools}
+          sessionId={sessionId}
+          pendingAttachments={pendingAttachments}
+          onAttachmentsChange={setPendingAttachments}
           onChange={setInputText}
           onUseToolsChange={setUseTools}
           onSend={() => sendMessage(sendChat)}

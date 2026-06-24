@@ -157,8 +157,9 @@ async def _handle_chat_send(websocket, msg: dict):
     user_message = msg.get("message", "")
     use_tools = msg.get("use_tools", False)
     provider_name = msg.get("provider", None)
+    attachment_ids = msg.get("attachment_ids") or []
 
-    if not user_message.strip():
+    if not user_message.strip() and not attachment_ids:
         await _safe_send_json(websocket, {
             "type": "chat:error",
             "session_id": session_id,
@@ -173,6 +174,7 @@ async def _handle_chat_send(websocket, msg: dict):
                 user_message=user_message,
                 use_tools=use_tools,
                 provider_name=provider_name,
+                attachment_ids=attachment_ids,
             ):
                 await _safe_send_json(websocket, chunk)
         except asyncio.CancelledError:

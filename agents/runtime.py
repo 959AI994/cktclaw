@@ -157,11 +157,14 @@ class AgentRuntime:
             "agent_id": agent.agent_id,
             "name": agent.name,
             "status": agent.status.value,
+            "model": getattr(agent, "model", None),
             "result": agent.result[:500] if agent.result else "",
             "error": agent.error,
             "budget": {
-                "turns": f"{agent.budget.turns_used}/{agent.budget.max_turns}",
-                "tokens": f"{agent.budget.tokens_used}/{agent.budget.max_tokens}",
+                "turns_used": agent.budget.turns_used,
+                "max_turns": agent.budget.max_turns,
+                "tokens_used": agent.budget.tokens_used,
+                "max_tokens": agent.budget.max_tokens,
             },
         }
 

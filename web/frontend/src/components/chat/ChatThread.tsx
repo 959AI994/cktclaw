@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { ChatMessage } from '../../types/api'
+import type { ChatAttachmentRef, ChatMessage } from '../../types/api'
+import { isImageMime, uploadUrl } from '../../lib/uploads'
 import { MarkdownContent } from './MarkdownContent'
 import { ToolCallCard } from './ToolCallCard'
 
@@ -24,6 +25,7 @@ export function ChatThread({ messages, streamBuffer, streaming, pendingToolCalls
         <div className="flex flex-col items-center justify-center h-full text-[var(--color-text-dim)]">
           <div className="text-3xl mb-2">✦</div>
           Start a conversation with your AI agent
+          <p className="text-xs mt-2">Drag & drop files or images here</p>
         </div>
       )}
 
@@ -53,7 +55,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <Avatar role={msg.role} />
-      <div className={`flex-1 min-w-0 ${isUser ? 'flex justify-end' : ''}`}>
+      <div className={`flex-1 min-w-0 ${isUser ? 'flex flex-col items-end' : ''}`}>
         <div
           className={`chat-bubble inline-block max-w-[85%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed ${
             isUser
@@ -62,7 +64,12 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           }`}
         >
           {isUser ? (
-            <p className="whitespace-pre-wrap m-0">{msg.content}</p>
+            <>
+              {msg.content && msg.content !== '(attachments)' && (
+                <p className="whitespace-pre-wrap m-0">{msg.content}</p>
+              )}
+              {msg.attachments?.length ? <MessageAttachments attachments={msg.attachments} inUserBubble /> : null}
+            </>
           ) : (
             <MarkdownContent content={msg.content} />
           )}
@@ -71,6 +78,36 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           <ToolCallCard key={i} tc={tc} />
         ))}
       </div>
+    </div>
+  )
+}
+
+function MessageAttachments({
+  attachments,
+  inUserBubble,
+}: {
+  attachments: ChatAttachmentRef[]
+  inUserBubble?: boolean
+}) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${inUserBubble ? 'mt-2' : 'mt-1'}`}>
+      {attachments.map((a) => {
+        const url = uploadUrl(a)
+        const isImage = isImageMime(a.mime)
+        return (
+          <div key={a.id} className={`message-attachment ${inUserBubble ? 'message-attachment--user' : ''}`}>
+            {isImage ? (
+              <a href={url} target="_blank" rel="noreferrer">
+                <img src={url} alt={a.filename} className="message-attachment-img" />
+              </a>
+            ) : (
+              <a href={url} target="_blank" rel="noreferrer" className="message-attachment-file">
+                📄 {a.filename}
+              </a>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

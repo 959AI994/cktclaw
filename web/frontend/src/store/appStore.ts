@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import type {
   AgentInfo,
+  AgentsSubTab,
   MemoryEntry,
   MemorySearchResult,
+  OrchestratorRun,
+  UploadMeta,
   PluginInfo,
   ProviderInfo,
   SessionInfo,
@@ -64,7 +67,14 @@ interface AppState {
 
   showSpawn: boolean
   showInstall: boolean
+  agentsSubTab: AgentsSubTab
   spawnForm: { name: string; task: string; system_prompt: string; model: string }
+  spawnAttachments: UploadMeta[]
+  agentUploadSessionId: string
+  orchestratorForm: { skill: string; task: string; session_id: string }
+  orchestratorAttachments: UploadMeta[]
+  orchestratorUploadSessionId: string
+  orchestratorRuns: OrchestratorRun[]
   installForm: { source_path: string; git_url: string }
 
   setTab: (tab: TabId) => void
@@ -92,6 +102,12 @@ interface AppState {
   spawnAgent: () => Promise<void>
   stopAgent: (id: string) => Promise<void>
   viewAgent: (id: string) => Promise<void>
+  fetchOrchestratorRuns: () => Promise<void>
+  runOrchestrator: () => Promise<void>
+  abortOrchestrator: (runId: string) => Promise<void>
+  handleOrchestratorWsEvent: (eventType: string, data: unknown) => void
+  setAgentsSubTab: (tab: AgentsSubTab) => void
+  setOrchestratorForm: (f: Partial<AppState['orchestratorForm']>) => void
   deleteSession: (id: string) => Promise<void>
   viewSession: (id: string) => Promise<void>
   installPlugin: () => Promise<void>
@@ -102,6 +118,8 @@ interface AppState {
   setShowSpawn: (v: boolean) => void
   setShowInstall: (v: boolean) => void
   setSpawnForm: (f: Partial<AppState['spawnForm']>) => void
+  setSpawnAttachments: (attachments: UploadMeta[]) => void
+  setOrchestratorAttachments: (attachments: UploadMeta[]) => void
   setInstallForm: (f: Partial<AppState['installForm']>) => void
   setConfigText: (t: string) => void
   loadTab: (tab: TabId) => void
@@ -140,7 +158,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   showSpawn: false,
   showInstall: false,
+  agentsSubTab: 'worker',
   spawnForm: { name: '', task: '', system_prompt: '', model: '' },
+  spawnAttachments: [],
+  agentUploadSessionId: '',
+  orchestratorForm: { skill: 'chip-rtl', task: '', session_id: '' },
+  orchestratorAttachments: [],
+  orchestratorUploadSessionId: '',
+  orchestratorRuns: [],
   installForm: { source_path: '', git_url: '' },
 
   setTab: (tab) => {
@@ -308,26 +333,31 @@ export const useAppStore = create<AppState>((set, get) => ({
   setMemQuery: (memQuery) => set({ memQuery }),
 
   spawnAgent: async () => {
-    const { spawnForm } = get()
+    const { spawnForm, spawnAttachments, agentUploadSessionId } = get()
+    const task = spawnForm.task.trim()
+    if (!task) {
+      get().toast('error', 'Task is required')
+      return
+    }
+    const uploadSession = agentUploadSessionId || `web-agent-${Date.now().toString(36)}`
     try {
-      const res = await fetch('/api/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: spawnForm.name || 'web-agent',
-          task: spawnForm.task,
-          system_prompt: spawnForm.system_prompt || null,
-          model: spawnForm.model || null,
-        }),
+      await postJSON<{ agent_id: string; status: string }>('/api/agents', {
+        name: spawnForm.name || 'web-agent',
+        task,
+        system_prompt: spawnForm.system_prompt || null,
+        model: spawnForm.model || null,
+        session_id: uploadSession,
+        attachment_ids: spawnAttachments.map((a) => a.id),
       })
-      if (res.ok) {
-        set({ showSpawn: false, spawnForm: { name: '', task: '', system_prompt: '', model: '' } })
-        get().toast('success', 'Agent spawned')
-        get().fetchAgents()
-      } else {
-        const e = await res.json()
-        get().toast('error', e.detail || 'Spawn failed')
-      }
+      set({
+        showSpawn: false,
+        spawnForm: { name: '', task: '', system_prompt: '', model: '' },
+        spawnAttachments: [],
+        agentUploadSessionId: '',
+      })
+      get().toast('success', 'Agent spawned')
+      get().fetchAgents()
+      get().fetchOverview()
     } catch (e) {
       get().toast('error', e instanceof Error ? e.message : 'Failed')
     }
@@ -336,9 +366,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   stopAgent: async (id) => {
     if (!confirm(`Stop agent ${id}?`)) return
     try {
-      await fetch(`/api/agents/${id}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      await postJSON('/api/agents/' + encodeURIComponent(id) + '/stop', {})
       get().toast('info', 'Stop requested')
       get().fetchAgents()
+      get().fetchOverview()
     } catch (e) {
       get().toast('error', e instanceof Error ? e.message : 'Failed')
     }
@@ -352,6 +383,113 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().toast('error', e instanceof Error ? e.message : 'Failed')
     }
   },
+
+  fetchOrchestratorRuns: async () => {
+    try {
+      const runs = await fetchJSON<OrchestratorRun[]>('/api/orchestrator/runs')
+      set({ orchestratorRuns: runs || [] })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed to load orchestrator runs')
+    }
+  },
+
+  runOrchestrator: async () => {
+    const { orchestratorForm, orchestratorAttachments, orchestratorUploadSessionId } = get()
+    const task = orchestratorForm.task.trim()
+    if (!task) {
+      get().toast('error', 'Task is required')
+      return
+    }
+    if (!orchestratorForm.skill) {
+      get().toast('error', 'Select a chip specialist skill')
+      return
+    }
+    const uploadSession = orchestratorUploadSessionId || orchestratorForm.session_id || `web-orch-${Date.now().toString(36)}`
+    try {
+      const res = await postJSON<{ run_id: string; status: string }>('/api/orchestrator/run', {
+        skill: orchestratorForm.skill,
+        task,
+        session_id: uploadSession,
+        auto_confirm: true,
+        attachment_ids: orchestratorAttachments.map((a) => a.id),
+      })
+      get().toast('success', `Orchestrator started (${res.run_id})`)
+      set({
+        orchestratorForm: { ...orchestratorForm, task: '' },
+        orchestratorAttachments: [],
+      })
+      await get().fetchOrchestratorRuns()
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed to start orchestrator')
+    }
+  },
+
+  abortOrchestrator: async (runId) => {
+    if (!confirm(`Abort orchestrator run ${runId}?`)) return
+    try {
+      await postJSON(`/api/orchestrator/runs/${encodeURIComponent(runId)}/abort`, {})
+      get().toast('info', 'Abort requested')
+      get().fetchOrchestratorRuns()
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed to abort')
+    }
+  },
+
+  handleOrchestratorWsEvent: (eventType, data) => {
+    const payload = (data || {}) as Partial<OrchestratorRun> & { run_id?: string; stage?: string; index?: number; total?: number; message?: string; error?: string }
+    const runId = payload.run_id
+    if (!runId) return
+
+    set((s) => {
+      const runs = [...s.orchestratorRuns]
+      let idx = runs.findIndex((r) => r.run_id === runId)
+      if (idx < 0) {
+        runs.unshift({
+          run_id: runId,
+          skill: (payload as { skill?: string }).skill || '?',
+          task: (payload as { task?: string }).task || '',
+          status: 'running',
+          logs: [],
+        })
+        idx = 0
+      }
+      const run = { ...runs[idx] }
+      if (eventType === 'orchestrator:started') {
+        run.status = 'running'
+      } else if (eventType === 'orchestrator:stage_start') {
+        run.current_stage = payload.stage
+        run.stage_index = payload.index
+        run.stage_total = payload.total
+        run.status = 'running'
+      } else if (eventType === 'orchestrator:log' && payload.message) {
+        run.logs = [...(run.logs || []), payload.message].slice(-50)
+      } else if (eventType === 'orchestrator:done') {
+        run.status = 'completed'
+      } else if (eventType === 'orchestrator:failed') {
+        run.status = run.status === 'aborted' ? 'aborted' : 'failed'
+        run.error = payload.error
+      }
+      runs[idx] = run
+      return { orchestratorRuns: runs }
+    })
+  },
+
+  setAgentsSubTab: (agentsSubTab) => {
+    const patch: Partial<AppState> = { agentsSubTab }
+    if (agentsSubTab === 'specialist' && !get().orchestratorUploadSessionId) {
+      patch.orchestratorUploadSessionId = `web-orch-${Date.now().toString(36)}`
+    }
+    set(patch)
+    if (agentsSubTab === 'specialist') {
+      get().fetchSkills()
+      get().fetchOrchestratorRuns()
+    }
+  },
+
+  setSpawnAttachments: (spawnAttachments) => set({ spawnAttachments }),
+  setOrchestratorAttachments: (orchestratorAttachments) => set({ orchestratorAttachments }),
+
+  setOrchestratorForm: (f) => set((s) => ({ orchestratorForm: { ...s.orchestratorForm, ...f } })),
 
   deleteSession: async (id) => {
     if (!confirm(`Delete session ${id}?`)) return
@@ -477,7 +615,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setShowSpawn: (showSpawn) => set({ showSpawn }),
+  setShowSpawn: (showSpawn) => {
+    if (showSpawn && !get().agentUploadSessionId) {
+      set({ showSpawn, agentUploadSessionId: `web-agent-${Date.now().toString(36)}`, spawnAttachments: [] })
+    } else if (!showSpawn) {
+      set({ showSpawn, spawnAttachments: [], agentUploadSessionId: '' })
+    } else {
+      set({ showSpawn })
+    }
+  },
   setShowInstall: (showInstall) => set({ showInstall }),
   setSpawnForm: (f) => set((s) => ({ spawnForm: { ...s.spawnForm, ...f } })),
   setInstallForm: (f) => set((s) => ({ installForm: { ...s.installForm, ...f } })),
@@ -489,7 +635,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().fetchOverview()
         get().fetchSkills()
       },
-      agents: () => get().fetchAgents(),
+      agents: () => {
+        get().fetchAgents()
+        get().fetchOrchestratorRuns()
+      },
       sessions: () => get().fetchSessions(),
       tools: () => get().fetchTools(),
       skills: () => get().fetchSkills(),
