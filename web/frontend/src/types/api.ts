@@ -205,6 +205,7 @@ export interface WsChatMessage {
   confidence?: number
   estimated_stages?: number
   estimated_minutes?: number
+  pipeline_label?: string
   run_id?: string
   usage?: Record<string, unknown>
   status?: string
@@ -225,6 +226,7 @@ export interface OrchestratorProposal {
   confidence: number
   estimated_stages?: number
   estimated_minutes?: number
+  pipeline_label?: string
 }
 
 export interface ActiveOrchestratorRun {

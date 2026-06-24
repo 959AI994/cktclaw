@@ -11,6 +11,13 @@ from typing import Optional
 
 # Keyword → skill mapping.  Order matters: more specific patterns first.
 _KEYWORD_RULES: list[tuple[str, list[str]]] = [
+    # Full-stack seven-agent pipeline (before single-domain rules)
+    ("chip-system", [
+        r"\b(chip.?system|multi.?agent|seven.?agent|全栈|完整.{0,6}(流程|设计))",
+        r"(从架构到部署|architecture.{0,20}deploy|full.?stack.{0,10}chip)",
+        r"(ppa.{0,10}闭环|end.?to.?end.{0,10}(design|flow))",
+        r"/chip-system",
+    ]),
     # RTL-CLAW pipeline skills (specific patterns before generic chip-rtl)
     ("rtl-spec-analyzer", [
         r"\b(analyze.*spec|spec.*rtl|signal.*pin.*map)",
@@ -112,7 +119,7 @@ _CHAT_INDICATORS = re.compile(
 # High-specificity skills have compound/domain-specific patterns — a single
 # strong keyword hit (e.g. "fpv", "openroad", "nextpnr") is enough to route.
 _HIGH_SPECIFICITY: frozenset = frozenset({
-    "chip-formal", "chip-hls", "chip-compiler", "chip-infrastructure",
+    "chip-system", "chip-formal", "chip-hls", "chip-compiler", "chip-infrastructure",
     "chip-dft", "chip-pd", "chip-soc", "chip-firmware", "chip-fpga", "chip-pipeline",
     "rtl-spec-analyzer", "testbench-generator", "verilog-partition",
     "verilog-optimization", "verilog-merge",
@@ -214,6 +221,8 @@ def detect_chip_design_intent_with_confidence(user_input: str) -> Optional[dict]
         return None
 
     confidence = 0.92 if best_score >= 2 else 0.75
+    if best_skill == "chip-system":
+        confidence = max(confidence, 0.88)
     return {
         "skill_id": best_skill,
         "confidence": confidence,

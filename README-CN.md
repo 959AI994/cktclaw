@@ -368,6 +368,29 @@ Web 端 Agent Loop 刻意对齐 CLI v3 行为：
 
 CLI 与 Web 展示相同完成内容，仅渲染层不同（Rich Panel vs `MarkdownContent`）。
 
+### 七 Agent 多智能体体系（`/chip-system`）
+
+CktClaw 采用 **静态名册 + 动态 spawn** 混合架构（对标 OpenClaw / Claude Code），用于全栈芯片/系统设计：
+
+| Agent | 职责 |
+|-------|------|
+| **PMAgent** | 需求澄清、任务 DAG、进度汇总 — 唯一用户-facing 协调者 |
+| **ArchitectAgent** | 软硬件划分、模块边界、PPA 粗估 |
+| **EDAAgent** | 元协调者：chip-rtl → verification → synthesis → STA → PD |
+| **CompilerAgent** | 编译链、HLS、驱动/运行时生成 |
+| **RuntimeAgent** | 固件、调度策略、资源池 |
+| **DeployAgent** | FPGA 烧录、部署脚本、可观测性 |
+| **OptimizerAgent** | 经 `EvolutionEngine` 做瓶颈分析，驱动迭代闭环 |
+
+**入口：**
+
+- **CLI：** `/chip-system <目标> [--eda-only]` — 七阶段完整流水线
+- **Web Chat：** 高置信度全栈 prompt（如「从架构到部署」「PPA 闭环」）→ `chat:orchestrator_proposal`（`skill: chip-system`）→ 确认 → `OrchestratorRunCard` 实时展示各 Phase
+
+**共享黑板：** `design_state.json` 扩展 `multi_agent` 字段（session、当前 phase、各 Agent 状态、产物索引、优化轮次）。
+
+**关键文件：** `agents/roster/*.md`、`agents/roster_registry.py`、`agents/multi_agent_orchestrator.py`、`agents/runners/eda_agent_runner.py`、`skills/chip_system_skill.py`、`tools/agent/coordinator_tools.py`（Agent / SendMessage / TaskStop）。
+
 ### 关键文件
 
 | 文件 | 职责 |

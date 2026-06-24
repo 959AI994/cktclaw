@@ -249,6 +249,8 @@ async def _execute_orchestrator(state: OrchestratorRunState) -> None:
                     continue
                 if item.get("type") == "orchestrator_result":
                     orchestrator_snapshot = item.get("snapshot")
+                elif item.get("type") == "multi_agent_result":
+                    orchestrator_snapshot = item.get("result")
                 elif "text" in item:
                     rendered_parts.append(str(item["text"]))
         else:
@@ -344,7 +346,7 @@ async def launch_orchestrator_from_chat(
     """Start an orchestrator run (shared by REST API and WebSocket chat confirm)."""
     skill_name = skill.strip()
     if not skill_name.startswith("chip-"):
-        raise ValueError("Only chip-* specialist skills are supported")
+        raise ValueError("Only chip-* specialist skills are supported (including chip-system)")
 
     if _active_run_count() >= MAX_CONCURRENT_RUNS:
         raise RuntimeError(f"Max concurrent orchestrator runs ({MAX_CONCURRENT_RUNS}) reached")

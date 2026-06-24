@@ -14,12 +14,16 @@ export function OrchestratorProposalCard({ proposal, onConfirm, onCancel }: Orch
 
   const confPct = Math.round((proposal.confidence || 0) * 100)
 
+  const isChipSystem = proposal.skill === 'chip-system'
+
   return (
     <div className="mx-4 my-3 p-4 rounded-xl border border-[var(--color-purple)]/40 bg-[var(--color-bg-overlay)]">
       <div className="flex items-start gap-2 mb-2">
-        <span className="text-lg">⚡</span>
+        <span className="text-lg">{isChipSystem ? '🔗' : '⚡'}</span>
         <div>
-          <h4 className="text-sm font-semibold text-[var(--color-text)] m-0">Orchestrator 执行计划</h4>
+          <h4 className="text-sm font-semibold text-[var(--color-text)] m-0">
+            {isChipSystem ? '七 Agent 全栈流水线' : 'Orchestrator 执行计划'}
+          </h4>
           <p className="text-xs text-[var(--color-text-secondary)] mt-0.5 mb-0">
             检测到芯片设计意图 · 置信度 {confPct}%
           </p>
@@ -31,6 +35,12 @@ export function OrchestratorProposalCard({ proposal, onConfirm, onCancel }: Orch
           <dt className="text-[var(--color-text-dim)] w-16 shrink-0">Skill</dt>
           <dd className="text-[var(--color-text)] m-0 font-medium">{proposal.skill}</dd>
         </div>
+        {proposal.pipeline_label && (
+          <div className="flex gap-2">
+            <dt className="text-[var(--color-text-dim)] w-16 shrink-0">流水线</dt>
+            <dd className="text-[var(--color-text-secondary)] m-0">{proposal.pipeline_label}</dd>
+          </div>
+        )}
         <div className="flex gap-2">
           <dt className="text-[var(--color-text-dim)] w-16 shrink-0">任务</dt>
           <dd className="text-[var(--color-text)] m-0">

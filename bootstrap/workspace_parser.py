@@ -362,12 +362,22 @@ async def inject_project_behavior(
         except Exception as e:
             print(f"  ✗ Skill registration failed ({sd['name']}): {e}")
 
-    # ── 2. Log discovered agents ──
-    for ag in behavior.agents:
-        print(
-            f"  ℹ Agent discovered: {ag['name']} "
-            f"(role={ag['role']}, {len(ag.get('system_prompt', ''))} chars)"
-        )
+    # ── 2. Register discovered agents into roster ──
+    try:
+        from ..agents.roster_registry import get_roster
+        roster = get_roster()
+        for ag in behavior.agents:
+            roster.register_project_agent(ag)
+            print(
+                f"  ✓ Agent registered: {ag['name']} "
+                f"(role={ag.get('role', '?')}, {len(ag.get('system_prompt', ''))} chars)"
+            )
+    except Exception as e:
+        for ag in behavior.agents:
+            print(
+                f"  ℹ Agent discovered (register failed): {ag['name']} "
+                f"(role={ag.get('role', '?')}): {e}"
+            )
 
     # ── 3. Inject constitution into CktMem PROJECT layer ──
     if behavior.constitution and cli_state.storage and cli_state.session_id:

@@ -35,6 +35,22 @@ class WorkerAgent(BaseAgent):
         self.model = model
         if allowed_tools is not None:
             self.budget.allowed_tools = allowed_tools
+        self._llm_messages: List[Any] = []
+
+    async def continue_conversation(self, message: str) -> str:
+        """Append a user message and continue the query loop."""
+        if not self._llm_messages:
+            return await self.run(message)
+
+        from ..llm.base import ChatMessage
+        from ..llm.types import MessageRole
+
+        if self.status in (AgentStatus.KILLED, AgentStatus.FAILED):
+            self.status = AgentStatus.RUNNING
+        self._llm_messages.append(
+            ChatMessage(role=MessageRole.USER, content=message)
+        )
+        return await self._execute_query_loop(self._llm_messages)
 
     async def run(self, initial_message: str) -> str:
         """
@@ -90,7 +106,34 @@ class WorkerAgent(BaseAgent):
             content=initial_message,
         ))
 
-        # Query loop
+        self._llm_messages = list(messages)
+        return await self._execute_query_loop(messages)
+
+    async def _execute_query_loop(self, messages: list) -> str:
+        """Shared LLM + tool loop."""
+        from ..llm import get_model_router
+        from ..tools import get_tool_registry
+        from ..llm.base import ChatMessage
+        from ..llm.types import MessageRole
+
+        router = get_model_router()
+        registry = get_tool_registry()
+
+        provider = router.get_provider(self.model) or router.current_provider
+        if not provider:
+            self.status = AgentStatus.FAILED
+            self.error = "No LLM provider available"
+            self._emit(EventType.FAILED, {"error": self.error})
+            return ""
+
+        available_tools = registry.list_tools()
+        if self.budget.allowed_tools is not None:
+            available_tools = [
+                t for t in available_tools
+                if t.name in self.budget.allowed_tools
+            ]
+        tool_schemas = [t.to_openai_schema() for t in available_tools]
+
         while True:
             # Check budget
             exceeded = self.budget.is_exceeded()
@@ -172,6 +215,7 @@ class WorkerAgent(BaseAgent):
                 })
                 break
 
+        self._llm_messages = list(messages)
         self._messages = [
             {"role": m.role.value, "content": m.content}
             for m in messages

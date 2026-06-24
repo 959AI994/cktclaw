@@ -176,8 +176,13 @@ async def stream_chat(
                         "skill": skill_id,
                         "task": route.get("task") or enriched_message,
                         "confidence": confidence,
-                        "estimated_stages": 6,
-                        "estimated_minutes": 5,
+                        "estimated_stages": 7 if skill_id == "chip-system" else 6,
+                        "estimated_minutes": 15 if skill_id == "chip-system" else 5,
+                        "pipeline_label": (
+                            "PM → Architect → EDA → Compiler∥Runtime → Deploy → Optimizer"
+                            if skill_id == "chip-system"
+                            else None
+                        ),
                     }
                     return
                 elif confidence > 0:

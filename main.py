@@ -360,6 +360,7 @@ class CLIState:
                 "/pareto": "⚖️ 同 /pareto-negotiate（别名）",
                 "/chip-design-skills": "🔷 芯片设计子终端（提示符 [chip-design-skills]；.. 回主界面）",
                 "/loop": "🔄 跨域闭环系统 (EDA + Chip + AI Infra)",
+                "/chip-system": "🔗 七 Agent 全栈流水线 (PM→Arch→EDA→Deploy→Opt)",
                 "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
                 "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek / Claude / OpenAI)",
@@ -537,6 +538,7 @@ class LogicRTCLI:
             from .skills.rltf_skill import register_rltf_skill
             from .skills.pareto_negotiation_skill import register_pareto_negotiation_skill
             from .skills.system_loop_skill import register_system_loop_skill
+            from .skills.chip_system_skill import register_chip_system_skill
 
             import asyncio
             try:
@@ -550,6 +552,7 @@ class LogicRTCLI:
                 asyncio.run(register_pareto_negotiation_skill())
                 asyncio.run(register_chip_design_skills())
                 asyncio.run(register_system_loop_skill())
+                asyncio.run(register_chip_system_skill())
                 asyncio.run(register_rtl_claw_skills())
                 asyncio.run(register_fpga_agent_skills())
                 asyncio.run(register_verilog_generator_skill())
@@ -568,6 +571,7 @@ class LogicRTCLI:
                     future8 = executor.submit(asyncio.run, register_pareto_negotiation_skill())
                     future9 = executor.submit(asyncio.run, register_chip_design_skills())
                     future10 = executor.submit(asyncio.run, register_system_loop_skill())
+                    future10b = executor.submit(asyncio.run, register_chip_system_skill())
                     future11 = executor.submit(asyncio.run, register_rtl_claw_skills())
                     future12 = executor.submit(asyncio.run, register_fpga_agent_skills())
                     future13 = executor.submit(asyncio.run, register_verilog_generator_skill())
@@ -641,6 +645,12 @@ class LogicRTCLI:
             _registry.register(ABCTool(), source="builtin")
             _registry.register(OpenROADTool(), source="builtin")
             _registry.register(BashTool(), source="builtin")
+
+            try:
+                from .tools.agent.register_coordinator import register_coordinator_tools
+                register_coordinator_tools(_registry)
+            except Exception:
+                pass
 
             # Initialize LLM Model Router
             _router = get_model_router()

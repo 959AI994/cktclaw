@@ -310,6 +310,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           confidence: msg.confidence ?? 0,
           estimated_stages: msg.estimated_stages,
           estimated_minutes: msg.estimated_minutes,
+          pipeline_label: msg.pipeline_label,
         },
         streaming: false,
         streamBuffer: '',

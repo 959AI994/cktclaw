@@ -222,8 +222,75 @@ class DesignStateStore:
             "pending_approval": None,
             "approved_checkpoints": [],
             "constraints": {},
+            "spec": {},
+            "arch": {},
             "fix_requests": [],
             "archive_fix_requests": [],
             "orchestrator_qor": {},
             "history": [],
+            "multi_agent": {
+                "session_id": None,
+                "current_phase": None,
+                "agent_status": {},
+                "artifacts_index": {},
+                "optimization_round": 0,
+            },
         }
+
+    def update_multi_agent_phase(
+        self,
+        phase: str,
+        *,
+        session_id: Optional[str] = None,
+        agent_status: Optional[Dict[str, str]] = None,
+        artifacts_index: Optional[Dict[str, str]] = None,
+        optimization_round: Optional[int] = None,
+    ) -> None:
+        """Update multi-agent blackboard section (backward compatible)."""
+        data = self.load()
+        ma = data.setdefault("multi_agent", {})
+        ma["current_phase"] = phase
+        if session_id is not None:
+            ma["session_id"] = session_id
+        if agent_status:
+            status_map = ma.setdefault("agent_status", {})
+            status_map.update(agent_status)
+        if artifacts_index:
+            idx = ma.setdefault("artifacts_index", {})
+            idx.update(artifacts_index)
+        if optimization_round is not None:
+            ma["optimization_round"] = optimization_round
+        self._data = data
+
+    def set_spec(self, spec_md: str, *, design_name: Optional[str] = None) -> None:
+        data = self.load()
+        data["spec"] = {"markdown": spec_md, "updated_at": _utc_now()}
+        if design_name:
+            data["design_name"] = design_name
+        self._data = data
+
+    def set_arch(self, arch_md: str) -> None:
+        data = self.load()
+        data["arch"] = {"markdown": arch_md, "updated_at": _utc_now()}
+        self._data = data
+
+    def add_fix_request(
+        self,
+        *,
+        summary: str,
+        detail: str = "",
+        source_agent: str = "unknown",
+    ) -> str:
+        data = self.load()
+        fr_id = f"fr-{len(data.get('fix_requests', [])) + 1}"
+        entry = {
+            "id": fr_id,
+            "status": "open",
+            "summary": summary,
+            "detail": detail,
+            "source_agent": source_agent,
+            "created_at": _utc_now(),
+        }
+        data.setdefault("fix_requests", []).append(entry)
+        self._data = data
+        return fr_id

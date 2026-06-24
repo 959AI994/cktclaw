@@ -42,6 +42,12 @@ def _bootstrap_tools() -> int:
     except Exception as e:
         logger.debug(f"auto_discover_builtin: {e}")
 
+    try:
+        from ..tools.agent.register_coordinator import register_coordinator_tools
+        register_coordinator_tools(registry)
+    except Exception as e:
+        logger.debug(f"register_coordinator_tools: {e}")
+
     count = len(registry.list_names())
     logger.info(f"Web bootstrap: registered {count} tools")
     return count
@@ -73,6 +79,7 @@ def _bootstrap_skills() -> int:
         from ..skills.rltf_skill import register_rltf_skill
         from ..skills.pareto_negotiation_skill import register_pareto_negotiation_skill
         from ..skills.system_loop_skill import register_system_loop_skill
+        from ..skills.chip_system_skill import register_chip_system_skill
 
         async def _register_all():
             await register_abc_skill()
@@ -85,6 +92,7 @@ def _bootstrap_skills() -> int:
             await register_pareto_negotiation_skill()
             await register_chip_design_skills()
             await register_system_loop_skill()
+            await register_chip_system_skill()
             await register_rtl_claw_skills()
             await register_fpga_agent_skills()
             await register_verilog_generator_skill()

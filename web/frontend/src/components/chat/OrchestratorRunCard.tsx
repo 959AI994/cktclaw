@@ -15,12 +15,26 @@ function statusVariant(status: ActiveOrchestratorRun['status']) {
 export function OrchestratorRunCard({ run }: OrchestratorRunCardProps) {
   const [logsExpanded, setLogsExpanded] = useState(true)
 
+  const isChipSystem = run.skill === 'chip-system'
+
   const stageLabel =
     run.stage && run.stage_total
       ? `${run.stage} (${run.stage_index ?? '?'}/${run.stage_total})`
       : run.stage || '—'
 
   const isRunning = run.status === 'running'
+
+  const title = isRunning
+    ? isChipSystem
+      ? '七 Agent 流水线运行中'
+      : 'Orchestrator 运行中'
+    : run.status === 'completed'
+      ? isChipSystem
+        ? '七 Agent 流水线已完成'
+        : 'Orchestrator 已完成'
+      : isChipSystem
+        ? '七 Agent 流水线失败'
+        : 'Orchestrator 失败'
 
   return (
     <div className="mx-1 my-3 p-4 rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-bg-overlay)]">
@@ -30,13 +44,7 @@ export function OrchestratorRunCard({ run }: OrchestratorRunCardProps) {
             <span className="inline-block w-4 h-4 mt-0.5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin shrink-0" />
           )}
           <div className="min-w-0">
-            <h4 className="text-sm font-semibold text-[var(--color-text)] m-0">
-              {isRunning
-                ? 'Orchestrator 运行中'
-                : run.status === 'completed'
-                  ? 'Orchestrator 已完成'
-                  : 'Orchestrator 失败'}
-            </h4>
+            <h4 className="text-sm font-semibold text-[var(--color-text)] m-0">{title}</h4>
             <p className="text-xs text-[var(--color-text-secondary)] mt-0.5 mb-0 truncate">
               {run.skill} · <span className="font-mono">{run.run_id}</span>
             </p>
@@ -49,8 +57,14 @@ export function OrchestratorRunCard({ run }: OrchestratorRunCardProps) {
         <p className="text-xs text-[var(--color-text-dim)] mb-2 line-clamp-2">{run.task}</p>
       )}
 
+      {isChipSystem && isRunning && (
+        <p className="text-xs text-[var(--color-text-dim)] mb-2">
+          PM → Architect → EDA → Compiler∥Runtime → Deploy → Optimizer
+        </p>
+      )}
+
       <dl className="text-xs grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 mb-3">
-        <dt className="text-[var(--color-text-dim)]">Stage</dt>
+        <dt className="text-[var(--color-text-dim)]">{isChipSystem ? 'Phase' : 'Stage'}</dt>
         <dd className="text-[var(--color-text)] m-0 font-medium">{stageLabel}</dd>
       </dl>
 

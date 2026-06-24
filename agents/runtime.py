@@ -13,6 +13,21 @@ from .worker import WorkerAgent
 logger = logging.getLogger(__name__)
 
 
+class _MetaAgentStub(BaseAgent):
+    """Placeholder agent for async meta-runner results."""
+
+    def __init__(self, agent_id: str, name: str, result: Dict[str, Any]):
+        super().__init__(name=name, agent_id=agent_id)
+        self._result_data = result
+        st = result.get("status", "completed")
+        self.status = AgentStatus.COMPLETED if st == "completed" else AgentStatus.FAILED
+        self.result = result.get("output", "")
+        self.error = result.get("error") or ""
+
+    async def run(self, initial_message: str) -> str:
+        return self.result
+
+
 class AgentRuntime:
     """
     Manages a pool of running agents.
@@ -43,6 +58,86 @@ class AgentRuntime:
                 listener(event)
             except Exception as e:
                 logger.debug(f"Event listener error: {e}")
+
+    def get_agent(self, agent_id: str) -> Optional[BaseAgent]:
+        return self._agents.get(agent_id)
+
+    async def spawn_specialist(
+        self,
+        role_id: str,
+        task: str,
+        *,
+        parent_run_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        model: str = "deepseek",
+        budget: Optional[AgentBudget] = None,
+    ) -> str:
+        from .roster_registry import get_roster
+        from .runners.specialist_runner import run_specialist_role
+
+        spec = get_roster().get(role_id)
+        if spec is None:
+            raise ValueError(f"Unknown roster role: {role_id}")
+
+        ctx = dict(context or {})
+        if parent_run_id:
+            ctx["parent_run_id"] = parent_run_id
+
+        if spec.execution_mode in ("orchestrator_meta", "orchestrator_direct"):
+            aid = f"meta-{role_id}-{len(self._agents)}"[:32]
+
+            async def _run_meta() -> None:
+                result = await run_specialist_role(role_id, task, context=ctx)
+                stub = self._agents.get(aid)
+                if stub and isinstance(stub, _MetaAgentStub):
+                    stub._result_data = result
+                    st = result.get("status", "completed")
+                    stub.status = (
+                        AgentStatus.COMPLETED if st == "completed" else AgentStatus.FAILED
+                    )
+                    stub.result = result.get("output", "")
+                    stub.error = result.get("error") or ""
+                self._results[aid] = result.get("output", "")
+
+            self._agents[aid] = _MetaAgentStub(aid, spec.display_name, {"status": "running"})
+            self._tasks[aid] = asyncio.create_task(_run_meta())
+            return aid
+
+        prompt = spec.system_prompt
+        if ctx.get("design_state_summary"):
+            prompt = f"{prompt}\n\n## Shared Context\n{ctx['design_state_summary']}"
+
+        return await self.spawn_worker(
+            name=spec.display_name,
+            task=task,
+            system_prompt=prompt,
+            allowed_tools=spec.allowed_tools or None,
+            model=model,
+            budget=budget or AgentBudget(
+                max_turns=15 if spec.model_tier == "specialist" else 20,
+            ),
+        )
+
+    async def spawn_parallel(
+        self,
+        role_tasks: List[tuple[str, str]],
+        *,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
+        ids: List[str] = []
+        for role_id, task in role_tasks:
+            ids.append(await self.spawn_specialist(role_id, task, context=context))
+        return ids
+
+    async def wait_all(
+        self,
+        agent_ids: List[str],
+        timeout: float = 600,
+    ) -> Dict[str, Optional[str]]:
+        out: Dict[str, Optional[str]] = {}
+        for aid in agent_ids:
+            out[aid] = await self.wait_for(aid, timeout=timeout)
+        return out
 
     async def spawn_worker(
         self,

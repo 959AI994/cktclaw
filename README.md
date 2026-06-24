@@ -650,6 +650,29 @@ When a chip-design orchestrator finishes, Web Chat no longer dumps a raw JSON st
 
 CLI and Web show the same completion content; only the rendering layer differs (Rich Panel vs `MarkdownContent`).
 
+### Seven-Agent Multi-Agent System (`/chip-system`)
+
+CktClaw implements a **static roster + dynamic spawn** architecture (OpenClaw / Claude Code style) for full-stack chip/system design:
+
+| Agent | Role |
+|-------|------|
+| **PMAgent** | Requirements, task DAG, progress — user-facing coordinator |
+| **ArchitectAgent** | HW/SW partitioning, module boundaries, PPA estimates |
+| **EDAAgent** | Meta-coordinator: chip-rtl → verification → synthesis → STA → PD |
+| **CompilerAgent** | Toolchain, HLS, driver/runtime generation |
+| **RuntimeAgent** | Firmware, scheduling, resource pools |
+| **DeployAgent** | FPGA bring-up, deployment scripts, observability |
+| **OptimizerAgent** | Bottleneck analysis via `EvolutionEngine`, drives iteration loop |
+
+**Entry points:**
+
+- **CLI:** `/chip-system <goal> [--eda-only]` — full seven-phase pipeline
+- **Web Chat:** high-confidence full-stack prompts (e.g. "architecture to deploy", "PPA closed loop") → `chat:orchestrator_proposal` with `skill: chip-system` → confirm → live phase progress on `OrchestratorRunCard`
+
+**Shared blackboard:** `design_state.json` extended with `multi_agent` (session, phase, agent status, artifacts index, optimization round).
+
+**Key files:** `agents/roster/*.md`, `agents/roster_registry.py`, `agents/multi_agent_orchestrator.py`, `agents/runners/eda_agent_runner.py`, `skills/chip_system_skill.py`, `tools/agent/coordinator_tools.py` (Agent / SendMessage / TaskStop).
+
 ### Key Files
 
 | File | Role |
