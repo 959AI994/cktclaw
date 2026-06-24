@@ -418,6 +418,14 @@ else
     log_warning "cktclaw 命令未找到（尝试 pip install -e . 后重试）"
 fi
 
+# Semantic memory (sentence-transformers / BGE)
+if python -c "import sentence_transformers" 2>/dev/null; then
+    log_success "sentence-transformers (BGE semantic memory)"
+else
+    log_warning "sentence-transformers 未安装 — 语义记忆不可用"
+    log_info "  修复: pip install sentence-transformers"
+fi
+
 # EDA 工具
 if ! ${MINIMAL}; then
     echo ""

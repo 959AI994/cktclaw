@@ -92,8 +92,26 @@ async def list_memory(limit: int = Query(20, ge=1, le=100)):
         "embeddings_available": embeddings_available,
         "embedding_backend": status.get("backend"),
         "embedding_model": status.get("model"),
+        "error_detail": status.get("error_detail"),
+        "missing_dependency": status.get("missing_dependency"),
         "sources": {"vector": vector_count, "session": session_count},
     }
+
+
+@router.post("/warmup")
+async def warmup_memory():
+    try:
+        from ...cktmem.embeddings import warmup_embeddings
+        status = warmup_embeddings()
+        return {"status": "ok" if status.get("available") else "error", **status}
+    except Exception as e:
+        logger.error(f"warmup_memory failed: {e}")
+        return {
+            "status": "error",
+            "available": False,
+            "error_detail": str(e),
+            "note": str(e),
+        }
 
 
 @router.get("/session")
@@ -154,11 +172,24 @@ async def save_session_memory(body: SessionMemoryRequest):
 @router.post("/search")
 async def search_memory(body: SearchRequest):
     vs = _get_vector_store()
-    embeddings_available = _embeddings_available()
+    status = _embedding_status()
+    embeddings_available = bool(status.get("available"))
     if vs is None:
-        return {"results": [], "note": _EMBEDDINGS_NOTE, "embeddings_available": False}
+        return {
+            "results": [],
+            "note": status.get("note") or _EMBEDDINGS_NOTE,
+            "embeddings_available": False,
+            "error_detail": status.get("error_detail"),
+            "missing_dependency": status.get("missing_dependency"),
+        }
     if not embeddings_available:
-        return {"results": [], "note": _EMBEDDINGS_NOTE, "embeddings_available": False}
+        return {
+            "results": [],
+            "note": status.get("note") or _EMBEDDINGS_NOTE,
+            "embeddings_available": False,
+            "error_detail": status.get("error_detail"),
+            "missing_dependency": status.get("missing_dependency"),
+        }
     try:
         results = vs.search(body.query, top_k=body.top_k)
         formatted = []

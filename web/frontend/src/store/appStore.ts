@@ -62,6 +62,9 @@ interface AppState {
   embeddingsAvailable: boolean | null
   embeddingBackend: string | null
   embeddingModel: string | null
+  embeddingErrorDetail: string | null
+  missingDependency: string | null
+  memoryWarmingUp: boolean
   memorySources: { vector?: number; session?: number }
   sessionMemoryEntries: SessionMemoryEntry[]
   allSessionMemoryEntries: SessionMemoryEntry[]
@@ -98,6 +101,7 @@ interface AppState {
   fetchSkills: () => Promise<void>
   fetchPlugins: () => Promise<void>
   fetchMemory: () => Promise<void>
+  warmupMemory: () => Promise<void>
   fetchSessionMemory: (sessionId: string) => Promise<void>
   fetchAllSessionMemories: () => Promise<void>
   saveSessionMemory: (payload: {
@@ -165,6 +169,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   embeddingsAvailable: null,
   embeddingBackend: null,
   embeddingModel: null,
+  embeddingErrorDetail: null,
+  missingDependency: null,
+  memoryWarmingUp: false,
   memorySources: {},
   sessionMemoryEntries: [],
   allSessionMemoryEntries: [],
@@ -304,6 +311,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         embeddings_available?: boolean
         embedding_backend?: string
         embedding_model?: string
+        error_detail?: string
+        missing_dependency?: string
         sources?: { vector?: number; session?: number }
       }>('/api/memory')
       set({
@@ -312,10 +321,47 @@ export const useAppStore = create<AppState>((set, get) => ({
         embeddingsAvailable: d.embeddings_available ?? null,
         embeddingBackend: d.embedding_backend || null,
         embeddingModel: d.embedding_model || null,
+        embeddingErrorDetail: d.error_detail || null,
+        missingDependency: d.missing_dependency || null,
         memorySources: d.sources || {},
       })
     } catch (e) {
       get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  warmupMemory: async () => {
+    set({ memoryWarmingUp: true })
+    try {
+      const d = await postJSON<{
+        status?: string
+        available?: boolean
+        note?: string
+        error_detail?: string
+        missing_dependency?: string
+        embedding_backend?: string
+        embedding_model?: string
+        backend?: string
+        model?: string
+      }>('/api/memory/warmup', {})
+      set({
+        memoryWarmingUp: false,
+        embeddingsAvailable: d.available ?? null,
+        embeddingBackend: d.embedding_backend || d.backend || null,
+        embeddingModel: d.embedding_model || d.model || null,
+        embeddingErrorDetail: d.error_detail || null,
+        missingDependency: d.missing_dependency || null,
+        memoryNote: d.note || null,
+      })
+      if (d.available) {
+        get().toast('success', 'Embedding model ready')
+        await get().fetchMemory()
+      } else {
+        get().toast('error', d.error_detail || d.note || 'Warmup failed')
+      }
+    } catch (e) {
+      set({ memoryWarmingUp: false })
+      get().toast('error', e instanceof Error ? e.message : 'Warmup failed')
     }
   },
 

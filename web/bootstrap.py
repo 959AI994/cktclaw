@@ -121,5 +121,44 @@ def ensure_runtime_bootstrapped() -> None:
         _bootstrap_tools()
         _bootstrap_skills()
         _bootstrap_plugins()
+        _check_embedding_dependencies()
     except Exception as e:
         logger.error(f"ensure_runtime_bootstrapped failed: {e}")
+
+
+def _check_embedding_dependencies() -> None:
+    """Warn when local embedding backend is configured but deps are missing."""
+    import os
+    import threading
+
+    backend = os.environ.get("CKTCLAW_EMBEDDING_BACKEND", "bge").strip().lower()
+    if backend not in ("bge", "minilm", "auto"):
+        return
+    try:
+        import sentence_transformers  # noqa: F401
+    except ImportError:
+        logger.warning(
+            "Semantic memory (BGE) unavailable: sentence-transformers not installed. "
+            "Fix: pip install sentence-transformers"
+        )
+        return
+
+    def _warmup_background():
+        try:
+            from ..cktmem.embeddings import get_embedding_status
+            status = get_embedding_status()
+            if status.get("available"):
+                logger.info(
+                    "Semantic memory ready: backend=%s model=%s",
+                    status.get("backend"),
+                    status.get("model"),
+                )
+            else:
+                logger.warning(
+                    "Semantic memory warmup failed: %s",
+                    status.get("error_detail") or status.get("note"),
+                )
+        except Exception as e:
+            logger.debug("Embedding warmup skipped: %s", e)
+
+    threading.Thread(target=_warmup_background, daemon=True).start()

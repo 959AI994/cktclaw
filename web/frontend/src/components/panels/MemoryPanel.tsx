@@ -26,12 +26,16 @@ export function MemoryPanel() {
   const embeddingsAvailable = useAppStore((s) => s.embeddingsAvailable)
   const embeddingBackend = useAppStore((s) => s.embeddingBackend)
   const embeddingModel = useAppStore((s) => s.embeddingModel)
+  const embeddingErrorDetail = useAppStore((s) => s.embeddingErrorDetail)
+  const missingDependency = useAppStore((s) => s.missingDependency)
+  const memoryWarmingUp = useAppStore((s) => s.memoryWarmingUp)
   const memorySources = useAppStore((s) => s.memorySources)
   const sessionMemoryEntries = useAppStore((s) => s.sessionMemoryEntries)
   const allSessionMemoryEntries = useAppStore((s) => s.allSessionMemoryEntries)
   const setMemQuery = useAppStore((s) => s.setMemQuery)
   const searchMemory = useAppStore((s) => s.searchMemory)
   const fetchMemory = useAppStore((s) => s.fetchMemory)
+  const warmupMemory = useAppStore((s) => s.warmupMemory)
   const fetchSessions = useAppStore((s) => s.fetchSessions)
   const fetchSessionMemory = useAppStore((s) => s.fetchSessionMemory)
   const fetchAllSessionMemories = useAppStore((s) => s.fetchAllSessionMemories)
@@ -78,6 +82,13 @@ export function MemoryPanel() {
 
   const displayedSessionEntries = showAllSessions ? allSessionMemoryEntries : sessionMemoryEntries
 
+  const fixHint =
+    missingDependency === 'sentence-transformers'
+      ? 'pip install sentence-transformers'
+      : embeddingBackend === 'jina'
+        ? 'Set JINA_API_KEY in .env and restart the web server'
+        : null
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Memory</h2>
@@ -101,31 +112,50 @@ export function MemoryPanel() {
 
       {tab === 'semantic' && (
         <>
-          <div className="flex gap-2 flex-wrap text-xs items-center">
-            {embeddingsAvailable === false && (
-              <Badge variant="danger">embeddings unavailable</Badge>
-            )}
-            {embeddingsAvailable === true && <Badge variant="success">embeddings ready</Badge>}
-            {embeddingBackend && <Badge variant="muted">backend: {embeddingBackend}</Badge>}
-            {embeddingModel && <Badge variant="muted">model: {embeddingModel}</Badge>}
-            {(memorySources.vector != null || memorySources.session != null) && (
-              <>
+          <Card header="Embedding Status">
+            <div className="p-3 space-y-3 text-sm">
+              <div className="flex flex-wrap gap-2 items-center">
+                {embeddingsAvailable === true && <Badge variant="success">ready</Badge>}
+                {embeddingsAvailable === false && <Badge variant="danger">unavailable</Badge>}
+                {embeddingBackend && <Badge variant="muted">backend: {embeddingBackend}</Badge>}
+                {embeddingModel && <Badge variant="muted">model: {embeddingModel}</Badge>}
                 <Badge variant="muted">vector: {memorySources.vector ?? 0}</Badge>
                 <Badge variant="muted">session DB: {memorySources.session ?? 0}</Badge>
-              </>
-            )}
-          </div>
+              </div>
 
-          {embeddingsAvailable === false && memoryNote && (
-            <div className="text-sm text-[var(--color-text-secondary)] rounded-md border border-[var(--color-border)] p-3 bg-[var(--color-bg-overlay)]">
-              <div className="font-medium mb-1">Semantic memory disabled</div>
-              <div className="whitespace-pre-wrap">{memoryNote}</div>
-              <div className="mt-2 text-xs text-[var(--color-text-dim)]">
-                Local BGE is installed by setup.sh. For Jina cloud embeddings, add{' '}
-                <code className="px-1 rounded bg-[var(--color-bg)]">JINA_API_KEY</code> to .env
+              {embeddingsAvailable === false && (
+                <div className="text-[var(--color-text-secondary)] space-y-2">
+                  {memoryNote && <p>{memoryNote}</p>}
+                  {embeddingErrorDetail && (
+                    <p className="text-xs font-mono text-[var(--color-text-dim)] break-all">{embeddingErrorDetail}</p>
+                  )}
+                  {fixHint && (
+                    <code className="block text-xs px-2 py-1 rounded bg-[var(--color-bg-overlay)]">{fixHint}</code>
+                  )}
+                  {embeddingBackend === 'bge' && !missingDependency && (
+                    <p className="text-xs text-[var(--color-text-dim)]">
+                      Cloud fallback: set <code className="px-1">CKTCLAW_EMBEDDING_BACKEND=jina</code> in .env
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {embeddingsAvailable === true && (
+                <p className="text-xs text-[var(--color-text-dim)]">
+                  Chat replies are indexed automatically into the local vector store.
+                </p>
+              )}
+
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" onClick={fetchMemory}>
+                  ↻ Refresh
+                </Button>
+                <Button size="sm" onClick={warmupMemory} disabled={memoryWarmingUp}>
+                  {memoryWarmingUp ? 'Warming up…' : 'Warm up model'}
+                </Button>
               </div>
             </div>
-          )}
+          </Card>
 
           <div className="flex gap-2 flex-wrap">
             <input
@@ -139,9 +169,6 @@ export function MemoryPanel() {
             />
             <Button variant="primary" onClick={searchMemory} disabled={embeddingsAvailable === false}>
               Search
-            </Button>
-            <Button size="sm" onClick={fetchMemory}>
-              ↻ Refresh
             </Button>
           </div>
 
@@ -177,12 +204,14 @@ export function MemoryPanel() {
           <Card header="Vector Store Entries">
             <div className="p-3 space-y-2">
               {embeddingsAvailable === false ? (
-                <EmptyState variant="empty" title="Embeddings not installed" description={memoryNote || undefined} onRefresh={fetchMemory} />
+                <div className="text-sm text-[var(--color-text-dim)]">
+                  Fix embedding status above to enable vector indexing and search.
+                </div>
               ) : !memoryEntries.length ? (
                 <EmptyState
                   variant="empty"
-                  title="No vector entries"
-                  description="Chat replies are indexed automatically after you install sentence-transformers. Session memories are in the Session Memory tab."
+                  title="No vector entries yet"
+                  description="Start a Chat conversation — assistant replies are indexed automatically."
                   onRefresh={fetchMemory}
                 />
               ) : (
