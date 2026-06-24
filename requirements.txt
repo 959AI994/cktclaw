@@ -107,6 +107,7 @@ safetensors
 scipy
 semantic-version
 sentencepiece
+sentence-transformers>=2.2
 shellingham
 six
 smmap

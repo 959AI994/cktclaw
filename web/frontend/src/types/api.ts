@@ -76,11 +76,13 @@ export interface SessionInfo {
 }
 
 export interface SessionMemoryEntry {
+  session_id?: string
   topic?: string
   summary?: string
   content?: string
   memory_type?: string
   created_at?: string
+  updated_at?: string
 }
 
 export interface ChatMessage {
@@ -164,13 +166,16 @@ export interface PluginInfo {
 }
 
 export interface MemoryEntry {
+  id?: string
   text?: string
+  metadata?: Record<string, unknown>
   [key: string]: unknown
 }
 
 export interface MemorySearchResult {
   text?: string
   score?: number
+  metadata?: Record<string, unknown>
   [key: string]: unknown
 }
 

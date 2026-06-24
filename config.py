@@ -26,6 +26,12 @@ AVAILABLE_ENGINES = ["deepseek", "logicrt", "qwen"]
 MAX_MEMORY_ROUNDS = 5  # Sliding window size for short memory
 CONTEXT_WINDOW_SIZE = 16384  # Max tokens for context (CodeV/DeepSeek)
 
+# Semantic embedding backend: auto | jina | bge | minilm
+# auto: Jina API when JINA_API_KEY is set, else local BGE
+EMBEDDING_BACKEND = os.environ.get("CKTCLAW_EMBEDDING_BACKEND", "auto")
+# Optional model override (e.g. jina-embeddings-v3, BAAI/bge-small-zh-v1.5)
+EMBEDDING_MODEL = os.environ.get("CKTCLAW_EMBEDDING_MODEL", "")
+
 # ━━━━━━━━━━ Model Configuration ━━━━━━━━━━
 DEFAULT_MAX_TOKENS = 2000  # Max tokens for generation
 INFERENCE_TIMEOUT = 300  # 5 minutes timeout for long AIG processing

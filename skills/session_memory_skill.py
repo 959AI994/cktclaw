@@ -32,6 +32,31 @@ class SessionMemoryInput(BaseModel):
     memory_type: str = Field(default="general", description="Memory type: general, circuit, requirement, decision")
 
 
+def _resolve_memory_context(context: Dict[str, Any]):
+    """Resolve storage + session_id from CLI state, ToolContext, or explicit dict fields."""
+    if not isinstance(context, dict):
+        return None, None
+
+    storage = context.get("storage")
+    session_id = context.get("session_id", "")
+    if storage is not None and session_id:
+        return storage, session_id
+
+    cli_state = context.get("cli_state")
+    if cli_state is None:
+        return None, None
+
+    if hasattr(cli_state, "storage") and hasattr(cli_state, "session_id"):
+        return cli_state.storage, cli_state.session_id
+
+    if hasattr(cli_state, "session_id"):
+        from cktclaw import config
+        from cktclaw.cktmem import Storage
+        return Storage(config.CLI_DATABASE_PATH), cli_state.session_id
+
+    return None, None
+
+
 async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Session Memory 技能执行器
@@ -43,11 +68,11 @@ async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Di
     Returns:
         工具结果消息列表
     """
-    cli_state = context.get('cli_state')
-    if not cli_state:
+    storage, session_id = _resolve_memory_context(context)
+    if storage is None or not session_id:
         return [{
             "type": "text",
-            "text": "❌ Unable to get CLI state"
+            "text": "❌ Unable to get session context"
         }]
 
     # 解析输入
@@ -72,8 +97,8 @@ async def session_memory_executor(args: str, context: Dict[str, Any]) -> List[Di
 
     try:
         # 保存到 Session Memory
-        await cli_state.storage.save_session_memory(
-            session_id=cli_state.session_id,
+        await storage.save_session_memory(
+            session_id=session_id,
             topic=topic,
             summary=summary,
             content=content,
@@ -100,9 +125,9 @@ async def session_memory_list_executor(args: str, context: Dict[str, Any]) -> Li
         args: Optional max entries as integer string, default 10.
         context: Execution context.
     """
-    cli_state = context.get("cli_state")
-    if not cli_state:
-        return [{"type": "text", "text": "❌ Unable to get CLI state"}]
+    storage, session_id = _resolve_memory_context(context)
+    if storage is None or not session_id:
+        return [{"type": "text", "text": "❌ Unable to get session context"}]
 
     try:
         limit = int(args.strip()) if args and args.strip() else 10
@@ -112,7 +137,7 @@ async def session_memory_list_executor(args: str, context: Dict[str, Any]) -> Li
     limit = max(1, min(limit, 50))
 
     try:
-        memories = await cli_state.storage.get_session_memories(cli_state.session_id)
+        memories = await storage.get_session_memories(session_id)
         if not memories:
             return [{
                 "type": "text",

@@ -32,6 +32,8 @@ dependencies = [
     # Cloud LLM SDK — required for the claude provider. OpenAI/DeepSeek providers
     # use plain HTTP (requests) and need no extra SDK.
     "anthropic>=0.40",
+    # Semantic memory (local BGE fallback; Jina API optional via JINA_API_KEY)
+    "sentence-transformers>=2.2",
 ]
 
 [project.optional-dependencies]

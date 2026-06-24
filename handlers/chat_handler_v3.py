@@ -652,6 +652,13 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
             msg_type=MessageType.CHAT,
             layer=ContextLayer.TURN,
         )
+
+        from ..cktmem.indexing import index_assistant_turn
+        index_assistant_turn(
+            cli_state.context_manager.semantic_search,
+            cli_state.session_id,
+            final_text,
+        )
     except Exception as e:
         console.print(f"[yellow]Failed to store messages: {e}[/yellow]")
 

@@ -59,8 +59,12 @@ interface AppState {
   pluginsLoading: boolean
   memoryEntries: MemoryEntry[]
   memoryNote: string | null
+  embeddingsAvailable: boolean | null
+  embeddingBackend: string | null
+  embeddingModel: string | null
   memorySources: { vector?: number; session?: number }
   sessionMemoryEntries: SessionMemoryEntry[]
+  allSessionMemoryEntries: SessionMemoryEntry[]
   memResults: MemorySearchResult[]
   memQuery: string
   configText: string
@@ -95,6 +99,14 @@ interface AppState {
   fetchPlugins: () => Promise<void>
   fetchMemory: () => Promise<void>
   fetchSessionMemory: (sessionId: string) => Promise<void>
+  fetchAllSessionMemories: () => Promise<void>
+  saveSessionMemory: (payload: {
+    session_id: string
+    topic: string
+    summary: string
+    content: string
+    memory_type?: string
+  }) => Promise<void>
   fetchConfig: () => Promise<void>
   searchMemory: () => Promise<void>
   setMemQuery: (q: string) => void
@@ -150,8 +162,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   pluginsLoading: false,
   memoryEntries: [],
   memoryNote: null,
+  embeddingsAvailable: null,
+  embeddingBackend: null,
+  embeddingModel: null,
   memorySources: {},
   sessionMemoryEntries: [],
+  allSessionMemoryEntries: [],
   memResults: [],
   memQuery: '',
   configText: '',
@@ -282,10 +298,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   fetchMemory: async () => {
     try {
-      const d = await fetchJSON<{ entries?: MemoryEntry[]; note?: string; sources?: { vector?: number; session?: number } }>(
-        '/api/memory',
-      )
-      set({ memoryEntries: d.entries || [], memoryNote: d.note || null, memorySources: d.sources || {} })
+      const d = await fetchJSON<{
+        entries?: MemoryEntry[]
+        note?: string
+        embeddings_available?: boolean
+        embedding_backend?: string
+        embedding_model?: string
+        sources?: { vector?: number; session?: number }
+      }>('/api/memory')
+      set({
+        memoryEntries: d.entries || [],
+        memoryNote: d.note || null,
+        embeddingsAvailable: d.embeddings_available ?? null,
+        embeddingBackend: d.embedding_backend || null,
+        embeddingModel: d.embedding_model || null,
+        memorySources: d.sources || {},
+      })
     } catch (e) {
       get().toast('error', e instanceof Error ? e.message : 'Failed')
     }
@@ -306,6 +334,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchAllSessionMemories: async () => {
+    try {
+      const d = await fetchJSON<{ entries?: SessionMemoryEntry[] }>('/api/memory/session/all')
+      set({ allSessionMemoryEntries: d.entries || [] })
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
+  saveSessionMemory: async (payload) => {
+    try {
+      const d = await postJSON<{ status?: string; error?: string }>('/api/memory/session', payload)
+      if (d.status === 'saved') {
+        get().toast('success', 'Session memory saved')
+        await get().fetchSessionMemory(payload.session_id)
+        await get().fetchAllSessionMemories()
+        await get().fetchMemory()
+      } else {
+        get().toast('error', d.error || 'Save failed')
+      }
+    } catch (e) {
+      get().toast('error', e instanceof Error ? e.message : 'Failed')
+    }
+  },
+
   fetchConfig: async () => {
     try {
       const d = await fetchJSON<unknown>('/api/config')
@@ -320,11 +373,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const query = get().memQuery.trim()
     if (!query) return
     try {
-      const d = await postJSON<{ results?: MemorySearchResult[] }>('/api/memory/search', {
+      const d = await postJSON<{ results?: MemorySearchResult[]; note?: string }>('/api/memory/search', {
         query,
         top_k: 10,
       })
       set({ memResults: d.results || [] })
+      if (d.note && !d.results?.length) {
+        get().toast('error', d.note)
+      }
     } catch (e) {
       get().toast('error', e instanceof Error ? e.message : 'Failed')
     }

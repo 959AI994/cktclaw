@@ -288,6 +288,13 @@ async def process_chat(user_message: str, cli_state) -> None:
             content=assistant_content,
         )
 
+        from ..cktmem.indexing import index_assistant_turn
+        index_assistant_turn(
+            cli_state.context_manager.semantic_search,
+            cli_state.session_id,
+            assistant_content,
+        )
+
         cli_state.chat_turns += 1
 
         # Auto-generate session title on first chat turn

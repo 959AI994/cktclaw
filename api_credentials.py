@@ -75,3 +75,19 @@ def get_openai_api_key(required: bool = False) -> Optional[str]:
             "llm.openai.api_key in ~/.cktclaw/config.yaml"
         )
     return None
+
+
+def get_jina_api_key(required: bool = False) -> Optional[str]:
+    key = (
+        os.environ.get("CKTCLAW_JINA_KEY")
+        or os.environ.get("JINA_API_KEY")
+        or _resolve_from_yaml("jina")
+    )
+    if key:
+        return key
+    if required:
+        raise CredentialError(
+            "Jina API key not found. Set JINA_API_KEY or "
+            "llm.jina.api_key in ~/.cktclaw/config.yaml"
+        )
+    return None

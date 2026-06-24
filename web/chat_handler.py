@@ -222,6 +222,15 @@ async def stream_chat(
                 session_id, MessageRole.ASSISTANT, full_content,
                 msg_type=MessageType.CHAT, layer=ContextLayer.TURN,
             )
+            try:
+                from ..cktmem.indexing import index_assistant_turn
+                index_assistant_turn(
+                    context_manager.semantic_search,
+                    session_id,
+                    full_content,
+                )
+            except Exception as e:
+                logger.debug(f"Semantic index failed: {e}")
     except Exception as e:
         logger.debug(f"Failed to persist messages: {e}")
 

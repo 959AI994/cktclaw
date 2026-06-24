@@ -105,8 +105,8 @@ log_step "Step 2/8: 安装 CktClaw"
 cd "${PROJECT_ROOT}"
 pip install --upgrade pip -q
 
-log_info "安装 CktClaw + 核心依赖..."
-pip install -e . -q
+log_info "安装 CktClaw + 核心依赖（含 memory / web）..."
+pip install -e ".[memory,web]" -q
 
 # 统一安装 PyTorch/CUDA 栈（避免 NCCL/ABI 冲突）
 log_info "清理可能冲突的 PyTorch/CUDA/PyG 包..."
@@ -377,6 +377,11 @@ export CKTCLAW_LOGICRT_ROOT="${LOGICRT_ROOT}"
 
 # DeepSeek API（请替换为你的 key）
 # export DEEPSEEK_API_KEY="sk-xxx"
+
+# Semantic Memory — Jina 云 embedding（推荐，有 key 时 auto 模式优先使用）
+# export JINA_API_KEY="jina_xxx"
+# export CKTCLAW_EMBEDDING_BACKEND="auto"   # auto | jina | bge | minilm
+# export CKTCLAW_EMBEDDING_MODEL=""         # 可选：jina-embeddings-v3 / BAAI/bge-small-zh-v1.5
 ENVEOF
 
 log_success "已生成: .env"
