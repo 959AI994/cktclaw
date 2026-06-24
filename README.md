@@ -418,7 +418,7 @@ CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-
 │  │  ToolRegistry (tools/registry.py)                                              │   │
 │  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌────────┐  │   │
 │  │  │ Yosys   │ │   ABC    │ │ OpenSTA  │ │ OpenROAD │ │Verilator│ │  Bash  │  │   │
-│  │  │(synth)  │ │(logic opt│ │(timing)  │ │(PnR)     │ │(sim)    │ │(system)│  │   │
+│  │  │(synth)  │ │(logic opt)│ │(timing)  │ │(PnR)     │ │(sim)    │ │(system)│  │   │
 │  │  └─────────┘ └──────────┘ └──────────┘ └──────────┘ └─────────┘ └────────┘  │   │
 │  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────────────────────┐  │   │
 │  │  │  File   │ │ Delegate │ │ NextPNR  │ │ MCP Servers (auto-configured)    │  │   │
@@ -541,6 +541,127 @@ Every invocation runs inside a **RunContext** (`.cktclaw/runs/<run_id>/`) that p
 | `tests/test_stress_cold_start.py` | 31 cold-start tests | Missing tools, empty PATH, ABC_PATH env, VerificationRunner graceful no-tool path |
 | `tests/test_task0..15_*.py` | enterprise hardening | Credentials, CapabilityRegistry, plan schema, MCP handshake, RunContext, audit, permissions, data egress, budget, resilience, doctor |
 | **Total** | **372 tests** | **Full coverage: happy-path + adversarial + cold-start + governance + orchestrator P0** |
+
+---
+
+## 💬 Web Chat Architecture
+
+CktClaw ships a browser dashboard alongside the terminal REPL. The Web Chat reuses the same **CapabilityRegistry**, **OrchestratorEngine**, **CktMem** context stack, and **RunContext** governance as the CLI — but routes user input through a **FastAPI + WebSocket** pipeline with a React frontend.
+
+### Launch
+
+```bash
+pip install -e ".[web]"          # FastAPI, uvicorn, web extras
+cktclaw --web                    # dashboard at http://localhost:8741
+cktclaw --web --web-port 9000    # custom port
+```
+
+The static UI is built from `web/frontend/` (Vite + React + Zustand) and served by `web/server.py`. A single WebSocket at `/ws` multiplexes **system events** (agent lifecycle, plugin install, orchestrator logs) and **chat messages** (streaming LLM, tool calls, orchestrator progress).
+
+### End-to-End Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Browser (web/frontend/)                                                   │
+│  ┌──────────────┐  ┌─────────────────┐  ┌──────────────────────────────┐  │
+│  │ ChatPanel    │  │ chatStore       │  │ OrchestratorProposalCard     │  │
+│  │ ChatThread   │◄─┤ (Zustand)       │  │ OrchestratorRunCard          │  │
+│  │ MarkdownContent│ useWebSocket.ts  │  │ ToolCallCard                 │  │
+│  └──────┬───────┘  └────────┬────────┘  └──────────────────────────────┘  │
+│         │ chat:send / chat:orchestrator_confirm                            │
+└─────────┼──────────────────────────────────────────────────────────────────┘
+          │  WebSocket /ws
+          ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  web/server.py — FastAPI                                                     │
+│  • chat:send  → stream_chat()           (async task per connection)         │
+│  • chat:abort → cancel in-flight stream                                     │
+│  • chat:orchestrator_confirm / _cancel → launch background orchestrator       │
+│  • broadcast_chat() → session-scoped chat:* events                          │
+└─────────┬───────────────────────────────┬───────────────────────────────────┘
+          │                               │
+          ▼                               ▼
+┌─────────────────────────┐   ┌─────────────────────────────────────────────┐
+│  PATH A: Agent Loop      │   │  PATH B: Orchestrator (chip-* skills)        │
+│  web/chat_handler.py     │   │  web/routers/orchestrator.py                 │
+│  web/agent_loop.py       │   │  • launch_orchestrator_from_chat()           │
+│                          │   │  • skill.executor → OrchestratorEngine.run() │
+│  Multi-turn LLM stream   │   │  • WebConsole bridges Rich output → WS       │
+│  + native tool_calls     │   │  • RunContext: .cktclaw/runs/<run_id>/       │
+│  + DSML/text fallback    │   └─────────────────────────────────────────────┘
+│  + capability_registry   │
+│    .execute()            │
+└─────────┬────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Shared backend (same as CLI)                                                │
+│  CapabilityRegistry · IntentRouter · OrchestratorEngine · CktMem · LLM Router│
+│  ToolRegistry / MCP · RunContext audit · design_state.json · checkpoint.json │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Three Execution Paths
+
+| Path | Trigger | What runs | Typical use |
+|------|---------|-----------|-------------|
+| **Orchestrator (confirmed)** | Intent confidence ≥ **0.85** on a chip-design task | Full multi-stage `OrchestratorEngine` in background | "Design an 8-bit adder with lint + synth sign-off" |
+| **Orchestrator (Agents panel)** | User clicks **Run** on Agents tab | Same engine via `POST /api/orchestrator/run` | Explicit domain selection without chat routing |
+| **Agent loop** | Low confidence, user declines proposal, or general Q&A | Up to **12 turns** of streaming LLM + tool calls | Quick Yosys run, file read, ad-hoc EDA questions |
+
+**Intent gate (Path selection in Chat):** `stream_chat()` calls `capability_registry.resolve_intent()`. High-confidence chip-design hits pause with `chat:orchestrator_proposal` — the user confirms, edits the task, or cancels. On confirm, the orchestrator runs asynchronously while Chat shows live progress via `OrchestratorRunCard`.
+
+### WebSocket Chat Protocol
+
+| Client → Server | Server → Client | Purpose |
+|-----------------|-----------------|---------|
+| `chat:send` | `chat:chunk` | Stream LLM text deltas |
+| | `chat:content_replace` | Replace buffer after DSML/tool markup stripped |
+| | `chat:tool_call` / `chat:tool_result` | Tool invocation visualization |
+| | `chat:orchestrator_proposal` | High-confidence orchestrator suggestion |
+| | `chat:orchestrator_started` | Background run launched |
+| | `chat:orchestrator_progress` | Stage index, log tail, live status |
+| | `chat:orchestrator_done` | Markdown completion report + `artifacts[]` |
+| | `chat:orchestrator_failed` | Error surface |
+| | `chat:done` / `chat:error` | Turn finished or aborted |
+| `chat:orchestrator_confirm` | *(same as above)* | User approves proposal → start run |
+| `chat:orchestrator_cancel` | | Dismiss proposal |
+| `chat:abort` | | Cancel streaming agent loop |
+
+Orchestrator progress is bridged from the CLI engine without duplicating logic: `WebConsole` (`web/cli_state.py`) captures Rich panel output and emits `orchestrator:stage_start` / `orchestrator:log` system events, which `orchestrator.py` forwards as `chat:orchestrator_progress` on the active session.
+
+### Agent Loop (CLI Parity)
+
+The Web agent loop intentionally mirrors CLI v3 behaviour:
+
+- **Tool schemas** from `capability_registry.list_all()` (chip-* orchestrator skills excluded to prevent recursion)
+- **Native function calling** when the provider supports it; **DSML / `<TOOL_CALL>` text fallback** via `ToolCallParser` when not
+- **Multi-turn loop** — assistant message + tool results are appended and the LLM is called again until no tools remain or `MAX_AGENT_TURNS` is reached
+- **Persistence** — turns saved through `web/deps` CktMem storage; optional semantic indexing on assistant replies
+- **Attachments** — uploaded files resolved into prompt context before routing
+
+### Orchestrator Completion UX
+
+When a chip-design orchestrator finishes, Web Chat no longer dumps a raw JSON state-machine snapshot. Instead:
+
+1. **`orchestrator/artifacts.py`** scans the task workdir, run workspace, and cwd for `.sv` / `.v` / `filelist.f` deliverables
+2. **`build_completion_report()`** produces a Markdown summary — stage results, file list, QoR warnings (e.g. `yosys_error` vs `passed`), and a collapsible JSON technical section
+3. **`chat:orchestrator_done`** carries the full report plus structured `artifacts: [{path, kind, size}]` for the frontend
+
+CLI and Web show the same completion content; only the rendering layer differs (Rich Panel vs `MarkdownContent`).
+
+### Key Files
+
+| File | Role |
+|------|------|
+| `web/server.py` | FastAPI app, `/ws` multiplex loop, chat task lifecycle |
+| `web/chat_handler.py` | `stream_chat()` — intent gate, agent loop, persistence |
+| `web/agent_loop.py` | Tool schema load, DSML parse, `capability_registry.execute()` |
+| `web/routers/orchestrator.py` | REST + background runs, chat progress/done events |
+| `web/cli_state.py` | `WebConsole` / `WebCLIState` adapter for orchestrator executors |
+| `web/frontend/src/store/chatStore.ts` | Chat state, WS handler, orchestrator cards |
+| `web/frontend/src/hooks/useWebSocket.ts` | Connection, reconnect, `chat:send` / confirm helpers |
+| `orchestrator/artifacts.py` | Deliverable scan + completion Markdown report |
 
 ---
 
