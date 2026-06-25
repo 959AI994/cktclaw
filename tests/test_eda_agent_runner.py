@@ -53,6 +53,44 @@ def test_eda_runner_fix_request_on_required_fail(tmp_path, monkeypatch):
     assert any(fr.get("status") == "open" for fr in data.get("fix_requests", []))
 
 
+def test_eda_runner_dispatches_specialist_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    dispatched = []
+
+    async def fake_execute(name, args, ctx):
+        if name == "chip-rtl":
+            raise RuntimeError("rtl failed")
+        return "ok"
+
+    async def fake_specialist(role_id, task, *, context=None):
+        dispatched.append((role_id, task))
+        return {
+            "role_id": role_id,
+            "status": "completed",
+            "output": "repair proposal",
+            "artifacts": [],
+            "error": None,
+        }
+
+    async def _run():
+        with patch("cktclaw.capability_registry.get_capability_registry") as mock_reg:
+            mock_reg.return_value.execute = fake_execute
+            with patch(
+                "cktclaw.agents.runners.specialist_runner.run_specialist_role",
+                fake_specialist,
+            ):
+                return await EDAAgentRunner().run(
+                    "design adder",
+                    context={"enable_specialist_repair": True},
+                )
+
+    result = asyncio.run(_run())
+    assert result["status"] == "failed"
+    assert dispatched
+    assert dispatched[0][0] == "rtl_repair_agent"
+    assert any(step.get("status") == "specialist_dispatched" for step in result["steps"])
+
+
 def test_eda_runner_skips_optional_pd_failure(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 

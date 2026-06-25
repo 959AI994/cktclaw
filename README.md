@@ -86,7 +86,22 @@ bash setup.sh            # Full install (Yosys/ABC/Verilator/OpenSTA etc.)
 bash setup.sh --minimal  # Python deps only, skip EDA tools
 ```
 
-The script handles: Conda env → `pip install -e .` → download oss-cad-suite → build OpenSTA → clone digital-chip-design-agents + AI4EDA Toolkit → generate `.env` + `activate.sh`.
+The script handles: Conda env → `pip install -e .` → download oss-cad-suite → build OpenSTA → clone digital/analog/HLS/RTL-repair agent repos + AI4EDA Toolkit → generate `.env` + `activate.sh`.
+
+The full installer also prepares the expanded agent/toolchain layer used by
+the full-chip workflow:
+
+| Capability | Repo / Tool | Installed Path / Env |
+| --- | --- | --- |
+| Digital design orchestrators | `chuanseng-ng/digital-chip-design-agents` | `deps/digital-chip-design-agents`, `CHIP_AGENTS_ROOT` |
+| Analog / AMS / RF orchestrators | `chuanseng-ng/analog-chip-design-agents` | `deps/analog-chip-design-agents`, `ANALOG_CHIP_AGENTS_ROOT` |
+| Verilog generation skill | `Eriemon/verilog-generator` | `deps/verilog-generator`, `VERILOG_GENERATOR_ROOT` |
+| HLS generation skill | `Eriemon/hls-generator` | `deps/hls-generator`, `HLS_GENERATOR_ROOT` |
+| RTL repair research adapter | `NVlabs/RTLFixer` | `deps/RTLFixer`, `RTLFIXER_ROOT` |
+| FPGA skill library | `FPGA-Agent-skills` | `deps/FPGA-Agent-skills`, `FPGA_AGENT_SKILLS_ROOT` |
+
+Run `cktclaw --doctor` or `/doctor` to verify which repos and toolchain binaries
+are visible to the current shell.
 
 ### Launch
 
@@ -290,7 +305,121 @@ Each stage is LLM-driven. On failure, the orchestrator auto-loops back per confi
 
 ## 🏗️ Agent Architecture
 
-CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-loop capabilities. The following diagram shows the complete architecture from user input to tool execution:
+CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-loop capabilities. The current full-chip architecture has four cooperating planes: user-facing orchestration, the multi-agent roster, skill/workflow bridges, and executable EDA toolchains.
+
+```mermaid
+flowchart TB
+  user["User: CLI / Web / Slash Commands / Natural Language"]
+  router["IntentRouter + CapabilityRegistry"]
+  chat["Agent Loop: streaming LLM + tool calls"]
+  orchestrator["OrchestratorEngine: chip-* staged workflows"]
+  system["MultiAgentOrchestrator: /chip-system"]
+
+  user --> router
+  router --> chat
+  router --> orchestrator
+  router --> system
+
+  subgraph core["Core System Agents"]
+    pm["PMAgent: requirements + task DAG"]
+    arch["ArchitectAgent: HW/SW partition + PPA targets"]
+    eda["EDAAgent: RTL -> verification -> synth -> STA -> PD"]
+    compiler["CompilerAgent: HLS/compiler/toolchain"]
+    runtime["RuntimeAgent: firmware/runtime/scheduling"]
+    deploy["DeployAgent: FPGA/deployment/bring-up"]
+    optimizer["OptimizerAgent: system bottlenecks + iteration"]
+  end
+
+  system --> pm --> arch --> eda
+  arch --> compiler
+  arch --> runtime
+  compiler --> deploy
+  runtime --> deploy
+  eda --> optimizer
+  deploy --> optimizer
+  optimizer -. "feedback / next round" .-> arch
+  optimizer -. "targeted EDA rerun" .-> eda
+
+  subgraph specialists["Full-Chip Specialist Agents"]
+    repair["RTLRepairAgent: lint/compile/sim/formal repair"]
+    formal["FormalAgent: SBY/properties/equivalence"]
+    hls["HLSAgent: Vitis HLS source/pragma/Tcl/reports"]
+    analog["AnalogAgent: analog/AMS/RF/SPICE/layout"]
+    ppa["PPAOptimizerAgent: area/timing/power QoR"]
+  end
+
+  eda -- "RTL or verification failure" --> repair
+  eda -- "formal/property failure" --> formal
+  eda -- "synth/STA/PD QoR failure" --> ppa
+  compiler --> hls
+  arch --> analog
+
+  subgraph skills["Skill and Workflow Layer"]
+    chipSkills["digital-chip-design-agents: chip-rtl, verification, formal, synthesis, STA, PD, HLS, SoC, firmware, FPGA"]
+    analogSkills["analog-chip-design-agents: architecture, modeling, circuit, sim, layout, extraction, post-layout, RF, EM"]
+    vg["verilog-generator: disciplined Verilog-2001 RTL + TB"]
+    hg["hls-generator: HLS kernels + interface contracts"]
+    rtlRepair["rtl-repair: RTLFixer-style repair contract"]
+    rltf["RLTF / Pareto: synthesis optimization workflows"]
+  end
+
+  orchestrator --> chipSkills
+  repair --> rtlRepair
+  repair --> vg
+  formal --> chipSkills
+  hls --> hg
+  analog --> analogSkills
+  ppa --> rltf
+  ppa --> chipSkills
+
+  subgraph tools["Toolchain and Runtime Layer"]
+    registry["ToolRegistry + PluginManager + MCP"]
+    digitalTools["Yosys / ABC / OpenSTA / OpenROAD / OpenLane"]
+    frontends["Verible / slang / Surelog / sv2v"]
+    simformal["Verilator / Icarus / cocotb / SymbiYosys"]
+    analogTools["ngspice / Xschem / Magic / Netgen / ALIGN / OpenVAF"]
+    irTools["Wolvrix GRH IR / CIRCT / XLS / Bambu"]
+  end
+
+  chipSkills --> registry
+  analogSkills --> registry
+  vg --> registry
+  hg --> registry
+  rtlRepair --> registry
+  rltf --> registry
+  chat --> registry
+  registry --> digitalTools
+  registry --> frontends
+  registry --> simformal
+  registry --> analogTools
+  registry --> irTools
+
+  subgraph state["Shared State, Memory, and Governance"]
+    designState["design_state.json: constraints, fix_requests, QoR, history"]
+    runCtx["RunContext: checkpoints, artifacts, audit"]
+    mem["CktMem: sliding window, compaction, semantic memory"]
+    policy["Permissions, data policy, budget, resilience"]
+    doctor["setup.sh + Dockerfile + /doctor: repo/toolchain readiness"]
+  end
+
+  orchestrator <--> designState
+  system <--> designState
+  repair <--> designState
+  formal <--> designState
+  hls <--> designState
+  analog <--> designState
+  ppa <--> designState
+  orchestrator --> runCtx
+  chat --> mem
+  registry --> policy
+  doctor -. "installs/verifies repos" .-> chipSkills
+  doctor -. "installs/verifies repos" .-> analogSkills
+  doctor -. "installs/verifies tools" .-> registry
+```
+
+The expanded roster keeps the original seven-agent chip/system pipeline, then adds focused specialists for RTL repair, formal verification, HLS, analog/AMS/RF, and PPA closure. `setup.sh`, `Dockerfile`, and `/doctor` now make these external repos and toolchain binaries visible as first-class CktClaw capabilities.
+
+The detailed internal map below shows the lower-level routing, runtime, memory, and security components:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -663,6 +792,20 @@ CktClaw implements a **static roster + dynamic spawn** architecture (OpenClaw / 
 | **RuntimeAgent** | Firmware, scheduling, resource pools |
 | **DeployAgent** | FPGA bring-up, deployment scripts, observability |
 | **OptimizerAgent** | Bottleneck analysis via `EvolutionEngine`, drives iteration loop |
+
+CktClaw also registers focused specialist agents for full-chip work:
+
+| Agent | Role |
+|-------|------|
+| **RTLRepairAgent** | Repairs RTL after lint, compile, simulation, synthesis, or formal failures |
+| **FormalAgent** | Builds and interprets property, BMC, prove, cover, and equivalence flows |
+| **HLSAgent** | Drives Vitis HLS-style source, pragma, interface, Tcl, and report workflows |
+| **AnalogAgent** | Coordinates analog, AMS, RF, SPICE, layout, extraction, and post-layout tasks |
+| **PPAOptimizerAgent** | Diagnoses area/timing/power bottlenecks and proposes QoR improvements |
+
+When enabled inside the multi-agent EDA path, failed EDA stages can dispatch to
+the relevant specialist, for example RTL failures to `RTLRepairAgent` and
+synthesis/STA/PD failures to `PPAOptimizerAgent`.
 
 **Entry points:**
 

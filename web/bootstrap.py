@@ -28,13 +28,29 @@ def _bootstrap_tools() -> int:
     from ..tools.eda.opensta_tool import OpenSTATool
     from ..tools.eda.abc_tool import ABCTool
     from ..tools.eda.openroad_tool import OpenROADTool
+    from ..tools.eda.verible_tool import VeribleTool
+    from ..tools.eda.slang_tool import SlangTool
+    from ..tools.eda.sby_tool import SbyTool
+    from ..tools.eda.verilator_tool import VerilatorTool
+    from ..tools.eda.wolvrix_tool import WolvrixTool
     from ..tools.system.bash_tool import BashTool
 
     registry = get_tool_registry()
     if registry.list_names():
         return len(registry.list_names())
 
-    for tool in (YosysTool(), OpenSTATool(), ABCTool(), OpenROADTool(), BashTool()):
+    for tool in (
+        YosysTool(),
+        OpenSTATool(),
+        ABCTool(),
+        OpenROADTool(),
+        VeribleTool(),
+        SlangTool(),
+        SbyTool(),
+        VerilatorTool(),
+        WolvrixTool(),
+        BashTool(),
+    ):
         registry.register(tool, source="builtin")
 
     try:
@@ -71,9 +87,12 @@ def _bootstrap_skills() -> int:
             register_ai4eda_skill,
             register_session_memory_skill,
             register_chip_design_skills,
+            register_analog_design_skills,
+            register_rtl_repair_skill,
             register_rtl_claw_skills,
             register_fpga_agent_skills,
             register_verilog_generator_skill,
+            register_hls_generator_skill,
             register_external_skills,
         )
         from ..skills.rltf_skill import register_rltf_skill
@@ -91,11 +110,14 @@ def _bootstrap_skills() -> int:
             await register_rltf_skill()
             await register_pareto_negotiation_skill()
             await register_chip_design_skills()
+            await register_analog_design_skills()
+            await register_rtl_repair_skill()
             await register_system_loop_skill()
             await register_chip_system_skill()
             await register_rtl_claw_skills()
             await register_fpga_agent_skills()
             await register_verilog_generator_skill()
+            await register_hls_generator_skill()
             await register_external_skills(verbose=config.VERBOSE)
 
         _run_coro(_register_all())

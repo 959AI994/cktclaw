@@ -6,7 +6,28 @@ def test_doctor_report_has_checks():
     from cktclaw.handlers.doctor_handler import run_doctor
     rep = run_doctor()
     names = {c.name for c in rep.checks}
-    assert {"api_keys", "eda_tools", "cktclaw_home_writable", "policy"} <= names
+    assert {
+        "api_keys",
+        "eda_tools",
+        "full_chip_toolchain",
+        "agent_repos",
+        "cktclaw_home_writable",
+        "policy",
+    } <= names
+
+
+def test_doctor_agent_repo_check_reports_expected_repos():
+    from cktclaw.handlers.doctor_handler import run_doctor
+    rep = run_doctor()
+    check = next(c for c in rep.checks if c.name == "agent_repos")
+    for name in (
+        "digital-chip-design-agents",
+        "analog-chip-design-agents",
+        "verilog-generator",
+        "hls-generator",
+        "RTLFixer",
+    ):
+        assert name in check.detail
 
 
 def test_doctor_flags_missing_deepseek_key(monkeypatch):

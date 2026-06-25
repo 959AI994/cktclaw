@@ -3,7 +3,7 @@
 #
 # Includes:
 #   Open-source EDA  : Yosys, ABC, Verilator, OpenSTA, SymbiYosys, nextpnr-ice40
-#   Design Agents    : digital-chip-design-agents (14-domain orchestrators)
+#   Design Agents    : digital + analog orchestrators, HLS skill, RTLFixer adapter
 #   AI4EDA Toolkit   : AI4EDA-OpenABC-Data-Toolkit
 #   Python stack     : CktClaw + all dependencies
 #
@@ -89,6 +89,12 @@ RUN git clone --depth 1 https://github.com/959AI994/AI4EDA-OpenABC-Data-Toolkit.
 
 RUN git clone --depth 1 https://github.com/Eriemon/verilog-generator.git
 
+RUN git clone --depth 1 https://github.com/Eriemon/hls-generator.git
+
+RUN git clone --depth 1 https://github.com/chuanseng-ng/analog-chip-design-agents.git
+
+RUN git clone --depth 1 https://github.com/NVlabs/RTLFixer.git
+
 RUN git clone --depth 1 https://github.com/adeleempurpled290/FPGA-Agent-skills.git
 
 # ── Install CktClaw ──────────────────────────────────────────────────
@@ -107,8 +113,11 @@ RUN chmod +x eda_tools/wrappers/*.sh 2>/dev/null || true
 ENV TERM=xterm-256color
 ENV PYTHONUNBUFFERED=1
 ENV CHIP_AGENTS_ROOT=/opt/digital-chip-design-agents/plugins
+ENV ANALOG_CHIP_AGENTS_ROOT=/opt/analog-chip-design-agents/plugins
 ENV AI4EDA_BIN=/opt/AI4EDA-OpenABC-Data-Toolkit/ai4eda-toolkit
 ENV VERILOG_GENERATOR_ROOT=/opt/verilog-generator
+ENV HLS_GENERATOR_ROOT=/opt/hls-generator
+ENV RTLFIXER_ROOT=/opt/RTLFixer
 ENV FPGA_AGENT_SKILLS_ROOT=/opt/FPGA-Agent-skills
 
 WORKDIR /workspace

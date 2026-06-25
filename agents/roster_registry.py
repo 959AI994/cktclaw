@@ -39,6 +39,16 @@ _ROLE_ALIASES: Dict[str, str] = {
     "deploy_agent": "deploy_agent",
     "optimizeragent": "optimizer_agent",
     "optimizer_agent": "optimizer_agent",
+    "rtlrepairagent": "rtl_repair_agent",
+    "rtl_repair_agent": "rtl_repair_agent",
+    "formalagent": "formal_agent",
+    "formal_agent": "formal_agent",
+    "hlsagent": "hls_agent",
+    "hls_agent": "hls_agent",
+    "analogagent": "analog_agent",
+    "analog_agent": "analog_agent",
+    "ppaoptimizeragent": "ppa_optimizer_agent",
+    "ppa_optimizer_agent": "ppa_optimizer_agent",
 }
 
 
@@ -197,7 +207,7 @@ class AgentRosterRegistry:
         return [self._roles[k] for k in sorted(self._roles.keys())]
 
     def roster_summary(self) -> str:
-        lines = ["## CktClaw Seven-Agent Roster", ""]
+        lines = ["## CktClaw Agent Roster", ""]
         for spec in self.all_specs():
             lines.append(spec.roster_summary_line())
         return "\n".join(lines)

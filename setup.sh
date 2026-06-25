@@ -14,7 +14,7 @@
 #   4. 从源码编译 OpenSTA
 #   5. 克隆 digital-chip-design-agents（14 域 Orchestrator）
 #   6. 克隆 AI4EDA-OpenABC-Data-Toolkit
-#   7. 克隆 verilog-generator + FPGA-Agent-skills
+#   7. 克隆 verilog-generator + hls-generator + analog agents + RTLFixer + FPGA-Agent-skills
 #   8. 生成 .env + activate.sh
 #   9. 验证安装
 ################################################################################
@@ -302,7 +302,7 @@ log_success "AI4EDA Toolkit 就绪: ${AI4EDA_DIR}/ai4eda-toolkit"
 # ══════════════════════════════════════════════════════════════════════
 # Step 6: verilog-generator + FPGA-Agent-skills
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 6/8: Verilog Generator + FPGA Agent Skills"
+log_step "Step 6/8: Full-Chip Agent Skills"
 
 VERILOG_GEN_DIR="${DEPS_DIR}/verilog-generator"
 if [ -f "${VERILOG_GEN_DIR}/SKILL.md" ]; then
@@ -311,6 +311,33 @@ else
     log_info "克隆 verilog-generator..."
     git clone --depth 1 https://github.com/Eriemon/verilog-generator.git "${VERILOG_GEN_DIR}"
     log_success "verilog-generator 就绪"
+fi
+
+HLS_GEN_DIR="${DEPS_DIR}/hls-generator"
+if [ -f "${HLS_GEN_DIR}/SKILL.md" ]; then
+    log_success "hls-generator 已存在"
+else
+    log_info "克隆 hls-generator..."
+    git clone --depth 1 https://github.com/Eriemon/hls-generator.git "${HLS_GEN_DIR}"
+    log_success "hls-generator 就绪"
+fi
+
+ANALOG_AGENTS_DIR="${DEPS_DIR}/analog-chip-design-agents"
+if [ -d "${ANALOG_AGENTS_DIR}/plugins" ]; then
+    log_success "analog-chip-design-agents 已存在"
+else
+    log_info "克隆 analog-chip-design-agents..."
+    git clone --depth 1 https://github.com/chuanseng-ng/analog-chip-design-agents.git "${ANALOG_AGENTS_DIR}"
+    log_success "analog-chip-design-agents 就绪"
+fi
+
+RTLFIXER_DIR="${DEPS_DIR}/RTLFixer"
+if [ -d "${RTLFIXER_DIR}/src" ]; then
+    log_success "RTLFixer 已存在"
+else
+    log_info "克隆 RTLFixer..."
+    git clone --depth 1 https://github.com/NVlabs/RTLFixer.git "${RTLFIXER_DIR}"
+    log_success "RTLFixer 就绪"
 fi
 
 FPGA_SKILLS_DIR="${DEPS_DIR}/FPGA-Agent-skills"
@@ -358,8 +385,11 @@ export CHIP_AGENTS_ROOT="${AGENTS_DIR}/plugins"
 export AI4EDA_BIN="${AI4EDA_DIR}/ai4eda-toolkit"
 export CKTCLAW_AI4EDA_PATH="${AI4EDA_DIR}"
 
-# Verilog Generator + FPGA Agent Skills
+# Full-chip agent skills
 export VERILOG_GENERATOR_ROOT="${VERILOG_GEN_DIR}"
+export HLS_GENERATOR_ROOT="${HLS_GEN_DIR}"
+export ANALOG_CHIP_AGENTS_ROOT="${ANALOG_AGENTS_DIR}/plugins"
+export RTLFIXER_ROOT="${RTLFIXER_DIR}"
 export FPGA_AGENT_SKILLS_ROOT="${FPGA_SKILLS_DIR}"
 
 # ABC 可执行文件（优先使用 oss-cad-suite 附带的 yosys-abc）
@@ -461,6 +491,31 @@ if [ -d "${AGENTS_DIR}/plugins/synthesis" ]; then
     log_success "Orchestrator: ${DOMAINS} 个芯片设计领域"
 else
     log_warning "Orchestrator 模板未找到"
+fi
+
+if [ -d "${ANALOG_AGENTS_DIR}/plugins/analog-design-meta" ]; then
+    ANALOG_DOMAINS=$(ls -d "${ANALOG_AGENTS_DIR}/plugins"/*/ 2>/dev/null | wc -l)
+    log_success "Analog agents: ${ANALOG_DOMAINS} 个模拟/AMS/RF 领域"
+else
+    log_warning "analog-chip-design-agents 未找到: ${ANALOG_AGENTS_DIR}"
+fi
+
+if [ -f "${VERILOG_GEN_DIR}/SKILL.md" ]; then
+    log_success "verilog-generator skill: ${VERILOG_GEN_DIR}"
+else
+    log_warning "verilog-generator skill 未找到: ${VERILOG_GEN_DIR}"
+fi
+
+if [ -f "${HLS_GEN_DIR}/SKILL.md" ]; then
+    log_success "hls-generator skill: ${HLS_GEN_DIR}"
+else
+    log_warning "hls-generator skill 未找到: ${HLS_GEN_DIR}"
+fi
+
+if [ -d "${RTLFIXER_DIR}/src" ]; then
+    log_success "RTLFixer repo: ${RTLFIXER_DIR}"
+else
+    log_warning "RTLFixer repo 未找到: ${RTLFIXER_DIR}"
 fi
 
 # AI4EDA

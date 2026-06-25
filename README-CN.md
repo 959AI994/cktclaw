@@ -86,7 +86,20 @@ bash setup.sh            # 完整安装（含 Yosys/ABC/Verilator/OpenSTA 等）
 bash setup.sh --minimal  # 仅 Python 依赖，跳过 EDA 工具
 ```
 
-脚本自动完成：Conda 环境创建 → `pip install -e .` → 下载 oss-cad-suite → 编译 OpenSTA → 克隆 digital-chip-design-agents + AI4EDA Toolkit → 生成 `.env` + `activate.sh`。
+脚本自动完成：Conda 环境创建 → `pip install -e .` → 下载 oss-cad-suite → 编译 OpenSTA → 克隆数字 / 模拟 / HLS / RTL 修复相关 Agent 仓库 + AI4EDA Toolkit → 生成 `.env` + `activate.sh`。
+
+完整安装还会准备全芯片设计的扩展 Agent / Skill / Toolchain：
+
+| 能力 | Repo / Tool | 安装路径 / 环境变量 |
+| --- | --- | --- |
+| 数字芯片设计 orchestrator | `chuanseng-ng/digital-chip-design-agents` | `deps/digital-chip-design-agents`, `CHIP_AGENTS_ROOT` |
+| 模拟 / AMS / RF orchestrator | `chuanseng-ng/analog-chip-design-agents` | `deps/analog-chip-design-agents`, `ANALOG_CHIP_AGENTS_ROOT` |
+| Verilog 生成 skill | `Eriemon/verilog-generator` | `deps/verilog-generator`, `VERILOG_GENERATOR_ROOT` |
+| HLS 生成 skill | `Eriemon/hls-generator` | `deps/hls-generator`, `HLS_GENERATOR_ROOT` |
+| RTL 修复研究适配 | `NVlabs/RTLFixer` | `deps/RTLFixer`, `RTLFIXER_ROOT` |
+| FPGA skill 库 | `FPGA-Agent-skills` | `deps/FPGA-Agent-skills`, `FPGA_AGENT_SKILLS_ROOT` |
+
+安装后可运行 `cktclaw --doctor` 或 `/doctor` 检查当前 shell 是否能发现这些 repo 和 EDA 工具。
 
 ### 启动
 
