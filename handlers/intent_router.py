@@ -24,6 +24,11 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         r"(规格.*分析|分析.*规格|信号.{0,4}映射|功能点.*映射)",
         r"\b(rtl.?spec.?analyz|extract.*signal.*mapping)",
     ]),
+    ("erie-verilog-generator", [
+        r"\b(erie|eriemon|verilog.?generator|external.?verilog.?generator).{0,80}\b(verilog|rtl|systemverilog|hdl|module)\b",
+        r"\b(verilog|rtl|systemverilog|hdl).{0,60}\b(testbench|tb|self.?checking)\b",
+        r"\b(testbench|tb|self.?checking).{0,60}\b(verilog|rtl|systemverilog|hdl)\b",
+    ]),
     ("testbench-generator", [
         r"\b(generate.*testbench|tb.*gen|testbench.*gen|testbench.*creat)",
         r"(生成.*testbench|测试台生成|生成.*测试台|tb.*生成)",
@@ -121,7 +126,7 @@ _CHAT_INDICATORS = re.compile(
 _HIGH_SPECIFICITY: frozenset = frozenset({
     "chip-system", "chip-formal", "chip-hls", "chip-compiler", "chip-infrastructure",
     "chip-dft", "chip-pd", "chip-soc", "chip-firmware", "chip-fpga", "chip-pipeline",
-    "rtl-spec-analyzer", "testbench-generator", "verilog-partition",
+    "rtl-spec-analyzer", "erie-verilog-generator", "testbench-generator", "verilog-partition",
     "verilog-optimization", "verilog-merge",
 })
 # Generic chip terms that must NOT route when sent on their own (no surrounding

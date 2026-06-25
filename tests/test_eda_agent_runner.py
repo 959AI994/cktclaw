@@ -89,6 +89,10 @@ def test_eda_runner_dispatches_specialist_when_enabled(tmp_path, monkeypatch):
     assert dispatched
     assert dispatched[0][0] == "rtl_repair_agent"
     assert any(step.get("status") == "specialist_dispatched" for step in result["steps"])
+    assert (
+        "SPECIALIST_DISPATCH stage=chip-rtl agent=rtl_repair_agent status=completed"
+        in result["output"]
+    )
 
 
 def test_eda_runner_skips_optional_pd_failure(tmp_path, monkeypatch):

@@ -16,6 +16,18 @@ def test_compound_rtl_with_lint_routes_to_chip_rtl():
     assert result == "chip-rtl"
 
 
+def test_verilog_plus_self_checking_testbench_routes_to_erie_generator():
+    result = detect_chip_design_intent(
+        "Generate a parameterized FIFO RTL and a self-checking testbench"
+    )
+    assert result == "erie-verilog-generator"
+
+
+def test_plain_testbench_generation_stays_on_rtl_claw_testbench_skill():
+    result = detect_chip_design_intent("generate a testbench for the existing FIFO design")
+    assert result == "testbench-generator"
+
+
 def test_formal_verification_routes_at_score_1():
     result = detect_chip_design_intent("run formal verification with FPV")
     assert result == "chip-formal"

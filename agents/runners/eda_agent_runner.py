@@ -97,16 +97,21 @@ class EDAAgentRunner:
                         skill_name, task, last_error, ctx
                     )
                     if repair_result is not None:
+                        repair_agent = repair_result.get("role_id")
+                        repair_status = repair_result.get("status")
+                        repair_output = repair_result.get("output") or ""
                         step_results.append({
                             "skill": skill_name,
                             "status": "specialist_dispatched",
-                            "agent": repair_result.get("role_id"),
-                            "agent_status": repair_result.get("status"),
-                            "output_preview": (repair_result.get("output") or "")[:500],
+                            "agent": repair_agent,
+                            "agent_status": repair_status,
+                            "output_preview": repair_output[:500],
                         })
                         combined_output.append(
-                            f"## {repair_result.get('role_id')}\n"
-                            f"{(repair_result.get('output') or '')[:2000]}"
+                            "## Specialist Dispatch\n"
+                            f"SPECIALIST_DISPATCH stage={skill_name} "
+                            f"agent={repair_agent} status={repair_status}\n\n"
+                            f"{repair_output[:2000]}"
                         )
                 if skill_name in OPTIONAL_SKILLS:
                     combined_output.append(f"## {skill_name}\n⚠️ Skipped optional stage: {last_error}")
