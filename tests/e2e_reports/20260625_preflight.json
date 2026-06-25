@@ -1,0 +1,26 @@
+{
+  "date": "20260625",
+  "doctor_checks": {
+    "api_keys": "ok",
+    "eda_tools": "ok",
+    "full_chip_toolchain": "ok",
+    "agent_repos": "ok",
+    "cktclaw_home_writable": "ok",
+    "policy": "ok",
+    "offline_mode": "ok"
+  },
+  "pytest_passed": 25,
+  "pytest_failed": 0,
+  "which_cktclaw": "/home/wjx/.nvm/versions/node/v22.18.0/bin/cktclaw",
+  "conda_cktclaw": "/home/wjx/.nvm/versions/node/v22.18.0/bin/cktclaw",
+  "deepseek_key_set": true,
+  "eda_tools": {
+    "yosys": "/home/wjx/.cktclaw-tools/oss-cad-suite/bin/yosys",
+    "abc": null,
+    "sta": "/usr/bin/sta",
+    "verilator": "/home/wjx/.cktclaw-tools/oss-cad-suite/bin/verilator",
+    "sby": "/home/wjx/.cktclaw-tools/oss-cad-suite/bin/sby",
+    "verible-verilog-lint": null,
+    "slang": null
+  }
+}
