@@ -24,121 +24,133 @@ _ANALOG_ROOT = Path(os.environ.get(
 ))
 
 
-# (skill_name, plugin_dir, display_name, aliases, description)
+# (skill_name, plugin_dir_on_disk, display_name, aliases, description)
+# plugin_dir_on_disk matches chuanseng-ng/analog-chip-design-agents/plugins/* layout.
 _ANALOG_DOMAINS = [
     (
         "analog-design-architecture",
-        "analog-design-architecture",
+        "architecture",
         "Analog Architecture",
         ["analog-architecture", "analog-arch"],
         "Analog architecture exploration, budget allocation, and signal-chain decomposition.",
     ),
     (
         "analog-design-modeling",
-        "analog-design-modeling",
+        "modeling",
         "Analog/AMS Modeling",
         ["analog-modeling", "ams-modeling", "verilog-a"],
         "Behavioral, Verilog-A/AMS, VHDL-AMS, and RNM model generation.",
     ),
     (
         "analog-design-circuit",
-        "analog-design-circuit",
+        "circuit",
         "Analog Circuit Design",
         ["analog-circuit", "schematic-design"],
         "Topology selection, sizing, biasing, schematic planning, and pre-layout review.",
     ),
     (
         "analog-design-simulation",
-        "analog-design-simulation",
+        "simulation",
         "Analog Simulation",
         ["analog-sim", "spice-sim", "ngspice"],
         "DC, AC, transient, noise, corners, Monte Carlo, and electrical signoff.",
     ),
     (
         "analog-design-ams-verification",
-        "analog-design-ams-verification",
+        "ams-verification",
         "AMS Verification",
         ["ams-verification", "mixed-signal-verification"],
         "AMS testbenches, connect rules, co-simulation, and coverage closure.",
     ),
     (
         "analog-design-layout",
-        "analog-design-layout",
+        "layout",
         "Analog Layout",
         ["analog-layout", "custom-layout"],
         "Analog layout planning with matching, symmetry, shielding, and routing constraints.",
     ),
     (
         "analog-design-physical-verification",
-        "analog-design-physical-verification",
+        "physical-verification",
         "Analog Physical Verification",
         ["analog-pv", "drc-lvs"],
         "DRC, LVS, antenna, ERC, density, and DFM signoff.",
     ),
     (
         "analog-design-extraction",
-        "analog-design-extraction",
+        "extraction",
         "Analog Extraction",
         ["analog-pex", "parasitic-extraction"],
         "Parasitic extraction, RC/coupling review, and back-annotated netlists.",
     ),
     (
         "analog-design-post-layout",
-        "analog-design-post-layout",
+        "post-layout",
         "Analog Post-Layout",
         ["post-layout", "post-pex"],
         "Post-layout simulation, PEX corner verification, and tape-out gating.",
     ),
     (
         "analog-design-reliability",
-        "analog-design-reliability",
+        "reliability",
         "Analog Reliability",
         ["analog-reliability", "em-ir-esd"],
         "EM, IR-drop, ESD, latch-up, aging, and reliability signoff.",
     ),
     (
         "analog-design-characterization",
-        "analog-design-characterization",
+        "characterization",
         "Analog Characterization",
         ["analog-characterization", "lib-characterization"],
         "Liberty, behavioral model, timing, power, and noise characterization.",
     ),
     (
         "analog-design-rf",
-        "analog-design-rf",
+        "rf",
         "RF/mmWave Design",
         ["rf-design", "mmwave"],
         "S-parameter, harmonic balance, Pnoise/PAC, IP3, and load-pull workflows.",
     ),
     (
         "analog-design-em",
-        "analog-design-em",
+        "em",
         "EM Modeling",
         ["em-modeling", "sparameter"],
         "EM solve planning for passives, antennas, and S-parameter model extraction.",
     ),
     (
         "analog-design-ams-integration",
-        "analog-design-ams-integration",
+        "ams-integration",
         "AMS Integration",
         ["ams-integration", "analog-ip-integration"],
         "Analog IP qualification, AMS top assembly, and chip-level AMS simulation.",
     ),
     (
         "analog-design-infrastructure",
-        "analog-design-infrastructure",
+        "infrastructure",
         "Analog Infrastructure",
         ["analog-infra", "analog-tools"],
         "Analog/RF tool detection, wrappers, MCP setup, and memory distillation.",
     ),
     (
         "analog-design-meta",
-        "analog-design-meta",
+        "meta",
         "Analog Meta Pipeline",
         ["analog-pipeline", "analog-meta"],
         "Closed-loop spec, circuit, layout, extraction, and post-layout orchestration.",
     ),
 ]
+
+
+def _resolve_plugin_dir(plugin_name: str) -> Path:
+    """Resolve plugin folder; supports short names (meta) and legacy analog-design-* dirs."""
+    direct = _ANALOG_ROOT / plugin_name
+    if direct.is_dir():
+        return direct
+    legacy = _ANALOG_ROOT / f"analog-design-{plugin_name}"
+    if legacy.is_dir():
+        return legacy
+    return direct
 
 
 def _first_skill_md(plugin_dir: Path) -> Optional[Path]:
@@ -189,7 +201,7 @@ def _build_skill(
     aliases: List[str],
     description: str,
 ) -> Optional[SkillDefinition]:
-    plugin_dir = _ANALOG_ROOT / plugin_name
+    plugin_dir = _resolve_plugin_dir(plugin_name)
     skill_path = _first_skill_md(plugin_dir)
     if skill_path is None:
         return None

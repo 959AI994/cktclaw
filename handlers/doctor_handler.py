@@ -107,7 +107,7 @@ def _check_agent_repos() -> DoctorCheck:
             "analog-chip-design-agents",
             "ANALOG_CHIP_AGENTS_ROOT",
             deps / "analog-chip-design-agents" / "plugins",
-            "analog-design-meta",
+            "meta",
         ),
         _repo_status(
             "verilog-generator",

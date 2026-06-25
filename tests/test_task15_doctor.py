@@ -30,6 +30,26 @@ def test_doctor_agent_repo_check_reports_expected_repos():
         assert name in check.detail
 
 
+def test_analog_design_skills_load_when_repo_present():
+    from pathlib import Path
+    import importlib
+    plugins = Path(__file__).resolve().parent.parent / "deps" / "analog-chip-design-agents" / "plugins"
+    if not (plugins / "meta").is_dir():
+        pytest.skip("analog-chip-design-agents not cloned")
+    mod = importlib.reload(importlib.import_module("cktclaw.skills.analog_design_skills"))
+    assert len(mod.ANALOG_DESIGN_SKILLS) >= 10
+
+
+def test_doctor_analog_repo_ok_when_meta_present():
+    from pathlib import Path
+    from cktclaw.handlers.doctor_handler import run_doctor
+    plugins = Path(__file__).resolve().parent.parent / "deps" / "analog-chip-design-agents" / "plugins"
+    if not (plugins / "meta").is_dir():
+        pytest.skip("analog-chip-design-agents not cloned")
+    check = next(c for c in run_doctor().checks if c.name == "agent_repos")
+    assert "analog-chip-design-agents=ok" in check.detail
+
+
 def test_doctor_flags_missing_deepseek_key(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("CKTCLAW_DEEPSEEK_KEY", raising=False)

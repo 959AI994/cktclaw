@@ -493,7 +493,7 @@ else
     log_warning "Orchestrator 模板未找到"
 fi
 
-if [ -d "${ANALOG_AGENTS_DIR}/plugins/analog-design-meta" ]; then
+if [ -d "${ANALOG_AGENTS_DIR}/plugins/meta" ] || [ -d "${ANALOG_AGENTS_DIR}/plugins/analog-design-meta" ]; then
     ANALOG_DOMAINS=$(ls -d "${ANALOG_AGENTS_DIR}/plugins"/*/ 2>/dev/null | wc -l)
     log_success "Analog agents: ${ANALOG_DOMAINS} 个模拟/AMS/RF 领域"
 else

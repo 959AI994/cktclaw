@@ -88,7 +88,7 @@ RTL_REPAIR_SKILL = SkillDefinition(
     argument_names=["task"],
     allowed_tools=["Read", "Write", "Bash", "verible", "slang", "verilator", "yosys", "sby"],
     user_invocable=True,
-    loaded_from=LoadedFrom.BUILTIN,
+        loaded_from=LoadedFrom.BUNDLED,
     source="cktclaw",
     executor=rtl_repair_executor,
 )
