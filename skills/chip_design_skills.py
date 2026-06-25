@@ -27,7 +27,7 @@ from cktclaw.harness import (
 import os as _os
 _AGENTS_ROOT = Path(_os.environ.get(
     "CHIP_AGENTS_ROOT",
-    str(Path(__file__).parent.parent.parent.resolve() / "digital-chip-design-agents" / "plugins"),
+    str(Path(__file__).parent.parent / "deps" / "digital-chip-design-agents" / "plugins"),
 ))
 
 # (domain_dir, skill_subdir, orchestrator_file, skill_name, display_name, aliases, description, when_to_use)
@@ -130,6 +130,13 @@ _DOMAINS = [
         "EDA tool detection, output-filtering shell wrappers, and MCP server config templates.",
         "Use when setting up EDA tools, deploying wrappers, or configuring MCP servers.",
     ),
+    (
+        "meta", "pipeline-orchestration", "pipeline-orchestrator.md",
+        "chip-pipeline", "Chip Design Pipeline",
+        ["chip-pipeline", "pipeline", "cross-domain", "fix-request"],
+        "Cross-domain pipeline — verification↔RTL feedback loop, fix_requests dispatch, re-verify.",
+        "Use when processing fix_requests, closing verification/formal loops, or dispatching RTL fixes.",
+    ),
 ]
 
 
@@ -200,17 +207,28 @@ def _make_executor(
                 mcp_manager=mcp_mgr,
             )
 
-            snapshot = await engine.run(args.strip())
+            user_task = args.strip()
+            snapshot = await engine.run(user_task, auto_confirm=True)
 
             await task_manager.update_task_status(task.task_id, TaskStatus.COMPLETED)
-            import json
-            return [{"type": "text", "text": f"## Orchestrator Complete\n\n```json\n{json.dumps(snapshot, indent=2)}\n```"}]
+            from cktclaw.orchestrator.artifacts import build_completion_report
+            report = build_completion_report(
+                snapshot,
+                skill=skill_name,
+                task=user_task,
+                display_name=display_name,
+            )
+            return [
+                {"type": "text", "text": report},
+                {"type": "orchestrator_result", "snapshot": snapshot},
+            ]
 
         except Exception as e:
-            import traceback as _tb
-            _tb_str = _tb.format_exc()
-            with open("/tmp/cktclaw_orchestrator_error.log", "w") as _f:
-                _f.write(_tb_str)
+            from ..runtime.run_context import log_exception
+            log_exception(
+                __name__,
+                "Chip design skill '%s' failed (task %s): %s", display_name, task.task_id, e,
+            )
             await task_manager.update_task_status(task.task_id, TaskStatus.FAILED)
             return [{"type": "text", "text": f"Error in {display_name}: {e}"}]
 
@@ -243,6 +261,6 @@ CHIP_DESIGN_SKILLS = [_build_skill(*d) for d in _DOMAINS]
 
 
 async def register_chip_design_skills():
-    """Register all 14 chip design domain skills."""
+    """Register all chip design domain skills (14 domains + pipeline meta)."""
     for skill in CHIP_DESIGN_SKILLS:
         await register_skill(skill)

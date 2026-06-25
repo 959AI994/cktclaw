@@ -11,6 +11,36 @@ from typing import Optional
 
 # Keyword → skill mapping.  Order matters: more specific patterns first.
 _KEYWORD_RULES: list[tuple[str, list[str]]] = [
+    # Full-stack seven-agent pipeline (before single-domain rules)
+    ("chip-system", [
+        r"\b(chip.?system|multi.?agent|seven.?agent|全栈|完整.{0,6}(流程|设计))",
+        r"(从架构到部署|architecture.{0,20}deploy|full.?stack.{0,10}chip)",
+        r"(ppa.{0,10}闭环|end.?to.?end.{0,10}(design|flow))",
+        r"/chip-system",
+    ]),
+    # RTL-CLAW pipeline skills (specific patterns before generic chip-rtl)
+    ("rtl-spec-analyzer", [
+        r"\b(analyze.*spec|spec.*rtl|signal.*pin.*map)",
+        r"(规格.*分析|分析.*规格|信号.{0,4}映射|功能点.*映射)",
+        r"\b(rtl.?spec.?analyz|extract.*signal.*mapping)",
+    ]),
+    ("testbench-generator", [
+        r"\b(generate.*testbench|tb.*gen|testbench.*gen|testbench.*creat)",
+        r"(生成.*testbench|测试台生成|生成.*测试台|tb.*生成)",
+    ]),
+    ("verilog-partition", [
+        r"\b(partition.*verilog|split.*rtl|rtl.*partition|verilog.*partition)",
+        r"(分割.{0,6}(rtl|verilog|模块)|拆分.{0,6}(rtl|verilog)|verilog.*分割|RTL分区)",
+    ]),
+    ("verilog-optimization", [
+        r"\b(optimize.*verilog|rtl.*optim|verilog.*optimize|partition.*optim)",
+        r"(verilog.*优化|优化.{0,4}(RTL|rtl|verilog)|子模块.*优化|优化.*子模块)",
+    ]),
+    ("verilog-merge", [
+        r"\b(merge.*verilog|rtl.*merge|verilog.*merge|merge.*submodule)",
+        r"(verilog.*合并|合并.{0,6}(模块|verilog|子模块)|合并.*分割)",
+        r"(分割后.{0,6}合并|分割.{0,10}合并|合并.{0,3}分割)",
+    ]),
     # Higher-specificity domains first to avoid false matches
     ("chip-formal", [
         r"\b(formal.?verif|形式验证|fpv|property.?check|assert.*proof|symbiyosys|sby\b)",
@@ -66,6 +96,10 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     ("chip-fpga", [
         r"\b(fpga|bitstream|nextpnr|openFPGA|fpga.?prototyp|fpga.?emulat)",
     ]),
+    ("chip-pipeline", [
+        r"\b(fix_request|fix.?request|cross.?domain.?pipeline|pipeline.?orchestrat)",
+        r"(验证.*RTL.*修复|闭环.*验证|fix_requests|跨域.*编排)",
+    ]),
 ]
 
 # Compile patterns once
@@ -82,9 +116,42 @@ _CHAT_INDICATORS = re.compile(
 )
 
 
+# High-specificity skills have compound/domain-specific patterns — a single
+# strong keyword hit (e.g. "fpv", "openroad", "nextpnr") is enough to route.
+_HIGH_SPECIFICITY: frozenset = frozenset({
+    "chip-system", "chip-formal", "chip-hls", "chip-compiler", "chip-infrastructure",
+    "chip-dft", "chip-pd", "chip-soc", "chip-firmware", "chip-fpga", "chip-pipeline",
+    "rtl-spec-analyzer", "testbench-generator", "verilog-partition",
+    "verilog-optimization", "verilog-merge",
+})
+# Generic chip terms that must NOT route when sent on their own (no surrounding
+# request context). A bare "verilog" is chat noise; "write a verilog module" is a
+# real request. rtl/synth/etc. are < 6 chars and already filtered by length.
+_GENERIC_THRESHOLD: int = 2
+_BARE_GENERIC_KEYWORDS: frozenset = frozenset({
+    "verilog", "systemverilog", "rtl", "hdl", "cdc", "lint",
+    "synth", "synthesis", "netlist", "sta", "timing", "dft",
+    "fpga", "soc", "hls", "pd", "verification", "uvm", "cts",
+})
+
+_NON_WORD = re.compile(r"[\s\W_]+", re.UNICODE)
+
+
+def _is_bare_keyword(text: str) -> bool:
+    """True when *text* is nothing but a single generic chip keyword."""
+    token = _NON_WORD.sub("", text.lower())
+    return token in _BARE_GENERIC_KEYWORDS
+
+
 def detect_chip_design_intent(user_input: str) -> Optional[str]:
     """
     Determine if *user_input* should be routed to a chip-design orchestrator.
+
+    Scoring counts individual keyword occurrences (not just matching patterns),
+    so a compound request like "write an RTL module and run lint" outweighs a
+    bare keyword. A message that is *only* a generic keyword ("verilog") is
+    treated as chat and not routed; the same keyword inside a real request
+    ("write a verilog module") still routes.
 
     Returns:
         The skill name (e.g. ``"chip-synthesis"``) if matched, or ``None``
@@ -98,9 +165,13 @@ def detect_chip_design_intent(user_input: str) -> Optional[str]:
     if _CHAT_INDICATORS.search(text):
         return None
 
+    # A message consisting solely of a generic keyword is chat, not a request.
+    if _is_bare_keyword(text):
+        return None
+
     scores: dict[str, int] = {}
     for skill, patterns in _COMPILED_RULES:
-        hits = sum(1 for p in patterns if p.search(text))
+        hits = sum(len(p.findall(text)) for p in patterns)
         if hits:
             scores[skill] = hits
 
@@ -110,8 +181,53 @@ def detect_chip_design_intent(user_input: str) -> Optional[str]:
     best_skill = max(scores, key=scores.get)
     best_score = scores[best_skill]
 
-    # Require at least 1 keyword hit
     if best_score >= 1:
         return best_skill
 
     return None
+
+
+def detect_chip_design_intent_with_confidence(user_input: str) -> Optional[dict]:
+    """
+    Like detect_chip_design_intent but returns routing metadata with numeric confidence.
+
+    confidence mapping:
+      - score >= 2  -> 0.92
+      - score == 1  -> 0.75
+    """
+    text = user_input.strip()
+
+    if len(text) < 6:
+        return None
+
+    if _CHAT_INDICATORS.search(text):
+        return None
+
+    if _is_bare_keyword(text):
+        return None
+
+    scores: dict[str, int] = {}
+    for skill, patterns in _COMPILED_RULES:
+        hits = sum(len(p.findall(text)) for p in patterns)
+        if hits:
+            scores[skill] = hits
+
+    if not scores:
+        return None
+
+    best_skill = max(scores, key=scores.get)
+    best_score = scores[best_skill]
+    if best_score < 1:
+        return None
+
+    confidence = 0.92 if best_score >= 2 else 0.75
+    if best_skill == "chip-system":
+        confidence = max(confidence, 0.88)
+    return {
+        "skill_id": best_skill,
+        "confidence": confidence,
+        "score": best_score,
+        "needs_orchestrator": best_skill.startswith("chip-"),
+        "task": text,
+        "rationale": "keyword fast-path match",
+    }

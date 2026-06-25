@@ -11,6 +11,7 @@ from .skill_registry import (
     register_skill,
     get_skill,
     list_skills,
+    unregister_skill,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "register_skill",
     "get_skill",
     "list_skills",
+    "unregister_skill",
 ]

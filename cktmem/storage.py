@@ -572,6 +572,32 @@ class Storage:
 
         return [dict(row) for row in rows]
 
+    async def count_session_memories(self) -> int:
+        """Return total session memory rows across all sessions."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM session_memories")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return int(count)
+
+    async def list_all_session_memories(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return session memory dicts across all sessions, newest-first."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT session_id, topic, summary, content, memory_type, created_at, updated_at
+            FROM session_memories
+            ORDER BY updated_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
     async def delete_session_memory(self, session_id: str, topic: str):
         """Delete a topic row."""
         conn = self._get_connection()

@@ -262,6 +262,150 @@ CktClaw 集成了完整的芯片设计全流程，每个领域都有独立的多
 
 ---
 
+## 💬 Web Chat 架构
+
+CktClaw 在终端 REPL 之外还提供浏览器仪表盘。Web Chat 与 CLI 共用同一套 **CapabilityRegistry**、**OrchestratorEngine**、**CktMem** 上下文栈和 **RunContext** 治理机制，用户输入则经由 **FastAPI + WebSocket** 管道，由 React 前端呈现。
+
+### 启动
+
+```bash
+pip install -e ".[web]"          # FastAPI、uvicorn 等 web 依赖
+cktclaw --web                    # 仪表盘 http://localhost:8741
+cktclaw --web --web-port 9000    # 自定义端口
+```
+
+静态 UI 由 `web/frontend/`（Vite + React + Zustand）构建，由 `web/server.py` 提供服务。单一 WebSocket 端点 `/ws` 复用传输两类消息：**系统事件**（Agent 生命周期、插件安装、Orchestrator 日志）与 **Chat 消息**（流式 LLM、工具调用、Orchestrator 进度）。
+
+### 端到端流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  浏览器 (web/frontend/)                                                      │
+│  ┌──────────────┐  ┌─────────────────┐  ┌──────────────────────────────┐  │
+│  │ ChatPanel    │  │ chatStore       │  │ OrchestratorProposalCard     │  │
+│  │ ChatThread   │◄─┤ (Zustand)       │  │ OrchestratorRunCard          │  │
+│  │ MarkdownContent│ useWebSocket.ts  │  │ ToolCallCard                 │  │
+│  └──────┬───────┘  └────────┬────────┘  └──────────────────────────────┘  │
+│         │ chat:send / chat:orchestrator_confirm                            │
+└─────────┼──────────────────────────────────────────────────────────────────┘
+          │  WebSocket /ws
+          ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  web/server.py — FastAPI                                                     │
+│  • chat:send  → stream_chat()           （每连接一个异步任务）               │
+│  • chat:abort → 取消进行中的流式响应                                         │
+│  • chat:orchestrator_confirm / _cancel → 后台启动 Orchestrator             │
+│  • broadcast_chat() → 按 session 推送 chat:* 事件                           │
+└─────────┬───────────────────────────────┬───────────────────────────────────┘
+          │                               │
+          ▼                               ▼
+┌─────────────────────────┐   ┌─────────────────────────────────────────────┐
+│  路径 A：Agent Loop      │   │  路径 B：Orchestrator (chip-* skills)        │
+│  web/chat_handler.py     │   │  web/routers/orchestrator.py                 │
+│  web/agent_loop.py       │   │  • launch_orchestrator_from_chat()           │
+│                          │   │  • skill.executor → OrchestratorEngine.run() │
+│  多轮 LLM 流式输出       │   │  • WebConsole 将 Rich 输出桥接到 WS          │
+│  + 原生 tool_calls       │   │  • RunContext: .cktclaw/runs/<run_id>/       │
+│  + DSML/文本回退         │   └─────────────────────────────────────────────┘
+│  + capability_registry   │
+│    .execute()            │
+└─────────┬────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  共享后端（与 CLI 相同）                                                      │
+│  CapabilityRegistry · IntentRouter · OrchestratorEngine · CktMem · LLM Router│
+│  ToolRegistry / MCP · RunContext 审计 · design_state.json · checkpoint.json  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 三条执行路径
+
+| 路径 | 触发条件 | 实际执行 | 典型场景 |
+|------|---------|---------|---------|
+| **Orchestrator（Chat 确认）** | 芯片设计意图置信度 ≥ **0.85** | 后台运行完整多阶段 `OrchestratorEngine` | 「设计 8 位加法器，完成 lint + 综合 sign-off」 |
+| **Orchestrator（Agents 面板）** | 用户在 Agents 标签页点击 **Run** | 经 `POST /api/orchestrator/run` 启动同一引擎 | 不依赖 Chat 路由，直接选定领域 |
+| **Agent Loop** | 低置信度、用户拒绝提案，或一般问答 | 最多 **12 轮**流式 LLM + 工具调用 | 快速跑 Yosys、读文件、临时 EDA 问题 |
+
+**Intent 闸门（Chat 内路径选择）：** `stream_chat()` 调用 `capability_registry.resolve_intent()`。高置信度芯片设计任务会暂停并推送 `chat:orchestrator_proposal` — 用户可确认、编辑任务或取消。确认后 Orchestrator 在后台异步运行，Chat 通过 `OrchestratorRunCard` 实时展示进度。
+
+### WebSocket Chat 协议
+
+| 客户端 → 服务端 | 服务端 → 客户端 | 用途 |
+|----------------|----------------|------|
+| `chat:send` | `chat:chunk` | 流式输出 LLM 文本片段 |
+| | `chat:content_replace` | 剥离 DSML/工具标记后替换缓冲区 |
+| | `chat:tool_call` / `chat:tool_result` | 工具调用可视化 |
+| | `chat:orchestrator_proposal` | 高置信度 Orchestrator 建议卡片 |
+| | `chat:orchestrator_started` | 后台运行已启动 |
+| | `chat:orchestrator_progress` | 阶段序号、日志尾部、实时状态 |
+| | `chat:orchestrator_done` | Markdown 完成报告 + `artifacts[]` |
+| | `chat:orchestrator_failed` | 错误信息 |
+| | `chat:done` / `chat:error` | 本轮结束或异常中止 |
+| `chat:orchestrator_confirm` | *(同上)* | 用户批准提案 → 启动运行 |
+| `chat:orchestrator_cancel` | | 关闭提案卡片 |
+| `chat:abort` | | 取消流式 Agent Loop |
+
+Orchestrator 进度无需重复实现 CLI 逻辑：`WebConsole`（`web/cli_state.py`）捕获 Rich 面板输出，发出 `orchestrator:stage_start` / `orchestrator:log` 系统事件，`orchestrator.py` 再转发为当前 session 的 `chat:orchestrator_progress`。
+
+### Agent Loop（与 CLI 对齐）
+
+Web 端 Agent Loop 刻意对齐 CLI v3 行为：
+
+- **工具 schema** 来自 `capability_registry.list_all()`（排除 chip-* orchestrator skill，防止递归嵌套）
+- 模型支持时使用**原生 function calling**；否则经 `ToolCallParser` 做 **DSML / `<TOOL_CALL>` 文本回退**
+- **多轮循环** — 将 assistant 消息与 tool 结果追加到上下文，直至无工具调用或达到 `MAX_AGENT_TURNS`
+- **持久化** — 通过 `web/deps` 的 CktMem 存储写入会话；assistant 回复可选语义索引
+- **附件** — 上传文件在路由前解析并注入 prompt 上下文
+
+### Orchestrator 完成交付 UX
+
+芯片设计 Orchestrator 结束后，Web Chat 不再直接 dump 原始 JSON 状态机快照，而是：
+
+1. **`orchestrator/artifacts.py`** 扫描任务工作目录、run workspace 及 cwd 下的 `.sv` / `.v` / `filelist.f` 等产物
+2. **`build_completion_report()`** 生成 Markdown 总结 — 各 stage 结果、文件列表、QoR 警告（如 `yosys_error` 与 `passed` 不一致），以及 JSON 技术详情小节
+3. **`chat:orchestrator_done`** 携带完整报告及结构化 `artifacts: [{path, kind, size}]` 供前端渲染
+
+CLI 与 Web 展示相同完成内容，仅渲染层不同（Rich Panel vs `MarkdownContent`）。
+
+### 七 Agent 多智能体体系（`/chip-system`）
+
+CktClaw 采用 **静态名册 + 动态 spawn** 混合架构（对标 OpenClaw / Claude Code），用于全栈芯片/系统设计：
+
+| Agent | 职责 |
+|-------|------|
+| **PMAgent** | 需求澄清、任务 DAG、进度汇总 — 唯一用户-facing 协调者 |
+| **ArchitectAgent** | 软硬件划分、模块边界、PPA 粗估 |
+| **EDAAgent** | 元协调者：chip-rtl → verification → synthesis → STA → PD |
+| **CompilerAgent** | 编译链、HLS、驱动/运行时生成 |
+| **RuntimeAgent** | 固件、调度策略、资源池 |
+| **DeployAgent** | FPGA 烧录、部署脚本、可观测性 |
+| **OptimizerAgent** | 经 `EvolutionEngine` 做瓶颈分析，驱动迭代闭环 |
+
+**入口：**
+
+- **CLI：** `/chip-system <目标> [--eda-only]` — 七阶段完整流水线
+- **Web Chat：** 高置信度全栈 prompt（如「从架构到部署」「PPA 闭环」）→ `chat:orchestrator_proposal`（`skill: chip-system`）→ 确认 → `OrchestratorRunCard` 实时展示各 Phase
+
+**共享黑板：** `design_state.json` 扩展 `multi_agent` 字段（session、当前 phase、各 Agent 状态、产物索引、优化轮次）。
+
+**关键文件：** `agents/roster/*.md`、`agents/roster_registry.py`、`agents/multi_agent_orchestrator.py`、`agents/runners/eda_agent_runner.py`、`skills/chip_system_skill.py`、`tools/agent/coordinator_tools.py`（Agent / SendMessage / TaskStop）。
+
+### 关键文件
+
+| 文件 | 职责 |
+|------|------|
+| `web/server.py` | FastAPI 应用、`/ws` 复用循环、Chat 任务生命周期 |
+| `web/chat_handler.py` | `stream_chat()` — Intent 闸门、Agent Loop、持久化 |
+| `web/agent_loop.py` | 工具 schema 加载、DSML 解析、`capability_registry.execute()` |
+| `web/routers/orchestrator.py` | REST + 后台运行、Chat 进度/完成事件 |
+| `web/cli_state.py` | `WebConsole` / `WebCLIState`，Orchestrator executor 适配 |
+| `web/frontend/src/store/chatStore.ts` | Chat 状态、WS 处理、Orchestrator 卡片 |
+| `web/frontend/src/hooks/useWebSocket.ts` | 连接、重连、`chat:send` / confirm 辅助函数 |
+| `orchestrator/artifacts.py` | 产物扫描 + 完成 Markdown 报告 |
+
+---
+
 ## ⚙️ 环境配置
 
 ### DeepSeek 云端引擎（默认）

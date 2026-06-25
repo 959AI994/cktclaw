@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feat/**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      # Check out into a `cktclaw/` subdirectory so the package imports as
+      # `cktclaw` from the workspace root (matches the local dev layout where
+      # the package dir sits inside its parent).
+      - uses: actions/checkout@v4
+        with:
+          path: cktclaw
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pydantic pyyaml prompt_toolkit rich requests
+
+      - name: Clone skill deps (same layout as setup.sh)
+        run: |
+          mkdir -p cktclaw/deps
+          git clone --depth 1 https://github.com/chuanseng-ng/digital-chip-design-agents.git cktclaw/deps/digital-chip-design-agents
+          git clone --depth 1 https://github.com/Eriemon/verilog-generator.git cktclaw/deps/verilog-generator
+          git clone --depth 1 https://github.com/adeleempurpled290/FPGA-Agent-skills.git cktclaw/deps/FPGA-Agent-skills
+          test -f cktclaw/deps/digital-chip-design-agents/plugins/meta/agents/pipeline-orchestrator.md
+
+      - name: Run test suite
+        run: pytest cktclaw/tests/ -q
+
+      - name: Import smoke test
+        run: python -c "import cktclaw.capability_registry, cktclaw.runtime.run_context; print('import OK')"
+
+      - name: cktclaw doctor (warn-only on missing keys)
+        env:
+          CKTCLAW_HOME: ${{ runner.temp }}/.cktclaw
+        run: |
+          set +e
+          python -m cktclaw.main --doctor
+          code=$?
+          set -e
+          if [ "$code" -gt 1 ]; then echo "doctor crashed (exit $code)"; exit 1; fi
+          echo "doctor exit=$code"

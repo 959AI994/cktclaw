@@ -1,0 +1,11 @@
+name: magic-vlsi
+version: 0.1.0
+description: Magic VLSI layout tool integration for DRC/LVS
+author: CktClaw Community
+cktclaw_version: ">=2.0.0"
+tools:
+  - name: magic
+    handler: tools.magic_tool:MagicTool
+    description: Run Magic VLSI for DRC, LVS, and layout operations
+    read_only: false
+    category: eda

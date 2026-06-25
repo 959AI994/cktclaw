@@ -260,6 +260,74 @@ class SkillRegistry:
         self._conditional_skills.clear()
         self._activated_skill_names.clear()
 
+    async def get_skill_descriptions_for_prompt(
+        self,
+        matched_skill_names: Optional[List[str]] = None,
+        max_tokens: int = 2000,
+    ) -> str:
+        """
+        Build a skill description string for injection into the system prompt.
+
+        If matched_skill_names is provided, returns detailed descriptions for
+        those specific skills. Otherwise, returns a brief list of all available
+        domain skills (names + 1-line descriptions).
+
+        Args:
+            matched_skill_names: Specific skills to describe in detail.
+            max_tokens: Approximate token budget (chars / 4).
+
+        Returns:
+            Formatted string for system prompt injection, or empty string.
+        """
+        async with self._skill_lock:
+            char_limit = max_tokens * 4
+
+            if matched_skill_names:
+                # Detailed descriptions for matched skills
+                parts = ["[Relevant domain skills for this request]"]
+                chars_used = len(parts[0])
+
+                for name in matched_skill_names:
+                    skill = self._skills.get(name)
+                    if not skill:
+                        continue
+
+                    desc = skill.description or ""
+                    when = skill.when_to_use or ""
+                    entry = "\n\n### " + skill.name
+                    if desc:
+                        entry += "\n" + desc
+                    if when:
+                        entry += "\nWhen to use: " + when
+
+                    if chars_used + len(entry) > char_limit:
+                        break
+                    parts.append(entry)
+                    chars_used += len(entry)
+
+                return "\n".join(parts) if len(parts) > 1 else ""
+
+            else:
+                # Brief list of all available domain skills
+                if not self._skills:
+                    return ""
+
+                parts = ["[Available domain skills]"]
+                chars_used = len(parts[0])
+
+                for name, skill in self._skills.items():
+                    if skill.is_hidden:
+                        continue
+                    desc = skill.description[:80] if skill.description else ""
+                    entry = "\n- " + name + ": " + desc
+
+                    if chars_used + len(entry) > char_limit:
+                        break
+                    parts.append(entry)
+                    chars_used += len(entry)
+
+                return "\n".join(parts) if len(parts) > 1 else ""
+
 
 _skill_registry: Optional[SkillRegistry] = None
 

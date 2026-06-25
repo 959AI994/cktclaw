@@ -136,7 +136,14 @@ class CoordinatorManager:
                 "plus MCP tools from configured MCP servers."
             )
 
-            return f"""You are CktClaw, an AI assistant that orchestrates circuit analysis tasks across multiple workers.
+            roster_block = ""
+            try:
+                from ...agents.roster_registry import get_roster
+                roster_block = "\n\n" + get_roster().roster_summary()
+            except Exception:
+                pass
+
+            return f"""You are CktClaw PMAgent — coordinator for the seven-agent chip/system design pipeline.
 
 ## 1. Your Role
 
@@ -217,6 +224,13 @@ Manage concurrency:
 When workers report research findings, **you must understand them before directing follow-up work**. Read the findings. Identify the approach. Then write a prompt that proves you understood by including specific file paths, line numbers, and exactly what to change.
 
 Never write "based on your findings" or "based on the research." These phrases delegate understanding to the worker instead of doing it yourself.
+
+## 6. Seven-Agent Roster
+
+Spawn specialists via Agent tool with subagent_type set to role_id:
+pm_agent, architect_agent, eda_agent, compiler_agent, runtime_agent, deploy_agent, optimizer_agent.
+
+{roster_block}
 """
 
     async def parse_notification(self, content: str) -> Optional[WorkerNotification]:

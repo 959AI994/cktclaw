@@ -86,6 +86,11 @@ class ToolCallParser:
 
         raw = text.strip()
 
+        # Path -0.5: DeepSeek DSML markup in plain text
+        dsml = self._parse_dsml(text)
+        if dsml:
+            return dsml
+
         # Path -1: Qwen2.5-Instruct native <tool_call>...</tool_call> format
         tc_match = re.search(
             r"<tool_call>\s*([\s\S]*?)\s*(?:</tool_call>|$)", text, flags=re.IGNORECASE
@@ -229,6 +234,86 @@ class ToolCallParser:
         return None
 
     # ── Helper methods ──
+
+    def _parse_dsml(self, text: str) -> Optional[Dict[str, Any]]:
+        """Parse DeepSeek DSML-style tool markup embedded in assistant text."""
+        if "DSML" not in text and "invoke" not in text.lower():
+            return None
+
+        invoke_match = re.search(
+            r'invoke\s+name=["\']([^"\']+)["\']',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if not invoke_match:
+            return None
+
+        tool_name = self._normalize_tool_name(invoke_match.group(1))
+        if not tool_name or tool_name not in self.allowed_tools:
+            return None
+
+        args: Dict[str, Any] = {}
+        for pm in re.finditer(
+            r'parameter\s+name=["\']([^"\']+)["\'][^>]*>([^<]*)',
+            text,
+            flags=re.IGNORECASE,
+        ):
+            key = pm.group(1).strip()
+            val = pm.group(2).strip()
+            if key:
+                args[key] = val
+
+        if tool_name == "bash" and "command" in args and len(args) == 1:
+            return {
+                "type": "tool_call",
+                "tool_call_id": "dsml_call_1",
+                "name": tool_name,
+                "arguments": args,
+            }
+
+        if not args:
+            args = {"args": ""}
+
+        return {
+            "type": "tool_call",
+            "tool_call_id": "dsml_call_1",
+            "name": tool_name,
+            "arguments": args,
+        }
+
+    @staticmethod
+    def strip_tool_markup(text: str) -> str:
+        """Remove DSML / tool_call markup blocks from visible assistant text."""
+        if not text:
+            return text
+        cleaned = text
+        # DeepSeek DSML blocks (ASCII or fullwidth pipe variants)
+        cleaned = re.sub(
+            r"<[｜|]+DSML[｜|]+tool_calls[\s\S]*?<[｜|]+/[｜|]+DSML[｜|]+tool_calls>",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"<[｜|]+DSML[｜|]+invoke[\s\S]*?(?:</parameter>|/>)\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"<[｜|]+DSML[｜|]+[\s\S]*?(?:<[｜|]+/[｜|]+DSML[｜|]+[\w]+>|$)",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"<tool_call>[\s\S]*?(?:</tool_call>|$)",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
 
     @staticmethod
     def _extract_balanced_object(s: str, start_idx: int) -> Optional[str]:

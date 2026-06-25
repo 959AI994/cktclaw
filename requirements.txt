@@ -8,6 +8,7 @@ aiosqlite
 altair
 annotated-doc
 annotated-types
+anthropic
 anyio
 async-timeout
 attrs
@@ -106,6 +107,7 @@ safetensors
 scipy
 semantic-version
 sentencepiece
+sentence-transformers>=2.2
 shellingham
 six
 smmap
@@ -128,7 +130,8 @@ typing_extensions
 typing-inspection
 tzdata
 urllib3
-uvicorn
+uvicorn[standard]>=0.20
+websockets>=11.0
 watchdog
 wcwidth
 Werkzeug

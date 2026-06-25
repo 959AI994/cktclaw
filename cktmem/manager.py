@@ -3,6 +3,8 @@ Layered context manager — system / project / session / turn assembly + compact
 
 Loads SQLite-backed slices, injects optional file-backed memory prompts, estimates
 tokens, and may invoke ``Compactor.auto_compact`` when over budget.
+
+v2.1: Semantic retrieval injection between PROJECT and SESSION layers.
 """
 
 from typing import List, Optional
@@ -14,6 +16,7 @@ from .storage import Storage
 from .compactor import Compactor
 from .token_counter import TokenCounter
 from .memdir import load_memory_prompt
+from .semantic_search import SemanticSearch
 
 
 class ContextManager:
@@ -25,6 +28,7 @@ class ContextManager:
         system_prompt: str,
         config: Optional[CompactConfig] = None,
         project_root: Optional[str] = None,
+        semantic_search: Optional[SemanticSearch] = None,
     ):
         self.storage = storage
         self.system_prompt = system_prompt
@@ -32,6 +36,7 @@ class ContextManager:
         self.compactor = Compactor(storage, self.config)
         self.token_counter = TokenCounter()
         self.project_root = project_root
+        self.semantic_search = semantic_search or SemanticSearch()
 
     async def build_context(
         self,
@@ -65,6 +70,16 @@ class ContextManager:
 
         project_messages = await self.storage.get_project_messages(session_id)
         messages.extend(project_messages)
+
+        # Semantic retrieval injection: relevant prior knowledge
+        semantic_context = self._get_semantic_context(user_message)
+        if semantic_context:
+            messages.append(Message(
+                role=MessageRole.SYSTEM,
+                content=semantic_context,
+                layer=ContextLayer.SESSION,
+                metadata={"type": "semantic_retrieval"},
+            ))
 
         session_messages = await self._load_session_layer(session_id)
         messages.extend(session_messages)
@@ -216,3 +231,25 @@ class ContextManager:
             "total_compactions": session_info.get("total_compactions", 0) if session_info else 0,
             "last_compact_at": session_info.get("last_compact_at") if session_info else None,
         }
+
+    def _get_semantic_context(self, user_message: str) -> str:
+        """
+        Query semantic search for relevant prior knowledge.
+
+        Returns formatted context string or empty string if nothing relevant found.
+        Injects between PROJECT and SESSION layers to inform the LLM
+        without polluting the turn history.
+        """
+        try:
+            results = self.semantic_search.retrieve_relevant(
+                query=user_message,
+                top_k=5,
+                min_score=0.4,
+            )
+            if results:
+                return self.semantic_search.format_as_context(
+                    results, max_tokens=1500
+                )
+        except Exception:
+            pass  # Graceful degradation — never block context building
+        return ""

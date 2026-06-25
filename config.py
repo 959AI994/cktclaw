@@ -26,6 +26,12 @@ AVAILABLE_ENGINES = ["deepseek", "logicrt", "qwen"]
 MAX_MEMORY_ROUNDS = 5  # Sliding window size for short memory
 CONTEXT_WINDOW_SIZE = 16384  # Max tokens for context (CodeV/DeepSeek)
 
+# Semantic embedding backend: auto | jina | bge | minilm
+# auto: Jina API when JINA_API_KEY is set, else local BGE
+EMBEDDING_BACKEND = os.environ.get("CKTCLAW_EMBEDDING_BACKEND", "auto")
+# Optional model override (e.g. jina-embeddings-v3, BAAI/bge-small-zh-v1.5)
+EMBEDDING_MODEL = os.environ.get("CKTCLAW_EMBEDDING_MODEL", "")
+
 # ━━━━━━━━━━ Model Configuration ━━━━━━━━━━
 DEFAULT_MAX_TOKENS = 2000  # Max tokens for generation
 INFERENCE_TIMEOUT = 300  # 5 minutes timeout for long AIG processing
@@ -72,9 +78,10 @@ LOGICRT_CHECKPOINT = "output/full_training_norm/dpo_batch_20260319_103708/checkp
 LOGICRT_GPU_ID = 0  # Logical GPU ID for LogicRT inference (maps to physical GPU 2)
 LOGICRT_AIG_ENCODER = "mgvga_improved"
 
-# DeepSeek API configuration
+# DeepSeek API configuration — api_key is NOT stored here.
+# Use cktclaw.api_credentials.get_deepseek_api_key() to resolve the key.
 DEEPSEEK_CONFIG = {
-    "api_key": "sk-af52153ce10d4453abf859151ea6ef05",
+    # "api_key" intentionally absent — never hardcode here
     "base_url": "https://api.deepseek.com",
     "default_model": "deepseek-chat",
     "timeout": 120,
@@ -83,20 +90,16 @@ DEEPSEEK_CONFIG = {
 }
 
 # ━━━━━━━━━━ AI4EDA Toolkit Configuration ━━━━━━━━━━
-AI4EDA_TOOLKIT_PATH = os.environ.get(
-    "CKTCLAW_AI4EDA_PATH",
-    "/root/AI4EDA-OpenABC-Data-Toolkit"
-)
+# Resolved from env; empty when unset (consumers must error clearly rather than
+# silently falling back to a hard-coded absolute path).
+AI4EDA_TOOLKIT_PATH = os.environ.get("CKTCLAW_AI4EDA_PATH", "")
 
-# ABC executable — prefer yosys-abc from oss-cad-suite, fall back to system abc
+# ABC executable — env override, else yosys-abc / abc discovered on PATH.
 ABC_PATH = os.environ.get("ABC_PATH")
 
 if not ABC_PATH:
-    _OSS_YOSYS_ABC = Path("/root/oss-cad-suite/bin/yosys-abc")
-    try:
-        ABC_PATH = str(_OSS_YOSYS_ABC) if _OSS_YOSYS_ABC.exists() else "abc"
-    except PermissionError:
-        ABC_PATH = "abc"
+    import shutil as _shutil
+    ABC_PATH = _shutil.which("yosys-abc") or _shutil.which("abc") or "abc"
 AI4EDA_DEFAULT_LIB = os.environ.get(
     "AI4EDA_DEFAULT_LIB",
     str(Path(AI4EDA_TOOLKIT_PATH) / "libs" / "asap7.lib"),

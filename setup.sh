@@ -14,8 +14,9 @@
 #   4. 从源码编译 OpenSTA
 #   5. 克隆 digital-chip-design-agents（14 域 Orchestrator）
 #   6. 克隆 AI4EDA-OpenABC-Data-Toolkit
-#   7. 生成 .env + activate.sh
-#   8. 验证安装
+#   7. 克隆 verilog-generator + FPGA-Agent-skills
+#   8. 生成 .env + activate.sh
+#   9. 验证安装
 ################################################################################
 
 set -e
@@ -73,7 +74,7 @@ echo ""
 # ══════════════════════════════════════════════════════════════════════
 # Step 1: Conda 环境
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 1/6: Conda 环境"
+log_step "Step 1/8: Conda 环境"
 
 if ! command_exists conda; then
     log_error "未检测到 Conda"
@@ -99,13 +100,13 @@ log_success "已激活: $(python --version) @ $(which python)"
 # ══════════════════════════════════════════════════════════════════════
 # Step 2: 安装 CktClaw（pip install -e .）
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 2/6: 安装 CktClaw"
+log_step "Step 2/8: 安装 CktClaw"
 
 cd "${PROJECT_ROOT}"
 pip install --upgrade pip -q
 
-log_info "安装 CktClaw + 核心依赖..."
-pip install -e . -q
+log_info "安装 CktClaw + 核心依赖（含 memory / web）..."
+pip install -e ".[memory,web]" -q
 
 # 统一安装 PyTorch/CUDA 栈（避免 NCCL/ABI 冲突）
 log_info "清理可能冲突的 PyTorch/CUDA/PyG 包..."
@@ -135,7 +136,7 @@ log_success "cktclaw 命令已注册: $(which cktclaw)"
 # ══════════════════════════════════════════════════════════════════════
 # Step 3: EDA 工具
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 3/6: EDA 工具"
+log_step "Step 3/8: EDA 工具"
 
 mkdir -p "${DEPS_DIR}"
 OSS_DIR="${DEPS_DIR}/oss-cad-suite"
@@ -265,7 +266,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════
 # Step 4: digital-chip-design-agents（14 域 Orchestrator 模板）
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 4/6: Chip Design Agents"
+log_step "Step 4/8: Chip Design Agents"
 
 AGENTS_DIR="${DEPS_DIR}/digital-chip-design-agents"
 if [ -d "${AGENTS_DIR}/plugins" ]; then
@@ -279,7 +280,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════
 # Step 5: AI4EDA-OpenABC-Data-Toolkit
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 5/6: AI4EDA Toolkit"
+log_step "Step 5/8: AI4EDA Toolkit"
 
 AI4EDA_DIR="${DEPS_DIR}/AI4EDA-OpenABC-Data-Toolkit"
 if [ -d "${AI4EDA_DIR}" ]; then
@@ -299,9 +300,32 @@ find "${AI4EDA_DIR}" -maxdepth 2 \( -name "ai4eda-toolkit" -o -name "*.sh" \) \
 log_success "AI4EDA Toolkit 就绪: ${AI4EDA_DIR}/ai4eda-toolkit"
 
 # ══════════════════════════════════════════════════════════════════════
-# Step 6: 生成 .env + activate.sh
+# Step 6: verilog-generator + FPGA-Agent-skills
 # ══════════════════════════════════════════════════════════════════════
-log_step "Step 6/6: 环境配置"
+log_step "Step 6/8: Verilog Generator + FPGA Agent Skills"
+
+VERILOG_GEN_DIR="${DEPS_DIR}/verilog-generator"
+if [ -f "${VERILOG_GEN_DIR}/SKILL.md" ]; then
+    log_success "verilog-generator 已存在"
+else
+    log_info "克隆 verilog-generator..."
+    git clone --depth 1 https://github.com/Eriemon/verilog-generator.git "${VERILOG_GEN_DIR}"
+    log_success "verilog-generator 就绪"
+fi
+
+FPGA_SKILLS_DIR="${DEPS_DIR}/FPGA-Agent-skills"
+if [ -f "${FPGA_SKILLS_DIR}/vivado-tcl/SKILL.md" ]; then
+    log_success "FPGA-Agent-skills 已存在"
+else
+    log_info "克隆 FPGA-Agent-skills..."
+    git clone --depth 1 https://github.com/adeleempurpled290/FPGA-Agent-skills.git "${FPGA_SKILLS_DIR}"
+    log_success "FPGA-Agent-skills 就绪"
+fi
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 7: 生成 .env + activate.sh
+# ══════════════════════════════════════════════════════════════════════
+log_step "Step 7/8: 环境配置"
 
 cd "${PROJECT_ROOT}"
 
@@ -334,6 +358,10 @@ export CHIP_AGENTS_ROOT="${AGENTS_DIR}/plugins"
 export AI4EDA_BIN="${AI4EDA_DIR}/ai4eda-toolkit"
 export CKTCLAW_AI4EDA_PATH="${AI4EDA_DIR}"
 
+# Verilog Generator + FPGA Agent Skills
+export VERILOG_GENERATOR_ROOT="${VERILOG_GEN_DIR}"
+export FPGA_AGENT_SKILLS_ROOT="${FPGA_SKILLS_DIR}"
+
 # ABC 可执行文件（优先使用 oss-cad-suite 附带的 yosys-abc）
 export ABC_PATH="${ABC_BIN}"
 
@@ -349,6 +377,11 @@ export CKTCLAW_LOGICRT_ROOT="${LOGICRT_ROOT}"
 
 # DeepSeek API（请替换为你的 key）
 # export DEEPSEEK_API_KEY="sk-xxx"
+
+# Semantic Memory — Jina 云 embedding（推荐，有 key 时 auto 模式优先使用）
+# export JINA_API_KEY="jina_xxx"
+# export CKTCLAW_EMBEDDING_BACKEND="auto"   # auto | jina | bge | minilm
+# export CKTCLAW_EMBEDDING_MODEL=""         # 可选：jina-embeddings-v3 / BAAI/bge-small-zh-v1.5
 ENVEOF
 
 log_success "已生成: .env"
@@ -369,7 +402,7 @@ log_success "已生成: activate.sh"
 # 验证
 # ══════════════════════════════════════════════════════════════════════
 echo ""
-log_step "验证安装"
+log_step "Step 8/8: 验证安装"
 
 source "${PROJECT_ROOT}/.env"
 
@@ -383,6 +416,14 @@ if command_exists cktclaw; then
     log_success "cktclaw 命令可用: $(which cktclaw)"
 else
     log_warning "cktclaw 命令未找到（尝试 pip install -e . 后重试）"
+fi
+
+# Semantic memory (sentence-transformers / BGE)
+if python -c "import sentence_transformers" 2>/dev/null; then
+    log_success "sentence-transformers (BGE semantic memory)"
+else
+    log_warning "sentence-transformers 未安装 — 语义记忆不可用"
+    log_info "  修复: pip install sentence-transformers"
 fi
 
 # EDA 工具

@@ -38,6 +38,38 @@ def _flush_stdin_typeahead() -> None:
     except (ImportError, AttributeError, OSError, ValueError):
         pass
 
+
+def _run_coro_sync(coro) -> None:
+    """Run a coroutine synchronously from any context.
+
+    - No running loop: uses ``asyncio.run()``.
+    - Running loop: runs the coroutine in a fresh loop on a background thread.
+
+    Intended for one-time synchronous setup (e.g. ``__post_init__``). Exceptions
+    from the coroutine propagate to the caller.
+    """
+    import asyncio
+    import concurrent.futures
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is None:
+        asyncio.run(coro)
+    else:
+        def _in_thread():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            ex.submit(_in_thread).result(timeout=10)
+
 # ━━━━━━━━━━ Silence noisy third-party output BEFORE any library import ━━━━━━━━━━
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -65,24 +97,44 @@ if "CUDA_VISIBLE_DEVICES" not in os.environ:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(_iso).strip()
 
 # Configure external EDA tool paths early (before handlers import)
-_DEFAULT_ABC = "/home/wjx/abc/abc"
-_DEFAULT_OPENSTA = "/home/wjx/OpenSTA/build/sta"
+import shutil as _shutil
+_DEFAULT_ABC = _shutil.which("abc") or ""
+_DEFAULT_OPENSTA = _shutil.which("sta") or ""
 
-if "ABC_PATH" not in os.environ:
+if "ABC_PATH" not in os.environ and _DEFAULT_ABC:
+    os.environ["ABC_PATH"] = _DEFAULT_ABC
+
+if "OPENSTA_PATH" not in os.environ and _DEFAULT_OPENSTA:
+    os.environ["OPENSTA_PATH"] = _DEFAULT_OPENSTA
+
+
+def _load_project_env() -> None:
+    """Load ``cktclaw/.env`` into os.environ (never overrides existing vars).
+
+    Lets ``cktclaw`` work in fresh terminals without ``source activate.sh``.
+    """
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.is_file():
+        return
     try:
-        from os import path, access, X_OK
-        if path.exists(_DEFAULT_ABC) and access(_DEFAULT_ABC, X_OK):
-            os.environ["ABC_PATH"] = _DEFAULT_ABC
-    except Exception:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
         pass
 
-if "OPENSTA_PATH" not in os.environ:
-    try:
-        from os import path, access, X_OK
-        if path.exists(_DEFAULT_OPENSTA) and access(_DEFAULT_OPENSTA, X_OK):
-            os.environ["OPENSTA_PATH"] = _DEFAULT_OPENSTA
-    except Exception:
-        pass
+
+_load_project_env()
 
 from rich.console import Console
 from rich.panel import Panel
@@ -200,19 +252,8 @@ class CLIState:
         # Bootstrap: Global state management
         if self.harness_state_manager is None:
             self.harness_state_manager = get_state_manager()
-            # Set working directory
-            import asyncio
-            try:
-                asyncio.run(self.harness_state_manager.set_cwd(os.getcwd()))
-            except RuntimeError:
-                # Already in async context
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        self.harness_state_manager.set_cwd(os.getcwd())
-                    )
-                    future.result()
+            # Set working directory (handles both no-loop and running-loop cases)
+            _run_coro_sync(self.harness_state_manager.set_cwd(os.getcwd()))
 
         # Tasks: Task lifecycle management
         if self.harness_task_manager is None:
@@ -318,9 +359,13 @@ class CLIState:
                 "/pareto-negotiate": "⚖️ Pareto 多智能体协商，博弈驱动 PPA（workflows/pareto_negotiation）",
                 "/pareto": "⚖️ 同 /pareto-negotiate（别名）",
                 "/chip-design-skills": "🔷 芯片设计子终端（提示符 [chip-design-skills]；.. 回主界面）",
+                "/loop": "🔄 跨域闭环系统 (EDA + Chip + AI Infra)",
+                "/chip-system": "🔗 七 Agent 全栈流水线 (PM→Arch→EDA→Deploy→Opt)",
                 "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
-                "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek)",
+                "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek / Claude / OpenAI)",
+                "/plugin": "🔌 管理插件 (list/install/remove)",
+                "/tools": "🛠️ 列出已注册的工具",
                 "/clear": "🧹 清屏并开启新的对话 Session",
                 "/help": "📖 查看详细帮助文档",
                 "/exit": "👋 退出 CktClaw 控制台",
@@ -388,6 +433,9 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "opensta": "opensta",  # EDA tool: OpenSTA
             "ai4eda": "ai4eda",  # CktClaw Toolkit
             "cktclaw": "ai4eda",
+            "plugin": "plugin",
+            "plugins": "plugin",
+            "tools": "tools",
             "rltf": "rltf",
             "rltf-opt": "rltf",
             "rl-synth": "rltf",
@@ -395,6 +443,9 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "pareto": "pareto-negotiate",
             "negotiate": "pareto-negotiate",
             "multi-agent": "pareto-negotiate",
+            "loop": "system-loop",
+            "system-loop": "system-loop",
+            "closed-loop": "system-loop",
             # Chip design domain skills（仅全称 /chip-*）
             "chip-architecture": "chip-architecture",
             "chip-rtl": "chip-rtl",
@@ -410,7 +461,31 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "chip-firmware": "chip-firmware",
             "chip-fpga": "chip-fpga",
             "chip-infrastructure": "chip-infrastructure",
+            "chip-pipeline": "chip-pipeline",
             "chip-design-skills": "chip-design-skills",
+            # FPGA-Agent-skills (PROMPT)
+            "vivado-tcl": "vivado-tcl",
+            "vivado-synth": "vivado-synth",
+            "vivado-synthesis": "vivado-synth",
+            "vivado-sim": "vivado-sim",
+            "vivado-xsim": "vivado-sim",
+            "vivado-impl": "vivado-impl",
+            "vivado-implementation": "vivado-impl",
+            "vivado-analysis": "vivado-analysis",
+            "vivado-constraints": "vivado-constraints",
+            "vivado-xdc": "vivado-constraints",
+            "vivado-debug": "vivado-debug",
+            "vitis-hls-synthesis": "vitis-hls-synthesis",
+            "vitis-hls": "vitis-hls-synthesis",
+            # External search-path skills (verilog-generator)
+            "erie-verilog-generator": "erie-verilog-generator",
+            "erie-verilog": "erie-verilog-generator",
+            "verilog-gen": "erie-verilog-generator",
+            "verilog-generator": "erie-verilog-generator",
+            "verilog-lint": "verilog-lint",
+            "erie-lint": "verilog-lint",
+            "verilog-tb-gen": "verilog-tb-gen",
+            "tb-generator": "verilog-tb-gen",
             "about": "about",
             "clear": "clear",
             "session": "session",
@@ -454,10 +529,16 @@ class LogicRTCLI:
                 register_ai4eda_skill,
                 register_session_memory_skill,
                 register_chip_design_skills,
+                register_rtl_claw_skills,
+                register_fpga_agent_skills,
+                register_verilog_generator_skill,
+                register_external_skills,
             )
             # Register innovation skills
             from .skills.rltf_skill import register_rltf_skill
             from .skills.pareto_negotiation_skill import register_pareto_negotiation_skill
+            from .skills.system_loop_skill import register_system_loop_skill
+            from .skills.chip_system_skill import register_chip_system_skill
 
             import asyncio
             try:
@@ -470,6 +551,12 @@ class LogicRTCLI:
                 asyncio.run(register_rltf_skill())
                 asyncio.run(register_pareto_negotiation_skill())
                 asyncio.run(register_chip_design_skills())
+                asyncio.run(register_system_loop_skill())
+                asyncio.run(register_chip_system_skill())
+                asyncio.run(register_rtl_claw_skills())
+                asyncio.run(register_fpga_agent_skills())
+                asyncio.run(register_verilog_generator_skill())
+                asyncio.run(register_external_skills(verbose=config.VERBOSE))
             except RuntimeError:
                 # Already in async context
                 import concurrent.futures
@@ -483,6 +570,14 @@ class LogicRTCLI:
                     future7 = executor.submit(asyncio.run, register_rltf_skill())
                     future8 = executor.submit(asyncio.run, register_pareto_negotiation_skill())
                     future9 = executor.submit(asyncio.run, register_chip_design_skills())
+                    future10 = executor.submit(asyncio.run, register_system_loop_skill())
+                    future10b = executor.submit(asyncio.run, register_chip_system_skill())
+                    future11 = executor.submit(asyncio.run, register_rtl_claw_skills())
+                    future12 = executor.submit(asyncio.run, register_fpga_agent_skills())
+                    future13 = executor.submit(asyncio.run, register_verilog_generator_skill())
+                    future14 = executor.submit(
+                        asyncio.run, register_external_skills(config.VERBOSE)
+                    )
                     future1.result()
                     future2.result()
                     future3.result()
@@ -492,6 +587,11 @@ class LogicRTCLI:
                     future7.result()
                     future8.result()
                     future9.result()
+                    future10.result()
+                    future11.result()
+                    future12.result()
+                    future13.result()
+                    future14.result()
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
@@ -526,6 +626,52 @@ class LogicRTCLI:
                 )
         except Exception as e:
             console.print(f"[dim]⚠️ Tool detection: {e}[/dim]")
+
+        # ━━━━━━━━━━ Initialize v2 Architecture (Plugin + ToolRegistry + LLM Router) ━━━━━━━━━━
+        try:
+            from .plugins import get_plugin_manager
+            from .tools import get_tool_registry
+            from .tools.eda.yosys_tool import YosysTool
+            from .tools.eda.opensta_tool import OpenSTATool
+            from .tools.eda.abc_tool import ABCTool
+            from .tools.eda.openroad_tool import OpenROADTool
+            from .tools.system.bash_tool import BashTool
+            from .llm import get_model_router
+
+            # Initialize Tool Registry with built-in tools
+            _registry = get_tool_registry()
+            _registry.register(YosysTool(), source="builtin")
+            _registry.register(OpenSTATool(), source="builtin")
+            _registry.register(ABCTool(), source="builtin")
+            _registry.register(OpenROADTool(), source="builtin")
+            _registry.register(BashTool(), source="builtin")
+
+            try:
+                from .tools.agent.register_coordinator import register_coordinator_tools
+                register_coordinator_tools(_registry)
+            except Exception:
+                pass
+
+            # Initialize LLM Model Router
+            _router = get_model_router()
+            _router.initialize()
+
+            # Discover and load plugins
+            _plugin_mgr = get_plugin_manager()
+            _plugins = _plugin_mgr.discover_and_load_all()
+
+            if config.VERBOSE:
+                _n_tools = len(_registry.list_names())
+                _n_plugins = len(_plugins)
+                _n_providers = len(_router.available_providers)
+                console.print(
+                    f"[dim]🔌 v2 arch: {_n_tools} tools, "
+                    f"{_n_plugins} plugins, "
+                    f"{_n_providers} LLM providers ({', '.join(_router.available_providers)})[/dim]"
+                )
+        except Exception as e:
+            if config.VERBOSE:
+                console.print(f"[dim]⚠️ v2 arch init: {e}[/dim]")
 
         # ━━━━━━━━━━ Load Project Behavior (.cktclaw/) ━━━━━━━━━━
         try:
@@ -650,6 +796,12 @@ class LogicRTCLI:
         Args:
             user_input: Raw user input string
         """
+        # Built-in health command handled before the normal parser.
+        if user_input.strip() in ("/doctor", "doctor"):
+            from .handlers.doctor_handler import run_doctor, render_doctor
+            render_doctor(run_doctor(), self.state.console)
+            return
+
         cmd_type, args = parse_input(user_input)
 
         console = self.state.console
@@ -663,24 +815,10 @@ class LogicRTCLI:
             self._run_async_handler(process_reverse(args, self.state))
 
         elif cmd_type == "chat":
-            # Auto-routing to chip-* orchestrators is intentionally disabled for now.
-            # Keep the original logic below for easy rollback.
-            #
-            # from .handlers.intent_router import detect_chip_design_intent
-            # routed_skill = detect_chip_design_intent(user_input)
-            # if routed_skill:
-            #     console.print(
-            #         f"[dim]→ Auto-routed to [bold]{routed_skill}[/bold][/dim]"
-            #     )
-            #     from .handlers.chip_design_handler import handle_chip_design
-            #     self._run_async_handler(
-            #         handle_chip_design(routed_skill, user_input, self.state)
-            #     )
-            # else:
-            #     from .handlers.chat_handler_v2 import process_chat_v2
-            #     self._run_async_handler(process_chat_v2(user_input, self.state))
-            from .handlers.chat_handler_v2 import process_chat_v2
-            self._run_async_handler(process_chat_v2(user_input, self.state))
+            # Use V3 streaming handler when cloud providers are configured,
+            # fall back to V2 for local models
+            from .handlers.chat_handler_v3 import process_chat_v3
+            self._run_async_handler(process_chat_v3(user_input, self.state), kind="chat")
 
         elif cmd_type == "model":
             from .handlers.model_handler import select_model_interactive
@@ -715,13 +853,33 @@ class LogicRTCLI:
                 process_workflow_skill("pareto-negotiate", args, self.state)
             )
 
+        elif cmd_type == "system-loop":
+            from .handlers.workflow_skill_handler import process_workflow_skill
+            self._run_async_handler(
+                process_workflow_skill("system-loop", args, self.state), kind="loop"
+            )
+
+        elif cmd_type in (
+            "vivado-tcl", "vivado-synth", "vivado-sim", "vivado-impl",
+            "vivado-analysis", "vivado-constraints", "vivado-debug",
+            "vitis-hls-synthesis", "erie-verilog-generator",
+            "verilog-lint", "verilog-tb-gen",
+        ):
+            from .handlers.workflow_skill_handler import process_workflow_skill
+            self._run_async_handler(
+                process_workflow_skill(cmd_type, args, self.state)
+            )
+
         elif cmd_type in (
             "chip-architecture", "chip-rtl", "chip-verification", "chip-formal",
             "chip-synthesis", "chip-dft", "chip-sta", "chip-hls", "chip-pd",
-            "chip-soc", "chip-compiler", "chip-firmware", "chip-fpga", "chip-infrastructure",
+            "chip-soc", "chip-compiler", "chip-firmware", "chip-fpga",
+            "chip-infrastructure", "chip-pipeline",
         ):
             from .handlers.chip_design_handler import handle_chip_design
-            self._run_async_handler(handle_chip_design(cmd_type, args, self.state))
+            self._run_async_handler(
+                handle_chip_design(cmd_type, args, self.state), kind="orchestrator"
+            )
 
         elif cmd_type == "chip-design-skills":
             from .handlers.chip_design_handler import handle_chip_design_skills
@@ -747,6 +905,14 @@ class LogicRTCLI:
             from .handlers.help_handler import show_about
             show_about(self.state)
 
+        elif cmd_type == "plugin":
+            from .handlers.plugin_handler import handle_plugin_command
+            handle_plugin_command(args, self.state)
+
+        elif cmd_type == "tools":
+            from .handlers.tools_handler import handle_tools_command
+            handle_tools_command(args, self.state)
+
         elif cmd_type == "quit":
             self.shutdown()
 
@@ -757,12 +923,26 @@ class LogicRTCLI:
                 error_type="error",
             )
 
-    def _run_async_handler(self, coro):
+    def _run_async_handler(self, coro, kind: str = "run"):
         """
         Run async handler in event loop, handling both cases:
         - No running loop: use asyncio.run()
         - Running loop (from prompt_toolkit): use new event loop in thread
+
+        The coroutine is wrapped so it executes inside an active RunContext
+        (a fresh run_id + run directory), enabling audit, budget, and
+        checkpoint services to locate the current run.
         """
+        async def _with_run():
+            from .runtime.run_context import new_run, get_current_run
+            if get_current_run() is not None:
+                return await coro
+            run = new_run(kind=kind)
+            with run.activate():
+                return await coro
+
+        wrapped = _with_run()
+
         try:
             # Try to get running loop
             loop = asyncio.get_running_loop()
@@ -770,7 +950,7 @@ class LogicRTCLI:
             # We need to run in a new thread to avoid nesting issues
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, coro)
+                future = executor.submit(asyncio.run, wrapped)
                 try:
                     # Set timeout to allow quick exit on Ctrl+C
                     future.result(timeout=300)  # 5 minutes max
@@ -793,7 +973,7 @@ class LogicRTCLI:
         except RuntimeError:
             # No running loop, safe to use asyncio.run()
             try:
-                asyncio.run(coro)
+                asyncio.run(wrapped)
             except KeyboardInterrupt:
                 os._exit(130)
 
@@ -817,10 +997,36 @@ class LogicRTCLI:
 # ━━━━━━━━━━ Entry Point ━━━━━━━━━━
 def main():
     """
-    Main entry point for LogicRT CLI.
+    Main entry point for CktClaw CLI.
     Called by setup.py console_scripts entry point.
     """
+    import argparse
+    parser = argparse.ArgumentParser(description="CktClaw - EDA Agent CLI")
+    parser.add_argument("--web", action="store_true", help="Start web dashboard (port 8741)")
+    parser.add_argument("--web-port", type=int, default=8741, help="Web dashboard port")
+    parser.add_argument("--doctor", action="store_true",
+                        help="Run environment health checks and exit (0 ok, 1 on failure)")
+    # Accept the `cktclaw doctor` subcommand form too.
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        sys.argv = [sys.argv[0], "--doctor", *sys.argv[2:]]
+    args, _unknown = parser.parse_known_args()
+
+    if args.doctor:
+        from .handlers.doctor_handler import run_doctor, render_doctor
+        report = run_doctor()
+        render_doctor(report)
+        sys.exit(report.exit_code())
+
     try:
+        # Start web dashboard if requested
+        if args.web:
+            try:
+                from .web import start_web_server
+                start_web_server(port=args.web_port)
+                print(f"[Web dashboard] http://localhost:{args.web_port}")
+            except ImportError as e:
+                print(f"[Warning] Web dashboard requires: pip install 'cktclaw[web]' ({e})")
+
         cli = LogicRTCLI()
         cli.startup()
         cli.repl_loop()
