@@ -6,15 +6,15 @@
   - `Sta`
   - `Sta`
   - `yosys`
-  - `sta`
   - `Sta`
   - `Sta`
   - `yosys`
+  - `Sta`
   - `sta`
-- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
-- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=21 open
+- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
+- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=24 open
 - 结论: PASS
-- 备注: provider=deepseek; session=e2e_p5_52a180a4; elapsed=187.4s
+- 备注: provider=deepseek; session=e2e_p5_681b74f2; elapsed=46.0s
 
 <details>
 <summary>Raw output</summary>
@@ -31,111 +31,111 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: tb_architecture (1/8) ━━━
-  tools: analog-design-meta
+  tools: analog-design-meta, analog-design-architecture×2
 ╭─────────────────────────────────────────────── tb_architecture → WARN ───────────────────────────────────────────────╮
 │ **Status**: WARN                                                                                                     │
 │ **QoR**:                                                                                                             │
-│   - domain_mismatch: True                                                                                            │
-│   - request_type: analog_ota_design                                                                                  │
-│   - current_pipeline: uvm_functional_verification                                                                    │
+│   - ota_dc_gain_db: 64                                                                                               │
+│   - ota_ugb_mhz: 20                                                                                                  │
+│   - ota_phase_margin_deg: 65                                                                                         │
+│   - load_cap_pf: 2                                                                                                   │
 │   - yosys_error: 1                                                                                                   │
 │ **Issues**:                                                                                                          │
-│   - [WARN] User requested analog CMOS OTA design (two-stage OTA, gain>60dB, UGB>20MHz, PM>60deg, load=2pF) but       │
-│ current pipeline is UVM digital functional verification. Cannot execute analog design in this pipeline.              │
+│   - [WARN] User request is for analog OTA design, not digital UVM verification. Analog design analysis provided via  │
+│ analog-design-architecture tool. No RTL DUT exists for UVM testbench architecture.                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: test_planning (2/8) ━━━
-  tools: analog-design-meta, analog-design-infrastructure×3, bash, analog-design-architecture
-╭──────────────────────────────────────────────── test_planning → WARN ────────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - domain_mismatch: True                                                                                            │
-│   - request_type: analog_ota_design                                                                                  │
-│   - current_pipeline: uvm_functional_verification                                                                    │
-│   - recommended_pipeline: analog_design                                                                              │
-│   - yosys_error: 1                                                                                                   │
-│ **Issues**:                                                                                                          │
-│   - [ERROR] Domain mismatch: UVM functional verification pipeline cannot service analog OTA design request. The user │
-│ requested a two-stage CMOS OTA design (analog circuit) but the active pipeline is digital UVM verification.          │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-━━━ Stage: uvm_tb_build (3/8) ━━━
-  tools: analog-design-meta×5, analog-design-infrastructure×2, bash, erie-verilog-generator, analog-design-architecture
-╭───────────────────────────────────────── uvm_tb_build → PASS | FAIL | WARN ──────────────────────────────────────────╮
+  tools: erie-verilog-generator, bash×2, Read, Write, analog-design-architecture, analog-design-infrastructure, 
+analog-design-modeling, analog-design-circuit, analog-design-simulation
+╭───────────────────────────────────────── test_planning → PASS | FAIL | WARN ─────────────────────────────────────────╮
 │ **Status**: PASS | FAIL | WARN                                                                                       │
 │ **QoR**:                                                                                                             │
 │   - yosys_error: 1                                                                                                   │
 │ **Issues**:                                                                                                          │
 │   - [ERROR|WARN] ...                                                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-↩ Loop back to uvm_tb_build: uvm_tb_build FAIL (build errors) (attempt 1)
-
-━━━ Stage: uvm_tb_build (3/8) ━━━
-  tools: analog-design-meta, analog-design-infrastructure, analog-design-architecture
-╭──────────────────────────────────────────────── uvm_tb_build → FAIL ─────────────────────────────────────────────────╮
-│ **Status**: FAIL                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - domain_mismatch: True                                                                                            │
-│   - request_type: analog_ota_design                                                                                  │
-│   - current_pipeline: uvm_functional_verification                                                                    │
-│   - recommended_pipeline: analog_design_meta_pipeline                                                                │
-│   - yosys_error: 1                                                                                                   │
-│ **Issues**:                                                                                                          │
-│   - [ERROR] Domain mismatch: UVM functional verification pipeline cannot execute analog OTA design. The user         │
-│ requested a two-stage CMOS OTA (gain >60dB, UGB >20MHz, PM >60°, load 2pF) which requires the analog design pipeline │
-│ (architecture → circuit → simulation → layout → post-layout).                                                        │
+╭───────────────────────────────────────────────────── Escalation ─────────────────────────────────────────────────────╮
+│ Escalation at test_planning.                                                                                         │
+│ Reason: Stage 'test_planning' failed with no matching loop-back rule                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-↩ Loop back to uvm_tb_build: uvm_tb_build FAIL (build errors) (attempt 2)
-
-━━━ Stage: uvm_tb_build (3/8) ━━━
-  tools: analog-design-meta, analog-design-architecture, analog-design-circuit, analog-design-simulation, 
-analog-design-layout
-╭──────────────────────────────────────────────── uvm_tb_build → FAIL ─────────────────────────────────────────────────╮
-│ **Status**: FAIL                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - domain_mismatch: True                                                                                            │
-│   - yosys_error: 1                                                                                                   │
-│   - max_loopback_exhausted: True                                                                                     │
-│ **Issues**:                                                                                                          │
-│   - [WARN] Domain mismatch: UVM verification pipeline cannot process analog OTA design request                       │
-│   - [WARN] Max loop-back (3) exhausted without resolution                                                            │
-│   - [WARN] 21 open fix_requests from unrelated failed digital stages                                                 │
+╭──────────────────────────────────────────────── Orchestrator Summary ────────────────────────────────────────────────╮
+│ verification-orchestrator — 1/8 stages passed                                                                        │
+│ Final state: test_planning                                                                                           │
+│ Finished: False                                                                                                      │
+│                                                                                                                      │
+│ No deliverable files found on disk.                                                                                  │
+│                                                                                                                      │
+│ Warnings:                                                                                                            │
+│   ⚠ 阶段 `tb_architecture` 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-↩ Loop back to uvm_tb_build: uvm_tb_build FAIL (build errors) (attempt 3)
+Orchestrator 完成 — verification-orchestrator                                                                           
 
-━━━ Stage: uvm_tb_build (3/8) ━━━
-  tools: analog-design-meta, analog-design-architecture, analog-design-circuit, analog-design-simulation
-⚠ uvm_tb_build: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭──────────────────────────────────────────────── uvm_tb_build → WARN ─────────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - domain_mismatch_resolved: True                                                                                   │
-│   - analog_design_complete: True                                                                                     │
-│   - dc_gain_db: 70                                                                                                   │
-│   - ugb_mhz: 20                                                                                                      │
-│   - phase_margin_deg: 68                                                                                             │
-│   - power_uw: 540                                                                                                    │
-│   - pvt_corners: 7                                                                                                   │
-│   - monte_carlo_samples: 200                                                                                         │
-│   - yosys_error: 1                                                                                                   │
-│ **Issues**:                                                                                                          │
-│   - [WARN] Request is analog OTA design, not UVM functional verification. All 3 prior uvm_tb_build attempts failed   │
-│ due to this mismatch. Analog design deliverable completed via analog-design-* tools.                                 │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+结果： 1/8 个阶段通过（finished=False，当前 test_planning）。                                                           
 
-━━━ Stage: directed_tests (4/8) ━━━
-  tools: analog-design-meta×3, analog-design-infrastructure×6, bash
-╭──────────────────────────────────────── directed_tests → PASS | FAIL | WARN ─────────────────────────────────────────╮
-│ **Status**: PASS | FAIL | WARN                                                                                       │
-│ **QoR**:                                                                                                             │
-│   - tools_detected: 0                                                                                                │
-│   - tools_missing: 0                                                                                                 │
-│   - module_system_detected: False                                                                                    │
-│   - tools_found_via_modules: 0                                                                                       │
-│   - wrappers_deployed: 0                                                                                             │
-│   - mcp_servers_configured: 0                                                                                        │
-│   - yosys_error: 1                                                                                                   │
-│ **Issues**:                                                                                                          │
-│   - [ERROR|WARN] ...                                                   
+各阶段：                                                                                                                
+
+ • tb_architecture — passed（尝试 1 次）                                                                                
+ • test_planning — failed（尝试 1 次）                                                                                  
+ • uvm_tb_build — pending（尝试 0 次）                                                                                  
+ • directed_tests — pending（尝试 0 次）                                                                                
+ • constrained_random — pending（尝试 0 次）                                                                            
+ • coverage_analysis — pending（尝试 0 次）                                                                             
+ • formal_assist — pending（尝试 0 次）                                                                                 
+ • regression_signoff — pending（尝试 0 次）                                                                            
+
+产物文件：                                                                                                              
+
+ • 未在任务目录或 run workspace 中发现 .sv / .v / filelist.f 等产物。                                                   
+ • 可能仅完成了规划与指标自报，LLM 未实际 Write 文件到磁盘；请检查 Chat 日志中的工具调用。                              
+
+⚠️ 注意事项：                                                                                                           
+
+ • 阶段 tb_architecture 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                        
+
+说明： QoR 指标来自各 stage 的 LLM 自报与 Yosys/Verilator 等工具 log 解析， 不等同于 sign-off                           
+审计结论；请以产物文件与报告为准。                                                                                      
+
+技术详情 (JSON)                                                                                                         
+
+                                                                                                                        
+ {                                                                                                                      
+   "current_stage": "test_planning",                                                                                    
+   "current_idx": 1,                                                                                                    
+   "finished": false,                                                                                                   
+   "stage_order": [                                                                                                     
+     "tb_architecture",                                                                                                 
+     "test_planning",                                                                                                   
+     "uvm_tb_build",                                                                                                    
+     "directed_tests",                                                                                                  
+     "constrained_random",                                                                                              
+     "coverage_analysis",                                                                                               
+     "formal_assist",                                                                                                   
+     "regression_signoff"                                                                                               
+   ],                                                                                                                   
+   "stages": {                                                                                                          
+     "tb_architecture": {                                                                                               
+       "status": "passed",                                                                                              
+       "attempts": 1,                                                                                                   
+       "qor": {                                                                                                         
+         "ota_dc_gain_db": 64,                                                                                          
+         "ota_ugb_mhz": 20,                                                                                             
+         "ota_phase_margin_deg": 65,                                                                                    
+         "load_cap_pf": 2,                                                                                              
+         "yosys_error": 1                                                                                               
+       }                                                                                                                
+     },                                                                                                                 
+     "test_planning": {                                                                                                 
+       "status": "failed",                                                                                              
+       "attempts": 1,                                                                                                   
+       "qor": {                                                                                                         
+         "yosys_error": 1                                                                                               
+       }                                                                                                                
+     },                                                                                                                 
+     "uvm_tb_build": {                                                                                                  
+       "status": "pending",                                                                                             
+       "attempts": 0,                                                                                                   
+       "qor": {}                                                                                                        
+     },                  
 ```
 </details>

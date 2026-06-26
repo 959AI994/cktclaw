@@ -307,6 +307,8 @@ Each stage is LLM-driven. On failure, the orchestrator auto-loops back per confi
 
 CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-loop capabilities. The current full-chip architecture has four cooperating planes: user-facing orchestration, the multi-agent roster, skill/workflow bridges, and executable EDA toolchains.
 
+<img src="figure/cktclaw_overview.png" alt="CktClaw full-chip agent architecture overview" width="100%" />
+
 ```mermaid
 flowchart TB
   user["User: CLI / Web / Slash Commands / Natural Language"]
