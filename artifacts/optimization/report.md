@@ -5,294 +5,280 @@ No critical bottlenecks detected from design_state QoR.
 ---
 
 ## Agent Analysis
-# OptimizerAgent — 性能优化报告
+# OptimizerAgent — Performance Optimization Report
 
-## 项目：Streaming Packet Checksum Accelerator
-**目标吞吐率：** 1 byte/cycle  
-**工作目录：** `./runs/checksum_accel`  
-**报告生成时间：** 2024-01-15
+## Project: /chip-system — Streaming Packet Checksum Accelerator
+## Target: 1 byte/cycle throughput | Workdir: ./runs/checksum_accel
 
 ---
 
-## 1. 当前性能基线
+## 1. Current Performance Baseline
 
-### 1.1 综合后时序分析
-| 指标 | 当前值 | 目标值 | 差距 |
-|------|--------|--------|------|
-| WNS (ns) | -0.35 | ≥0.0 | **-0.35 ns 违规** |
-| 面积 (LUT) | 超标 (area_concern=True) | 预算内 | **需优化** |
-| Yosys 错误 | 1 | 0 | **需修复** |
-| 优化候选 | 14 | - | 待处理 |
+### 1.1 Timing Analysis
+| Metric | Value | Status |
+|--------|-------|--------|
+| WNS (setup) | -0.35 ns | ❌ Violation |
+| Yosys synthesis errors | 1 | ❌ Critical |
+| Area concern | True | ⚠️ Warning |
+| Optimization candidates | 14 identified | Need action |
 
-### 1.2 运行时性能
-- 当前吞吐率：**0.85 bytes/cycle**（未达目标 1.0）
-- 主要瓶颈：**流水线气泡** 和 **校验和计算延迟**
+### 1.2 Pipeline Stage Status
+| Stage | Status | Issue |
+|-------|--------|-------|
+| chip-rtl | ❌ Failed (fr-1, fr-3) | Synthesis/elaboration error |
+| chip-pd | ❌ Failed (fr-2) | Place & route failure |
+| chip-sta | ⚠️ Completed | WNS violation detected |
+| HLS signoff | ✅ Complete | But with warnings |
+| RTL signoff | ⚠️ Complete | Timing violation + area concern |
 
-### 1.3 已知问题
-- **3 个 EDA fix_request** 未关闭（chip-rtl 失败 ×2, chip-pd 失败 ×1）
-- **DUT bug** 在 directed_tests 中发现
-- **Yosys 错误** 在多个阶段出现
-
----
-
-## 2. 瓶颈分析
-
-### 2.1 时序瓶颈（优先级：高）
-```
-关键路径分析：
-  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-  │ 数据输入    │ →   │ 校验和计算  │ →   │ 结果输出    │
-  │ (1 cycle)   │     │ (3 cycles)  │     │ (1 cycle)   │
-  └─────────────┘     └─────────────┘     └─────────────┘
-                       ↑ 瓶颈：组合逻辑深度过大
-```
-
-**根因：**
-- 校验和计算路径组合逻辑过深（3 cycle 延迟）
-- 导致 WNS -0.35ns 违规
-- 流水线无法达到 1 cycle/byte 吞吐
-
-### 2.2 面积瓶颈（优先级：中）
-- 校验和累加器实现过于复杂
-- 数据缓冲 FIFO 深度过大
-- 冗余的握手逻辑
-
-### 2.3 功能/验证瓶颈（优先级：高）
-- Yosys 错误：可能是 RTL 语法或结构问题
-- DUT bug：验证发现的功能缺陷
-- 3 个 EDA fix_request 未关闭
+### 1.3 Throughput Assessment
+- **Target**: 1 byte/cycle (8 Gbps @ 1 GHz or equivalent)
+- **Current estimate**: Degraded due to timing closure issues
+- **Bottleneck**: Critical path in checksum datapath (likely CRC/IP checksum accumulation logic)
 
 ---
 
-## 3. 优化建议（按优先级排序）
+## 2. Bottleneck Analysis
 
-### 3.1 立即修复（P0 — 阻塞性问题）
+### 2.1 Primary Bottlenecks (Priority Order)
 
-#### [P0-1] 修复 Yosys 错误
-```yaml
-建议: 检查 RTL 语法和结构
-具体操作:
-  - 运行 `yosys -p "read_verilog -sv checksum_core.sv; synth"` 定位错误行
-  - 修复 Verilog 语法错误或不受支持的结构
-  - 验证: yosys_error = 0
-预期收益: 消除综合阻塞
-负责人: RTL Design Agent
-```
+| # | Bottleneck | Evidence | Impact |
+|---|------------|----------|--------|
+| 1 | **Synthesis error** | yosys_error=1, chip-rtl failed | Blocks all downstream stages |
+| 2 | **Timing violation** | WNS=-0.35ns, chip-sta completed | Limits max frequency, throughput |
+| 3 | **Area concern** | area_concern=True | May limit FPGA fit or increase power |
+| 4 | **14 optimization candidates** | Identified but not addressed | Missed optimization opportunities |
+| 5 | **Pipeline stage failures** | fr-1, fr-2, fr-3 open | Indicates systematic issues |
 
-#### [P0-2] 修复 DUT bug
-```yaml
-建议: 分析 directed_tests 失败原因
-具体操作:
-  - 检查校验和计算逻辑错误
-  - 验证边界条件（空包、最大长度包）
-  - 添加断言覆盖
-预期收益: 功能正确性
-负责人: Verification Agent
-```
+### 2.2 Root Cause Analysis
 
-#### [P0-3] 关闭 EDA fix_requests
-```yaml
-建议: 逐一处理 3 个未关闭请求
-具体操作:
-  - fr-1 (chip-rtl): 检查 RTL 综合失败原因
-  - fr-2 (chip-pd): 检查物理设计失败原因
-  - fr-3 (chip-rtl): 与 fr-1 可能相关
-预期收益: 恢复 EDA 流程
-负责人: EDA Agent
-```
+**Synthesis Error (yosys_error=1)**:
+- Likely cause: Unsupported SystemVerilog construct, missing module instantiation, or combinatorial loop in checksum datapath
+- Affected modules: Checksum core, packet parser, or accumulation logic
 
-### 3.2 时序优化（P1 — 关键性能）
+**Timing Violation (-0.35ns)**:
+- Critical path: Likely in the checksum accumulation tree (adder chain for IP checksum or CRC computation)
+- Contributing factors: Deep combinatorial logic without pipelining, high fan-out control signals
 
-#### [P1-1] 校验和计算流水线化
-```yaml
-建议: 将校验和计算拆分为 3 级流水线
-当前实现:
-  always_comb begin
-    checksum = data_in + checksum_prev;  // 单周期组合逻辑
-  end
-
-优化实现:
-  // 第1级：部分和计算
-  always_ff @(posedge clk) begin
-    partial_sum_1 <= data_in[7:0] + data_in[15:8];
-  end
-  // 第2级：累加
-  always_ff @(posedge clk) begin
-    partial_sum_2 <= partial_sum_1 + checksum_prev;
-  end
-  // 第3级：最终结果
-  always_ff @(posedge clk) begin
-    checksum <= partial_sum_2;
-  end
-
-预期收益:
-  - WNS 改善: +0.4 ns（达到 ≥0.0）
-  - 吞吐率: 1 byte/cycle（流水线化后）
-  - 代价: 增加 2 cycle 延迟（可接受）
-风险: 低 — 标准流水线技术
-```
-
-#### [P1-2] 优化关键路径组合逻辑
-```yaml
-建议: 使用并行前缀加法器替代串行加法
-具体操作:
-  - 替换 `checksum = data_in + checksum_prev` 为 Kogge-Stone 加法器
-  - 或使用 FPGA 专用加法器原语
-预期收益: 减少组合逻辑深度 30-40%
-风险: 中 — 面积增加 10-15%
-```
-
-### 3.3 面积优化（P2 — 资源效率）
-
-#### [P2-1] 优化数据缓冲 FIFO
-```yaml
-建议: 使用寄存器堆替代 BRAM（小深度场景）
-当前: 深度 64 的 BRAM FIFO
-优化: 深度 8 的寄存器 FIFO
-预期收益: 减少 BRAM 使用，LUT 增加可接受
-条件: 确认最大突发长度 ≤ 8
-```
-
-#### [P2-2] 精简握手逻辑
-```yaml
-建议: 移除冗余 valid/ready 信号
-具体操作:
-  - 分析数据流图，识别不需要握手的路径
-  - 使用简单使能信号替代
-预期收益: 减少 5-10% LUT 使用
-```
-
-### 3.4 架构级优化（P3 — 长期改进）
-
-#### [P3-1] 引入预取机制
-```yaml
-建议: 在数据输入前预取下一个包
-实现:
-  - 添加 2 级预取缓冲
-  - 当当前包处理时，预取下一包数据
-预期收益: 减少流水线气泡，吞吐率提升 10-15%
-风险: 低 — 标准技术
-```
-
-#### [P3-2] 动态频率调整
-```yaml
-建议: 根据负载动态调整时钟频率
-实现:
-  - 添加时钟门控
-  - 低负载时降频节能
-预期收益: 功耗降低 20-30%
-条件: 需要时钟管理单元支持
-```
+**Area Concern**:
+- Probable cause: Over-engineered datapath width (e.g., 64-bit or 128-bit processing when 8-bit/cycle is target)
+- Unoptimized state machines or redundant logic
 
 ---
 
-## 4. 优化实施计划
+## 3. Optimization Recommendations
 
-### 4.1 迭代路线图
+### 3.1 Immediate Fixes (Priority: Critical)
 
-```
-迭代 1（紧急修复）: P0 问题修复
-  ├── 修复 Yosys 错误
-  ├── 修复 DUT bug
-  └── 关闭 EDA fix_requests
-  预计时间: 2 天
+#### R1: Fix Synthesis Error
+**Action**: 
+- Run `yosys -v3` to get detailed error message
+- Check for: missing `always_comb` vs `always_ff`, incomplete case statements, width mismatches
+- Verify all module instantiations match their declarations
 
-迭代 2（时序达标）: P1 优化
-  ├── 校验和计算流水线化
-  ├── 关键路径优化
-  └── 验证 WNS ≥ 0.0
-  预计时间: 3 天
+**Expected Improvement**: Unblock chip-rtl stage, enable full synthesis flow
 
-迭代 3（面积优化）: P2 优化
-  ├── FIFO 优化
-  ├── 握手逻辑精简
-  └── 验证面积达标
-  预计时间: 2 天
+**Risk**: Low — standard debug procedure
 
-迭代 4（性能调优）: P3 优化
-  ├── 预取机制
-  └── 动态频率调整
-  预计时间: 2 天
-```
+#### R2: Pipeline Checksum Datapath
+**Action**:
+- Insert pipeline registers at 2-3 stages in the checksum accumulation logic
+- For IP checksum (16-bit one's complement): 2-stage pipeline (add → complement)
+- For CRC: 3-4 stages depending on polynomial complexity
 
-### 4.2 预期改进幅度
+**Expected Improvement**: WNS improvement of 0.3-0.5ns, enabling timing closure
 
-| 指标 | 当前 | 迭代1后 | 迭代2后 | 迭代3后 | 迭代4后 |
-|------|------|---------|---------|---------|---------|
-| WNS (ns) | -0.35 | -0.35 | **0.05** | 0.05 | 0.10 |
-| 面积 (LUT) | 超标 | 超标 | 超标 | **达标** | 达标 |
-| 吞吐率 (B/cyc) | 0.85 | 0.85 | **1.0** | 1.0 | **1.15** |
-| Yosys 错误 | 1 | **0** | 0 | 0 | 0 |
-| DUT bug | 1 | **0** | 0 | 0 | 0 |
-| Fix requests | 3 | **0** | 0 | 0 | 0 |
+**Risk**: Low — adds 2-3 cycle latency, throughput remains 1 byte/cycle
+
+### 3.2 Short-term Optimizations (Priority: High)
+
+#### R3: Reduce Datapath Width to 8-bit
+**Action**:
+- Change from wider datapath (if currently >8-bit) to 8-bit processing
+- Implement byte-serial checksum accumulation
+- Use shift register for packet data input
+
+**Expected Improvement**: 
+- Area reduction: 30-50%
+- Timing improvement: 0.2-0.4ns
+- Power reduction: 25-40%
+
+**Risk**: Medium — requires RTL modification, verify with existing testbench
+
+#### R4: Implement Retiming for Critical Path
+**Action**:
+- Use Yosys `retime -D` option to automatically retime registers
+- Alternatively, manually move register boundaries in checksum core
+
+**Expected Improvement**: WNS improvement of 0.1-0.2ns
+
+**Risk**: Low — automated tool option, verify functional equivalence
+
+#### R5: Optimize Control Logic
+**Action**:
+- Reduce fan-out of state machine control signals
+- Use one-hot encoding for FSM (if not already)
+- Implement clock gating for inactive datapath sections
+
+**Expected Improvement**: 
+- Timing: 0.05-0.1ns
+- Dynamic power: 15-20%
+
+**Risk**: Low — standard optimization techniques
+
+### 3.3 Medium-term Optimizations (Priority: Medium)
+
+#### R6: Implement Multi-cycle Paths
+**Action**:
+- Identify non-critical paths that can take >1 cycle
+- Add timing exceptions for: reset paths, test modes, configuration registers
+
+**Expected Improvement**: Relax timing constraints on non-critical paths
+
+**Risk**: Low — requires careful path analysis
+
+#### R7: Optimize Memory Interface
+**Action**:
+- If using BRAM for packet buffering, ensure registered outputs
+- Implement double-buffering for continuous streaming
+
+**Expected Improvement**: Throughput guarantee of 1 byte/cycle
+
+**Risk**: Low — standard memory interface design
+
+#### R8: Compiler Optimization Flags
+**Action**:
+- Add `-retime` and `-noalumacc` to Yosys synthesis script
+- Use `-flatten` for better optimization
+- Set `-abc9` for improved technology mapping
+
+**Expected Improvement**: 5-10% timing improvement
+
+**Risk**: Low — tool flags, verify with formal equivalence
+
+### 3.4 Long-term Optimizations (Priority: Low)
+
+#### R9: Micro-architecture Exploration
+**Action**:
+- Evaluate checksum algorithm variants (parallel vs serial)
+- Consider hardware-software partitioning for complex checksums
+- Implement speculative accumulation for multiple packets
+
+**Expected Improvement**: Potential 2x throughput increase
+
+**Risk**: High — significant RTL changes, requires re-verification
+
+#### R10: Power Optimization
+**Action**:
+- Implement operand isolation for unused datapath sections
+- Use clock gating at module level
+- Optimize memory access patterns
+
+**Expected Improvement**: 20-30% power reduction
+
+**Risk**: Medium — requires careful validation
 
 ---
 
-## 5. 验证计划
+## 4. Implementation Plan
 
-### 5.1 每次迭代验证
-```bash
-# 时序验证
-make sta  # 检查 WNS
+### Phase 1: Critical Fixes (Day 1-2)
+| Day | Task | Owner | Expected Outcome |
+|-----|------|-------|------------------|
+| 1 | Fix synthesis error (R1) | RTL Designer | chip-rtl passes |
+| 1-2 | Pipeline checksum datapath (R2) | RTL Designer | WNS improvement |
 
-# 功能验证
-make regression  # 运行所有测试
+### Phase 2: Short-term Optimizations (Day 3-5)
+| Day | Task | Owner | Expected Outcome |
+|-----|------|-------|------------------|
+| 3 | Reduce datapath width (R3) | RTL Designer | Area reduction |
+| 3-4 | Implement retiming (R4) | EDA Engineer | Timing closure |
+| 4-5 | Optimize control logic (R5) | RTL Designer | Power reduction |
 
-# 面积报告
-make synth  # 检查 LUT/FF 使用
+### Phase 3: Medium-term (Day 6-10)
+| Day | Task | Owner | Expected Outcome |
+|-----|------|-------|------------------|
+| 6-7 | Multi-cycle paths (R6) | STA Engineer | Relaxed constraints |
+| 7-8 | Memory interface (R7) | RTL Designer | Throughput guarantee |
+| 8-10 | Compiler flags (R8) | EDA Engineer | Synthesis quality |
 
-# 吞吐率验证
-make perf_test  # 测量 bytes/cycle
-```
-
-### 5.2 最终验收标准
-- [ ] WNS ≥ 0.0 ns
-- [ ] 面积在预算内
-- [ ] 吞吐率 ≥ 1.0 bytes/cycle
-- [ ] 所有测试通过
-- [ ] 无 Yosys 错误
-- [ ] 所有 fix_requests 关闭
-
----
-
-## 6. 风险评估
-
-### 6.1 高优先级风险
-| 风险 | 概率 | 影响 | 缓解措施 |
-|------|------|------|----------|
-| 流水线化增加延迟导致协议违规 | 低 | 高 | 验证协议时序 |
-| 面积优化导致时序恶化 | 中 | 中 | 迭代优化，平衡取舍 |
-| EDA 工具版本兼容性 | 低 | 高 | 使用稳定工具版本 |
-
-### 6.2 应急计划
-- 如果 P1 优化后 WNS 仍不达标：考虑降低目标频率 10%
-- 如果面积超标：增加迭代次数，分步优化
-- 如果 DUT bug 复杂：回退到简化实现
+### Phase 4: Long-term (Day 11-14)
+| Day | Task | Owner | Expected Outcome |
+|-----|------|-------|------------------|
+| 11-12 | Micro-architecture (R9) | Architect | Throughput improvement |
+| 13-14 | Power optimization (R10) | All | Power reduction |
 
 ---
 
-## 7. 结论与建议
+## 5. Expected Improvements Summary
 
-### 7.1 推荐行动
-**强烈建议立即启动迭代 1**，解决阻塞性问题。当前设计状态存在多个阻塞点，无法进入下一阶段。
-
-### 7.2 关键决策点
-- **是否继续当前架构？** 是，流水线化后可达目标
-- **是否需要回退？** 否，优化方案可行
-- **是否需要额外资源？** 可能需要 EDA 工具支持
-
-### 7.3 最终建议
-```
-recommend iteration: true
-iteration_scope: [P0-1, P0-2, P0-3, P1-1]
-expected_duration: 5 days
-success_criteria:
-  - yosys_error: 0
-  - dut_bug: 0
-  - fix_requests: 0
-  - wns_ns: >= 0.0
-```
+| Metric | Current | After R1-R5 | After R1-R8 | After R1-R10 |
+|--------|---------|-------------|-------------|--------------|
+| WNS | -0.35ns | -0.05ns | 0.00ns | +0.05ns |
+| Area | Concern | Normal | Optimized | Optimized |
+| Throughput | Degraded | 1 byte/cycle | 1 byte/cycle | 1-2 byte/cycle |
+| Power | High | Moderate | Low | Very Low |
+| Synthesis | Error | Clean | Clean | Clean |
 
 ---
 
-**报告结束 — 等待 PMAgent 批准迭代计划**
+## 6. Verification Strategy
+
+### After Each Optimization
+1. **Functional equivalence**: Run existing testbench
+2. **Timing analysis**: STA with updated constraints
+3. **Area report**: Compare before/after synthesis
+4. **Power estimation**: Toggle rate analysis
+
+### Final Verification
+1. **Formal equivalence**: Compare RTL before/after optimization
+2. **Full regression**: All test cases pass
+3. **FPGA bring-up**: On-board validation at target frequency
+4. **Driver integration**: Software driver works with optimized hardware
+
+---
+
+## 7. Risk Assessment
+
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|------------|
+| RTL changes break functionality | Medium | High | Incremental verification |
+| Timing closure still fails | Low | High | Multiple optimization techniques |
+| Area exceeds FPGA budget | Low | Medium | Monitor area after each step |
+| Power exceeds budget | Low | Medium | Power analysis after R5 |
+
+---
+
+## 8. Recommendation
+
+**Recommend iteration**: Yes
+
+**Rationale**: 
+- Current state has 3 open fix requests and critical timing violation
+- 14 optimization candidates identified but not addressed
+- Systematic issues in RTL design and synthesis flow
+
+**Iteration scope**:
+1. Fix synthesis error (R1) — unblock pipeline
+2. Implement pipelining (R2) — address timing
+3. Reduce datapath width (R3) — address area
+4. Re-run full EDA flow
+5. Verify throughput target achieved
+
+**Expected iteration duration**: 5-7 days
+
+---
+
+## 9. Next Steps for Other Agents
+
+| Agent | Action Required |
+|-------|----------------|
+| **ArchitectAgent** | Approve datapath width reduction (R3) |
+| **EDAAgent** | Implement retiming (R4) and compiler flags (R8) |
+| **CompilerAgent** | Update synthesis script with optimization flags |
+| **RuntimeAgent** | Monitor power and throughput after optimization |
+| **PMAgent** | Update schedule for 5-7 day iteration |
+
+---
+
+*Report generated by OptimizerAgent | EvolutionEngine pre-analysis integrated*

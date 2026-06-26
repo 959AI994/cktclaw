@@ -8,13 +8,13 @@
   - `yosys`
   - `Sta`
   - `yosys`
-  - `yosys`
-  - `yosys`
+  - `Yosys`
   - `Sta`
-- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
-- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=21 open
+  - `Sta`
+- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
+- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=24 open
 - 结论: PASS
-- 备注: provider=deepseek; session=e2e_p6_afb2dafb; elapsed=207.5s
+- 备注: provider=deepseek; session=e2e_p6_55e19568; elapsed=57.6s
 
 <details>
 <summary>Raw output</summary>
@@ -29,112 +29,113 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: module_planning (1/6) ━━━
-  tools: erie-verilog-generator×2, Read×2, bash×2, analog-design-infrastructure×2, rtl-repair
+  tools: rtl-repair, erie-verilog-generator, analog-design-meta, analog-design-infrastructure×3, 
+analog-design-architecture, bash, Read
 ⚠ module_planning: yosys_error=1 but LLM reported PASS — downgrading to WARN
 ╭─────────────────────────────────────────────── module_planning → WARN ───────────────────────────────────────────────╮
 │ **Status**: WARN                                                                                                     │
 │ **QoR**:                                                                                                             │
-│   - critical_path_wns_ns: -0.35                                                                                      │
-│   - yosys_errors: 1                                                                                                  │
-│   - open_fix_requests: 21                                                                                            │
 │   - optimization_candidates_identified: 14                                                                           │
 │   - rtl_level_candidates: 9                                                                                          │
 │   - constraint_level_candidates: 5                                                                                   │
 │   - synthesis_flow_candidates: 7                                                                                     │
-│   - yosys_error: 1                                                                                                   │
 │   - wns_ns: -0.35                                                                                                    │
+│   - yosys_error: 1                                                                                                   │
+│   - area_concern: True                                                                                               │
 │ **Issues**:                                                                                                          │
-│   - [ERROR] yosys_error=1 blocking all downstream stages — must fix before PPA optimization                          │
-│   - [WARN] WNS=-0.35ns indicates timing violation of 350ps below target frequency                                    │
-│   - [WARN] Area exceeds microarch estimate — resource sharing and width trimming recommended                         │
-│   - [WARN] 21 open fix_requests indicate accumulated technical debt                                                  │
+│   - [WARN] WNS=-0.35ns timing violation                                                                              │
+│   - [WARN] Yosys error=1 needs resolution                                                                            │
+│   - [WARN] Area exceeds microarch estimate                                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: rtl_coding (2/6) ━━━
-  tools: rtl-repair, erie-verilog-generator
-⚠ rtl_coding: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭───────────────────────────────────────────────── rtl_coding → WARN ──────────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
+  tools: erie-verilog-generator×2, bash×3, Read×2, rtl-repair, hls-generator, analog-design-infrastructure
+╭────────────────────────────────────────── rtl_coding → PASS | FAIL | WARN ───────────────────────────────────────────╮
+│ **Status**: PASS | FAIL | WARN                                                                                       │
 │ **QoR**:                                                                                                             │
-│   - critical_path_wns_ns: -0.35                                                                                      │
-│   - yosys_errors: 1                                                                                                  │
-│   - open_fix_requests: 21                                                                                            │
-│   - optimization_candidates_identified: 14                                                                           │
-│   - rtl_level_candidates: 9                                                                                          │
-│   - constraint_level_candidates: 5                                                                                   │
-│   - synthesis_flow_candidates: 7                                                                                     │
+│   - tools_detected: 0                                                                                                │
+│   - tools_missing: 0                                                                                                 │
+│   - module_system_detected: False                                                                                    │
+│   - tools_found_via_modules: 0                                                                                       │
+│   - wrappers_deployed: 0                                                                                             │
+│   - mcp_servers_configured: 0                                                                                        │
 │   - yosys_error: 1                                                                                                   │
 │   - wns_ns: -0.35                                                                                                    │
 │ **Issues**:                                                                                                          │
-│   - [WARN] yosys_error=1 needs immediate fix before synth_check                                                      │
-│   - [WARN] WNS=-0.35ns requires pipeline insertion or constraint relaxation                                          │
-│   - [WARN] 21 open fix_requests from chip-rtl/chip-pd failures                                                       │
+│   - [ERROR|WARN] ...                                                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-━━━ Stage: lint_check (3/6) ━━━
-  tools: verilog-lint×2, bash×6, erie-verilog-generator, rtl-repair
-⚠ lint_check: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭───────────────────────────────────────────────── lint_check → WARN ──────────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - lint_errors: 0                                                                                                   │
-│   - lint_warnings: 1                                                                                                 │
-│   - yosys_error: 1                                                                                                   │
-│   - wns_ns: -0.35                                                                                                    │
-│ **Issues**:                                                                                                          │
-│   - [WARNING]                                                                                                        │
+╭───────────────────────────────────────────────────── Escalation ─────────────────────────────────────────────────────╮
+│ Escalation at rtl_coding.                                                                                            │
+│ Reason: Stage 'rtl_coding' failed with no matching loop-back rule                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-━━━ Stage: cdc_rdc_analysis (4/6) ━━━
-  tools: rtl-repair×3, erie-verilog-generator×2, verilog-lint, bash
-⚠ cdc_rdc_analysis: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭────────────────────────────────────────────── cdc_rdc_analysis → WARN ───────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - cdc_violations_unwaived: 0                                                                                       │
-│   - rdc_violations_unwaived: 0                                                                                       │
-│   - yosys_error: 1                                                                                                   │
-│   - wns_ns: -0.35                                                                                                    │
-│   - open_fix_requests: 21                                                                                            │
-│   - optimization_candidates_identified: 14                                                                           │
-│   - rtl_level_candidates: 9                                                                                          │
-│   - constraint_level_candidates: 5                                                                                   │
-│   - synthesis_flow_candidates: 7                                                                                     │
-│ **Issues**:                                                                                                          │
-│   - [WARN] yosys_error=1 persists across stages - needs RTL fix                                                      │
-│   - [WARN] WNS=-0.35ns timing violation present                                                                      │
-│   - [WARN] 21 open fix_requests indicate multiple unresolved issues                                                  │
-│   - [WARN] CDC/RDC synchronizer implementation needs verification in next loop-back                                  │
+╭──────────────────────────────────────────────── Orchestrator Summary ────────────────────────────────────────────────╮
+│ rtl-design-orchestrator — 1/6 stages passed                                                                          │
+│ Final state: rtl_coding                                                                                              │
+│ Finished: False                                                                                                      │
+│                                                                                                                      │
+│ No deliverable files found on disk.                                                                                  │
+│                                                                                                                      │
+│ Warnings:                                                                                                            │
+│   ⚠ 阶段 `module_planning` 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+Orchestrator 完成 — rtl-design-orchestrator                                                                             
 
-━━━ Stage: synth_check (5/6) ━━━
-  tools: erie-verilog-generator×2, rtl-repair×2, bash×4, analog-design-infrastructure
-⚠ synth_check: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭───────────────────────────────────────────────── synth_check → WARN ─────────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - wns_ns: -0.35                                                                                                    │
-│   - yosys_error: 1                                                                                                   │
-│   - area_concern: True                                                                                               │
-│   - optimization_candidates_identified: 14                                                                           │
-│   - rtl_level_candidates: 9                                                                                          │
-│   - constraint_level_candidates: 5                                                                                   │
-│   - synthesis_flow_candidates: 7                                                                                     │
-│ **Issues**:                                                                                                          │
-│   - [WARN] yosys_error=1 persists across all stages - must investigate before sign-off                               │
-│   - [WARN] Area reported as larger than expected - verify against microarch estimate threshold (120%)                │
-│   - [WARN] WNS=-0.35ns is acceptable (>-0.5ns) but tight - recommend synthesis-flow optimizations                    │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+结果： 1/6 个阶段通过（finished=False，当前 rtl_coding）。                                                              
 
-━━━ Stage: rtl_signoff (6/6) ━━━
-  tools: analog-design-infrastructure, rtl-repair, erie-verilog-generator
-⚠ rtl_signoff: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭───────────────────────────────────────────────── rtl_signoff → WARN ─────────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - wns_ns: -0.35                                                                                                    │
-│   - yosys_error: 1                                                                                                   │
-│   - area_concern: True                                                                                               │
-│   - optimization_candidates_identified: 
+各阶段：                                                                                                                
+
+ • module_planning — passed（尝试 1 次）                                                                                
+ • rtl_coding — failed（尝试 1 次）                                                                                     
+ • lint_check — pending（尝试 0 次）                                                                                    
+ • cdc_rdc_analysis — pending（尝试 0 次）                                                                              
+ • synth_check — pending（尝试 0 次）                                                                                   
+ • rtl_signoff — pending（尝试 0 次）                                                                                   
+
+产物文件：                                                                                                              
+
+ • 未在任务目录或 run workspace 中发现 .sv / .v / filelist.f 等产物。                                                   
+ • 可能仅完成了规划与指标自报，LLM 未实际 Write 文件到磁盘；请检查 Chat 日志中的工具调用。                              
+
+⚠️ 注意事项：                                                                                                           
+
+ • 阶段 module_planning 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                        
+
+说明： QoR 指标来自各 stage 的 LLM 自报与 Yosys/Verilator 等工具 log 解析， 不等同于 sign-off                           
+审计结论；请以产物文件与报告为准。                                                                                      
+
+技术详情 (JSON)                                                                                                         
+
+                                                                                                                        
+ {                                                                                                                      
+   "current_stage": "rtl_coding",                                                                                       
+   "current_idx": 1,                                                                                                    
+   "finished": false,                                                                                                   
+   "stage_order": [                                                                                                     
+     "module_planning",                                                                                                 
+     "rtl_coding",                                                                                                      
+     "lint_check",                                                                                                      
+     "cdc_rdc_analysis",                                                                                                
+     "synth_check",                                                                                                     
+     "rtl_signoff"                                                                                                      
+   ],                                                                                                                   
+   "stages": {                                                                                                          
+     "module_planning": {                                                                                               
+       "status": "passed",                                                                                              
+       "attempts": 1,                                                                                                   
+       "qor": {                                                                                                         
+         "optimization_candidates_identified": 14,                                                                      
+         "rtl_level_candidates": 9,                                                                                     
+         "constraint_level_candidates": 5,                                                                              
+         "synthesis_flow_candidates": 7,                                                                                
+         "wns_ns": -0.35,                                                                                               
+         "yosys_error": 1,                                                                                              
+         "area_concern": true                                                                                           
+       }                                                                                                                
+     },                                                                                                                 
+     "rtl_coding": {                                                                                                    
+       "status": "failed",                                                                                              
+       "attempts": 1,                                                                                                   
+       "qor": {                                                                                                         
+         "tools_detected": 0,                                    
 ```
 </details>

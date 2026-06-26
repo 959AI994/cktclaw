@@ -11,10 +11,10 @@
   - `Sta`
   - `sta`
   - `sta`
-- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
-- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=21 open
+- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
+- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=24 open
 - 结论: PASS
-- 备注: provider=deepseek; session=e2e_p3_87e0cd29; elapsed=23.0s
+- 备注: provider=deepseek; session=e2e_p3_149bb211; elapsed=35.9s
 
 <details>
 <summary>Raw output</summary>
@@ -29,13 +29,16 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: property_planning (1/6) ━━━
-  tools: Read×2, erie-verilog-generator, Bash×3, analog-design-infrastructure, analog-design-simulation
-╭─────────────────────────────────────── property_planning → PASS | FAIL | WARN ───────────────────────────────────────╮
-│ **Status**: PASS | FAIL | WARN                                                                                       │
+  tools: Read×2, erie-verilog-generator×2, Bash, Write, verilog-lint×2
+  tools: erie-verilog-generator×2, bash, verilog-lint×2, rtl-repair, hls-generator, analog-design-meta
+╭────────────────────────────────────────────── property_planning → FAIL ──────────────────────────────────────────────╮
+│ **Status**: FAIL                                                                                                     │
 │ **QoR**:                                                                                                             │
 │   - yosys_error: 1                                                                                                   │
 │ **Issues**:                                                                                                          │
-│   - [ERROR|WARN] ...                                                                                                 │
+│   -                                                                                                                  │
+│   -                                                                                                                  │
+│   -                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭───────────────────────────────────────────────────── Escalation ─────────────────────────────────────────────────────╮
 │ Escalation at property_planning.                                                                                     │
@@ -128,9 +131,6 @@ Orchestrator 完成 — formal-orchestrator
 │ 结果： 0/6 个阶段通过（finished=False，当前 property_planning）。                                                    │
 │                                                                                                                      │
 │ 各阶段：                                                                                                             │
-│                                                                                                                      │
-│  • property_planning — failed（尝试 1 次）                                                                           │
-│  • environment_setup — pending（尝试 0 次）                                                                          │
-│  • fpv_run — pending（尝试 0 次）                                
+│                                                                                                      
 ```
 </details>

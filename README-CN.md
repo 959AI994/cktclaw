@@ -275,6 +275,14 @@ CktClaw 集成了完整的芯片设计全流程，每个领域都有独立的多
 
 ---
 
+## 🏗️ Agent 架构
+
+CktClaw 是一个具备跨域闭环能力的**多层自治 Agent 系统**。当前全栈芯片架构包含四个协作平面：用户侧编排、多 Agent 名册、Skill/工作流桥接层，以及可执行的 EDA 工具链。
+
+<img src="figure/cktclaw_overview.png" alt="CktClaw 全栈 Agent 架构总览" width="100%" />
+
+---
+
 ## 💬 Web Chat 架构
 
 CktClaw 在终端 REPL 之外还提供浏览器仪表盘。Web Chat 与 CLI 共用同一套 **CapabilityRegistry**、**OrchestratorEngine**、**CktMem** 上下文栈和 **RunContext** 治理机制，用户输入则经由 **FastAPI + WebSocket** 管道，由 React 前端呈现。

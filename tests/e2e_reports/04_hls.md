@@ -4,17 +4,17 @@
   - `Sta`
   - `Sta`
   - `Sta`
-  - `yosys`
+  - `Sta`
   - `Sta`
   - `yosys`
   - `Sta`
   - `yosys`
   - `Sta`
   - `yosys`
-- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
-- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=21 open
+- Artifacts: artifacts/optimization/report.md, runs/e2e_sby_smoke/smoke/status.sqlite, runs/e2e_sby_smoke/smoke/status, runs/e2e_sby_smoke/smoke/smoke.xml, runs/e2e_sby_smoke/smoke/logfile.txt, runs/e2e_sby_smoke/smoke/PASS, runs/e2e_sby_smoke/smoke/engine_0/logfile_induction.txt, runs/e2e_sby_smoke/smoke/engine_0/logfile_basecase.txt, runs/e2e_sby_smoke/smoke/model/design_smt2.log, runs/e2e_sby_smoke/smoke/model/design_smt2.smt2
+- design_state 变化: path=/home/wjx/.cktclaw/design_state.json; keys=['format_version', 'design_name', 'created_at', 'updated_at', 'cross_domain_iteration_count', 'pipeline_session_id', 'pipeline_config', 'pending_approval', 'approved_checkpoints', 'constraints', 'spec', 'arch', 'fix_requests', 'archive_fix_requests', 'orchestrator_qor', 'history', 'multi_agent']; fix_requests=24 open
 - 结论: PASS
-- 备注: provider=deepseek; session=e2e_p4_3fd944eb; elapsed=219.2s
+- 备注: provider=deepseek; session=e2e_p4_34b95cb0; elapsed=238.7s
 
 <details>
 <summary>Raw output</summary>
@@ -29,17 +29,14 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: algorithm_analysis (1/6) ━━━
-  tools: hls-generator×6, bash, erie-verilog-generator
-⚠ algorithm_analysis: yosys_error=1 but LLM reported PASS — downgrading to WARN
-╭───────────────────────────────────────────── algorithm_analysis → WARN ──────────────────────────────────────────────╮
-│ **Status**: WARN                                                                                                     │
-│ **QoR**:                                                                                                             │
-│   - yosys_error: 1                                                                                                   │
+  tools: hls-generator×5, bash×3
+╭───────────────────────────────────────────── algorithm_analysis → PASS ──────────────────────────────────────────────╮
+│ **Status**: PASS                                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: directive_planning (2/6) ━━━
-  tools: hls-generator×5, Read, Bash, erie-verilog-generator
-  tools: hls-generator×4, Read×3, Bash
+  tools: hls-generator×5, bash, erie-verilog-generator×2
+  tools: bash×2, hls-generator×3, Write, erie-verilog-generator, rtl-repair
 ⚠ directive_planning: yosys_error=1 but LLM reported PASS — downgrading to WARN
 ╭───────────────────────────────────────────── directive_planning → WARN ──────────────────────────────────────────────╮
 │ **Status**: WARN                                                                                                     │
@@ -48,18 +45,22 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: hls_synthesis (3/6) ━━━
-  tools: hls-generator×5, write, bash, erie-verilog-generator
-  tools: bash×2, hls-generator×2
+  tools: hls-generator×4, bash, write, erie-verilog-generator
 ⚠ hls_synthesis: yosys_error=1 but LLM reported PASS — downgrading to WARN
 ╭──────────────────────────────────────────────── hls_synthesis → WARN ────────────────────────────────────────────────╮
 │ **Status**: WARN                                                                                                     │
 │ **QoR**:                                                                                                             │
+│   - ii: 1                                                                                                            │
+│   - latency_cycles: 12                                                                                               │
+│   - clock_period_ns: 10                                                                                              │
+│   - taps: 8                                                                                                          │
+│   - data_width: 16                                                                                                   │
 │   - yosys_error: 1                                                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: rtl_qc (4/6) ━━━
-  tools: hls-generator×6, bash, erie-verilog-generator
-  tools: bash×2, hls-generator×3, Write, erie-verilog-generator, analog-design-infrastructure
+  tools: Read×2, Bash×3, hls-generator×2, Write
+  tools: hls-generator×4, bash, erie-verilog-generator, verilog-lint, verilog-tb-gen
 ⚠ rtl_qc: yosys_error=1 but LLM reported PASS — downgrading to WARN
 ╭─────────────────────────────────────────────────── rtl_qc → WARN ────────────────────────────────────────────────────╮
 │ **Status**: WARN                                                                                                     │
@@ -68,8 +69,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: cosimulation (5/6) ━━━
-  tools: hls-generator×6, bash, erie-verilog-generator
-  tools: hls-generator×6, erie-verilog-generator, rtl-repair
+  tools: hls-generator×3, bash×3, erie-verilog-generator×2
+  tools: bash×6, hls-generator×2
 ⚠ cosimulation: yosys_error=1 but LLM reported PASS — downgrading to WARN
 ╭──────────────────────────────────────────────── cosimulation → WARN ─────────────────────────────────────────────────╮
 │ **Status**: WARN                                                                                                     │
@@ -78,7 +79,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ━━━ Stage: hls_signoff (6/6) ━━━
-  tools: hls-generator×4, bash×2, Read×2
+  tools: Read×2, Bash×2, hls-generator×3, Write
 ╭───────────────────────────────────────────────── hls_signoff → PASS ─────────────────────────────────────────────────╮
 │ **Status**: PASS                                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -90,7 +91,6 @@
 │ No deliverable files found on disk.                                                                                  │
 │                                                                                                                      │
 │ Warnings:                                                                                                            │
-│   ⚠ 阶段 `algorithm_analysis` 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                               │
 │   ⚠ 阶段 `directive_planning` 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                               │
 │   ⚠ 阶段 `hls_synthesis` 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                    │
 │   ⚠ 阶段 `rtl_qc` 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                           │
@@ -116,7 +116,6 @@ Orchestrator 完成 — hls-orchestrator
 
 ⚠️ 注意事项：                                                                                                           
 
- • 阶段 algorithm_analysis 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                     
  • 阶段 directive_planning 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                     
  • 阶段 hls_synthesis 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                          
  • 阶段 rtl_qc 标记为通过，但 Yosys log 检测到 ERROR（yosys_error=1）。                                                 
@@ -144,12 +143,12 @@ Orchestrator 完成 — hls-orchestrator
      "algorithm_analysis": {                                                                                            
        "status": "passed",                                                                                              
        "attempts": 1,                                                                                                   
-       "qor": {                                                                                                         
-         "yosys_error": 1                                                                                               
-       }                                                                                                                
+       "qor": {}                                                                                                        
      },                                                                                                                 
      "directive_planning": {                                                                                            
        "status": "passed",                                                                                              
-       "attempts": 1
+       "attempts": 1,                                                                                                   
+       "qor": {                                                                                                         
+    
 ```
 </details>
