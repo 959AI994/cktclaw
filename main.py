@@ -529,9 +529,12 @@ class LogicRTCLI:
                 register_ai4eda_skill,
                 register_session_memory_skill,
                 register_chip_design_skills,
+                register_analog_design_skills,
+                register_rtl_repair_skill,
                 register_rtl_claw_skills,
                 register_fpga_agent_skills,
                 register_verilog_generator_skill,
+                register_hls_generator_skill,
                 register_external_skills,
             )
             # Register innovation skills
@@ -551,11 +554,14 @@ class LogicRTCLI:
                 asyncio.run(register_rltf_skill())
                 asyncio.run(register_pareto_negotiation_skill())
                 asyncio.run(register_chip_design_skills())
+                asyncio.run(register_analog_design_skills())
+                asyncio.run(register_rtl_repair_skill())
                 asyncio.run(register_system_loop_skill())
                 asyncio.run(register_chip_system_skill())
                 asyncio.run(register_rtl_claw_skills())
                 asyncio.run(register_fpga_agent_skills())
                 asyncio.run(register_verilog_generator_skill())
+                asyncio.run(register_hls_generator_skill())
                 asyncio.run(register_external_skills(verbose=config.VERBOSE))
             except RuntimeError:
                 # Already in async context
@@ -570,12 +576,15 @@ class LogicRTCLI:
                     future7 = executor.submit(asyncio.run, register_rltf_skill())
                     future8 = executor.submit(asyncio.run, register_pareto_negotiation_skill())
                     future9 = executor.submit(asyncio.run, register_chip_design_skills())
-                    future10 = executor.submit(asyncio.run, register_system_loop_skill())
-                    future10b = executor.submit(asyncio.run, register_chip_system_skill())
-                    future11 = executor.submit(asyncio.run, register_rtl_claw_skills())
-                    future12 = executor.submit(asyncio.run, register_fpga_agent_skills())
-                    future13 = executor.submit(asyncio.run, register_verilog_generator_skill())
-                    future14 = executor.submit(
+                    future10 = executor.submit(asyncio.run, register_analog_design_skills())
+                    future11 = executor.submit(asyncio.run, register_rtl_repair_skill())
+                    future12 = executor.submit(asyncio.run, register_system_loop_skill())
+                    future12b = executor.submit(asyncio.run, register_chip_system_skill())
+                    future13 = executor.submit(asyncio.run, register_rtl_claw_skills())
+                    future14 = executor.submit(asyncio.run, register_fpga_agent_skills())
+                    future15 = executor.submit(asyncio.run, register_verilog_generator_skill())
+                    future16 = executor.submit(asyncio.run, register_hls_generator_skill())
+                    future17 = executor.submit(
                         asyncio.run, register_external_skills(config.VERBOSE)
                     )
                     future1.result()
@@ -590,8 +599,12 @@ class LogicRTCLI:
                     future10.result()
                     future11.result()
                     future12.result()
+                    future12b.result()
                     future13.result()
                     future14.result()
+                    future15.result()
+                    future16.result()
+                    future17.result()
         except Exception as e:
             console.print(f"[yellow]⚠️ 技能注册失败: {e}[/yellow]")
 
@@ -635,6 +648,11 @@ class LogicRTCLI:
             from .tools.eda.opensta_tool import OpenSTATool
             from .tools.eda.abc_tool import ABCTool
             from .tools.eda.openroad_tool import OpenROADTool
+            from .tools.eda.verible_tool import VeribleTool
+            from .tools.eda.slang_tool import SlangTool
+            from .tools.eda.sby_tool import SbyTool
+            from .tools.eda.verilator_tool import VerilatorTool
+            from .tools.eda.wolvrix_tool import WolvrixTool
             from .tools.system.bash_tool import BashTool
             from .llm import get_model_router
 
@@ -644,6 +662,11 @@ class LogicRTCLI:
             _registry.register(OpenSTATool(), source="builtin")
             _registry.register(ABCTool(), source="builtin")
             _registry.register(OpenROADTool(), source="builtin")
+            _registry.register(VeribleTool(), source="builtin")
+            _registry.register(SlangTool(), source="builtin")
+            _registry.register(SbyTool(), source="builtin")
+            _registry.register(VerilatorTool(), source="builtin")
+            _registry.register(WolvrixTool(), source="builtin")
             _registry.register(BashTool(), source="builtin")
 
             try:

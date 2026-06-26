@@ -22,3 +22,10 @@ def get_verilog_generator_root() -> Path:
     if env:
         return Path(env).expanduser()
     return _DEPS_ROOT / "verilog-generator"
+
+
+def get_hls_generator_root() -> Path:
+    env = os.environ.get("HLS_GENERATOR_ROOT", "").strip()
+    if env:
+        return Path(env).expanduser()
+    return _DEPS_ROOT / "hls-generator"

@@ -15,6 +15,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
+pytest_plugins = []
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "e2e_live: live E2E gate tests (fixtures/doctor, no auto DeepSeek)")
+
+
 from cktclaw.llm.base import AsyncLLMProvider, ChatMessage, ChatResponse
 from cktclaw.llm.types import MessageRole, StreamChunk, ToolCall, ToolCallDelta
 from cktclaw.tools.base import BaseTool, ToolContext, ToolResult

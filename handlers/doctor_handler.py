@@ -61,6 +61,78 @@ def _check_eda_tools() -> DoctorCheck:
     return DoctorCheck("eda_tools", "ok", detail)
 
 
+def _check_full_chip_toolchain() -> DoctorCheck:
+    tools = {
+        "verible-lint": "verible-verilog-lint",
+        "verible-format": "verible-verilog-format",
+        "slang": "slang",
+        "symbiyosys": "sby",
+        "verilator": "verilator",
+        "yosys": "yosys",
+        "opensta": "sta",
+        "abc": "abc",
+    }
+    found = [name for name, exe in tools.items() if shutil.which(exe)]
+    missing = [name for name in tools if name not in found]
+    if not found:
+        return DoctorCheck(
+            "full_chip_toolchain",
+            "warn",
+            "no expanded toolchain binaries found; install oss-cad-suite and optional Verible/slang",
+        )
+    detail = f"found: {', '.join(found)}"
+    if missing:
+        detail += f"; missing optional: {', '.join(missing)}"
+    return DoctorCheck("full_chip_toolchain", "ok", detail)
+
+
+def _repo_status(name: str, env_var: str, default_path: Path, marker: str) -> str:
+    raw = os.environ.get(env_var, "").strip()
+    root = Path(raw).expanduser() if raw else default_path
+    marker_path = root / marker
+    status = "ok" if marker_path.exists() else "missing"
+    return f"{name}={status}({root})"
+
+
+def _check_agent_repos() -> DoctorCheck:
+    deps = Path(__file__).resolve().parent.parent / "deps"
+    entries = [
+        _repo_status(
+            "digital-chip-design-agents",
+            "CHIP_AGENTS_ROOT",
+            deps / "digital-chip-design-agents" / "plugins",
+            "synthesis",
+        ),
+        _repo_status(
+            "analog-chip-design-agents",
+            "ANALOG_CHIP_AGENTS_ROOT",
+            deps / "analog-chip-design-agents" / "plugins",
+            "meta",
+        ),
+        _repo_status(
+            "verilog-generator",
+            "VERILOG_GENERATOR_ROOT",
+            deps / "verilog-generator",
+            "SKILL.md",
+        ),
+        _repo_status(
+            "hls-generator",
+            "HLS_GENERATOR_ROOT",
+            deps / "hls-generator",
+            "SKILL.md",
+        ),
+        _repo_status(
+            "RTLFixer",
+            "RTLFIXER_ROOT",
+            deps / "RTLFixer",
+            "src",
+        ),
+    ]
+    missing = [e for e in entries if "=missing" in e]
+    status = "warn" if missing else "ok"
+    return DoctorCheck("agent_repos", status, "; ".join(entries))
+
+
 def _check_home_writable() -> DoctorCheck:
     home = os.environ.get("CKTCLAW_HOME")
     root = Path(home) if home else Path.cwd() / ".cktclaw"
@@ -101,6 +173,8 @@ def run_doctor() -> DoctorReport:
     report = DoctorReport()
     report.checks.append(_check_api_keys())
     report.checks.append(_check_eda_tools())
+    report.checks.append(_check_full_chip_toolchain())
+    report.checks.append(_check_agent_repos())
     report.checks.append(_check_home_writable())
     report.checks.append(_check_policy())
     report.checks.append(_check_offline_consistency())

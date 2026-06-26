@@ -25,6 +25,8 @@ _WRAPPERS_DIR = Path(__file__).parent / "wrappers"
 
 _OPEN_SOURCE_TOOLS: list[tuple[str, list[str], str]] = [
     ("verilator",       ["verilator"],          "--version"),
+    ("verible-lint",    ["verible-verilog-lint"], "--version"),
+    ("verible-format",  ["verible-verilog-format"], "--version"),
     ("slang",           ["slang"],              "--version"),
     ("surelog",         ["surelog"],             "--version"),
     ("sv2v",            ["sv2v"],               "--version"),
@@ -36,6 +38,7 @@ _OPEN_SOURCE_TOOLS: list[tuple[str, list[str], str]] = [
     ("klayout",         ["klayout"],            "-v"),
     ("opensta",         ["sta", os.environ.get("OPENSTA_PATH", "")], "-version"),
     ("symbiyosys",      ["sby"],                "--help"),
+    ("wolvrix",         ["wolvrix"],            "--version"),
     ("gem5",            ["gem5.opt", "gem5"],   "--version"),
     ("bambu-hls",       ["bambu"],              "--version"),
     ("nextpnr",         ["nextpnr-ice40", "nextpnr-ecp5", "nextpnr-gowin"], "--version"),

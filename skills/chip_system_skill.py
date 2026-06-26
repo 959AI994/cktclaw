@@ -114,7 +114,7 @@ async def register_chip_system_skill() -> None:
             "and optimization, coordinating PMAgent and six specialists."
         ),
         user_invocable=True,
-        loaded_from=LoadedFrom.BUILTIN,
+        loaded_from=LoadedFrom.BUNDLED,
         executor=chip_system_executor,
     )
     await register_skill(skill)

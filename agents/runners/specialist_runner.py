@@ -37,6 +37,7 @@ async def run_specialist_role(
 
     if spec.execution_mode == "orchestrator_meta" and role_id == "eda_agent":
         from .eda_agent_runner import EDAAgentRunner
+        ctx.setdefault("enable_specialist_repair", True)
         runner = EDAAgentRunner(cli_state=ctx.get("cli_state"))
         return await runner.run(task, context=ctx)
 

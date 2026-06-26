@@ -1,0 +1,8 @@
+# running in /home/wjx/pythonproject/cktclaw/runs/e2e_sby_smoke/smoke/src/
+read -formal /home/wjx/pythonproject/cktclaw/workspace/top.sv
+prep -top top
+
+hierarchy -smtcheck
+rename -witness
+write_jny -no-connections ../model/design.json
+write_rtlil ../model/design.il

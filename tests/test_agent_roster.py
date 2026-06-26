@@ -23,16 +23,21 @@ def test_normalize_role_id_aliases():
     assert _normalize_role_id("PMAgent") == "pm_agent"
     assert _normalize_role_id("eda_agent") == "eda_agent"
     assert _normalize_role_id("ArchitectAgent") == "architect_agent"
+    assert _normalize_role_id("RTLRepairAgent") == "rtl_repair_agent"
+    assert _normalize_role_id("PPAOptimizerAgent") == "ppa_optimizer_agent"
 
 
-def test_builtin_roster_loads_seven_roles():
+def test_builtin_roster_loads_core_and_specialist_roles():
     roster = AgentRosterRegistry()
     roster.load()
     roles = roster.list_roles()
-    assert len(roles) == 7
+    assert len(roles) >= 12
     assert "pm_agent" in roles
     assert "eda_agent" in roles
     assert "optimizer_agent" in roles
+    assert "rtl_repair_agent" in roles
+    assert "analog_agent" in roles
+    assert "hls_agent" in roles
 
 
 def test_get_pm_agent_spec():
@@ -88,8 +93,8 @@ def test_roster_summary_contains_all_agents():
     roster = AgentRosterRegistry()
     roster.load()
     summary = roster.roster_summary()
-    assert "Seven-Agent Roster" in summary
-    for name in ("PMAgent", "EDAAgent", "OptimizerAgent"):
+    assert "Agent Roster" in summary
+    for name in ("PMAgent", "EDAAgent", "OptimizerAgent", "RTLRepairAgent"):
         assert name in summary
 
 
@@ -97,4 +102,4 @@ def test_get_roster_singleton():
     r1 = get_roster()
     r2 = get_roster()
     assert r1 is r2
-    assert len(r1.list_roles()) == 7
+    assert len(r1.list_roles()) >= 12
