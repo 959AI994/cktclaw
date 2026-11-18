@@ -4,7 +4,7 @@
 
 # CktClaw
 
-**The Autonomous Multi-Agent Ecosystem for Intelligent EDA**
+**An Open-Source Multi-Agent Framework for Chip Design and EDA Automation**
 
 [AlexWang](https://github.com/959AI994) · PhD Student · Shanghai Jiao Tong University · ACE Lab
 
