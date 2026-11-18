@@ -14,6 +14,8 @@
 
 [中文文档](README-CN.md) | **English**
 
+[▶️ **Watch CktClaw in Action**](https://www.capcut.cn/share/7639397444005942590)
+
 </div>
 
 ---
