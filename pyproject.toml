@@ -67,4 +67,5 @@ include = ["cktclaw*"]
 [tool.setuptools.package-data]
 cktclaw = [
     "skills/rtl_claw_skills/**/*.md",
+    "skills/chip_autodesign/**/*.md",
 ]

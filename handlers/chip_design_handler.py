@@ -178,6 +178,19 @@ async def handle_chip_design(skill_name: str, args: str, cli_state) -> None:
     console = cli_state.console
     registry = get_skill_registry()
 
+    if skill_name == "chip-verification":
+        from .intent_router import resolve_chip_intent_rules
+        intent = resolve_chip_intent_rules(args)
+        if intent.intent_type == "chip_artifact_query":
+            from .chip_artifact_resolver import render_artifact_query_for_cli, resolve_chip_artifact_query
+            query = resolve_chip_artifact_query(intent.artifact_query, context={}, cli_state=cli_state)
+            console.print(render_artifact_query_for_cli(query))
+            return
+        resolved_last_rtl = _resolved_last_rtl_for_verification(args, cli_state)
+        if not resolved_last_rtl and not _has_explicit_verification_target(args):
+            console.print("[yellow]请提供 DUT RTL 路径，或选择上一轮 mission 的 RTL artifact。[/yellow]")
+            return
+
     try:
         skill = await registry.get_skill(skill_name)
     except SkillNotFoundError:
@@ -189,6 +202,10 @@ async def handle_chip_design(skill_name: str, args: str, cli_state) -> None:
         return
 
     context: Dict[str, Any] = {"cli_state": cli_state}
+    if skill_name == "chip-verification":
+        resolved_last_rtl = _resolved_last_rtl_for_verification(args, cli_state)
+        if resolved_last_rtl:
+            context["resolved_last_rtl"] = resolved_last_rtl
     rendered_text_parts: List[str] = []
     try:
         result = await skill.executor(args.strip(), context)
@@ -236,3 +253,21 @@ async def handle_chip_design(skill_name: str, args: str, cli_state) -> None:
         )
     except Exception as e:
         console.print(f"[yellow]⚠️ Failed to store chip-design messages: {e}[/yellow]")
+
+
+def _has_explicit_verification_target(args: str) -> bool:
+    if re.search(r"(--dut-path|--project-dir|dut_path|project_dir)\s+\S+", args):
+        return True
+    if re.search(r"\S+\.(sv|v|svh|vh)\b", args, re.IGNORECASE):
+        return True
+    return False
+
+
+def _resolved_last_rtl_for_verification(args: str, cli_state) -> Optional[str]:
+    if _has_explicit_verification_target(args):
+        return None
+    try:
+        from .chip_artifact_resolver import latest_resolved_rtl
+        return latest_resolved_rtl(cli_state=cli_state)
+    except Exception:
+        return None

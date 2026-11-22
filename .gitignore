@@ -85,3 +85,7 @@ __pycache__/
 
 # React frontend
 web/frontend/node_modules/
+
+# Synthesis dumps that exceed GitHub's file size limit
+designs/tiny_npu_tile/synth/tiny_npu_tile_16x16.json
+hermes_runs/tiny_npu_plugin_eval_01/outputs/tiny_npu_synth.json

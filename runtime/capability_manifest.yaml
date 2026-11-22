@@ -1,0 +1,39 @@
+# CktClaw capability layers — Skill/Tool/constraint/execute taxonomy
+version: 1
+execution_stack: "generator=LLM constraint=verilog-generator hard_gate=local_eda"
+
+layers:
+  workflow:
+    description: Multi-step orchestration entry skills
+    examples:
+      - chip-mission
+      - chip-autodesign
+      - chip-rtl
+      - rtl-repair
+      - erie-verilog-generator
+  tool:
+    description: Single-shot harness capabilities (SkillRegistry TOOL)
+    examples:
+      - verilog-lint
+      - verilog-tb-gen
+      - yosys
+      - abc
+      - opensta
+  tool_registry:
+    description: LLM function-calling atomic tools
+    examples:
+      - BashTool
+      - YosysTool
+      - VerilatorTool
+  constraint:
+    description: Prompt/format/lint/gate dependencies (not codegen engines)
+    examples:
+      - deps/verilog-generator
+      - deps/digital-chip-design-agents
+  execute:
+    description: Real compile/sim/synth hard gate
+    examples:
+      - local_eda
+      - iverilog
+      - vvp
+      - yosys

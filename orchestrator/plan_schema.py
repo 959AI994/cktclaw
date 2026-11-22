@@ -26,7 +26,26 @@ class StageResult(BaseModel):
             data["recommendation"] = data["suggested_next_step"]
         status = data.get("status")
         if isinstance(status, str):
-            data["status"] = status.upper()
+            normalized = status.upper()
+            issue = None
+            if normalized in {"OK", "PASSED", "SUCCESS", "COMPLETED"}:
+                if normalized == "OK":
+                    issue = "Non-standard status OK normalized to PASS."
+                normalized = "PASS"
+            elif normalized == "WARNING":
+                normalized = "WARN"
+            elif normalized in {"ERROR", "FAILED", "FAILURE"}:
+                normalized = "FAIL"
+            elif normalized in {"RUNNING", "PENDING", "IN_PROGRESS"}:
+                normalized = "WARN"
+                issue = "Non-terminal status was used as final StageResult status."
+            data["status"] = normalized
+            if issue:
+                issues = data.get("issues")
+                if not isinstance(issues, list):
+                    issues = []
+                issues.append({"severity": "WARN", "description": issue})
+                data["issues"] = issues
         return data
 
     @field_validator("qor", mode="before")

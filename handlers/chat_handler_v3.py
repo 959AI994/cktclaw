@@ -21,6 +21,7 @@ import random
 import logging
 from typing import Optional, List, Dict, Any, Tuple
 from rich.console import Console
+from rich.table import Table
 
 from ..ui import (
     render_error,
@@ -31,6 +32,80 @@ from ..ui import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _verbose_tools_enabled(user_message: str, cli_state: Any) -> bool:
+    if "--verbose-tools" in user_message:
+        return True
+    try:
+        import os
+        if os.environ.get("CKTCLAW_VERBOSE_TOOLS") == "1":
+            return True
+    except Exception:
+        pass
+    return bool(getattr(cli_state, "verbose_tools", False))
+
+
+def _tool_status(status_icon: str) -> str:
+    text = str(status_icon).upper()
+    if "BLOCKED" in text:
+        return "BLOCKED"
+    if "ERR" in text:
+        return "ERR"
+    if "FAIL" in text:
+        return "FAIL"
+    return "OK"
+
+
+def _tool_failed(status_icon: str) -> bool:
+    return _tool_status(status_icon) in {"BLOCKED", "ERR", "FAIL"}
+
+
+class ToolCallCompactRenderer:
+    """Render one compact summary per tool batch instead of one line per call."""
+
+    def __init__(self, console: Console) -> None:
+        self.console = console
+
+    def render(self, tool_calls: List[Any], results: List[Tuple[str, str, str]]) -> None:
+        result_map = {r[0]: r for r in results}
+        grouped: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for tc in tool_calls:
+            _tc_id, content, status_icon = result_map.get(
+                tc.id, (tc.id, "Tool not executed", "[red]ERR[/red]")
+            )
+            status = _tool_status(status_icon)
+            key = (tc.name, status)
+            bucket = grouped.setdefault(key, {"count": 0, "chars": 0, "sample": ""})
+            bucket["count"] += 1
+            bucket["chars"] += len(content or "")
+            if status != "OK" and not bucket["sample"]:
+                bucket["sample"] = _short_line(content)
+
+        table = Table(title="Tool calls", show_header=True, header_style="bold cyan")
+        table.add_column("Tool", style="cyan")
+        table.add_column("Status")
+        table.add_column("Count", justify="right")
+        table.add_column("Chars", justify="right")
+        table.add_column("Summary", overflow="fold")
+        for (name, status), data in grouped.items():
+            style = "green" if status == "OK" else "red" if status in {"FAIL", "ERR"} else "yellow"
+            summary = data["sample"] or "ok"
+            table.add_row(
+                name,
+                f"[{style}]{status}[/{style}]",
+                str(data["count"]),
+                str(data["chars"]),
+                summary,
+            )
+        self.console.print(table)
+
+
+def _short_line(text: str, limit: int = 120) -> str:
+    line = " ".join(str(text or "").split())
+    if len(line) > limit:
+        return line[: limit - 1] + "…"
+    return line
 
 # ━━━━━━━━━━ Error Classification ━━━━━━━━━━
 
@@ -324,12 +399,49 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
     console = cli_state.console
 
     # ━━━━━━━━━━ 0. Intent-based routing to chip-design orchestrator ━━━━━━━━━━
-    from .intent_router import detect_chip_design_intent
-    detected_skill = detect_chip_design_intent(user_message)
-    if detected_skill:
-        from .chip_design_handler import handle_chip_design
-        console.print(f"[dim]→ Auto-routed to {detected_skill}[/dim]")
-        await handle_chip_design(detected_skill, user_message, cli_state)
+    from .intent_router import build_chip_router_context, execution_skill_for_intent, resolve_chip_intent_async
+    router_context = build_chip_router_context(cli_state=cli_state)
+    provider_label = router_context.get("provider_name") or "none"
+    chip_intent = await resolve_chip_intent_async(user_message, router_context)
+    detected_skill = execution_skill_for_intent(chip_intent)
+    if chip_intent.intent_type == "chip_artifact_query":
+        console.print(
+            f"[dim]→ Chip route decision: provider={provider_label}, source={chip_intent.router_source}, "
+            f"route={chip_intent.route}, confidence={chip_intent.confidence:.2f}"
+            f"{', fallback_reason=' + str(chip_intent.fallback_reason) if chip_intent.router_source == 'rules_fallback' else ''}; "
+            f"{chip_intent.rationale}[/dim]"
+        )
+        from .chip_artifact_resolver import render_artifact_query_for_cli, resolve_chip_artifact_query
+        query = resolve_chip_artifact_query(chip_intent.artifact_query, context=router_context, cli_state=cli_state)
+        console.print(render_artifact_query_for_cli(query))
+        return
+    if (
+        chip_intent.is_execution_route
+        and detected_skill
+        and chip_intent.confidence >= 0.80
+        and not chip_intent.needs_clarification
+        and not chip_intent.requires_confirmation
+    ):
+        console.print(
+            f"[dim]→ Auto-routed by {chip_intent.router_source} "
+            f"(provider={provider_label}"
+            f"{', fallback_reason=' + str(chip_intent.fallback_reason) if chip_intent.router_source == 'rules_fallback' else ''}) "
+            f"to {detected_skill}: "
+            f"{chip_intent.intent_type}, confidence={chip_intent.confidence:.2f}; "
+            f"{chip_intent.rationale}[/dim]"
+        )
+        chip_domain_skills = {
+            "chip-architecture", "chip-rtl", "chip-verification", "chip-formal",
+            "chip-synthesis", "chip-dft", "chip-sta", "chip-hls", "chip-pd",
+            "chip-soc", "chip-compiler", "chip-firmware", "chip-fpga",
+            "chip-infrastructure", "chip-pipeline",
+        }
+        if detected_skill in chip_domain_skills:
+            from .chip_design_handler import handle_chip_design
+            await handle_chip_design(detected_skill, user_message, cli_state)
+        else:
+            from .workflow_skill_handler import process_workflow_skill
+            await process_workflow_skill(detected_skill, user_message, cli_state)
         return
 
     # Check if we should use the v2 LLM providers
@@ -402,9 +514,12 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
     # ━━━━━━━━━━ 3. Streaming query loop with retry + failover ━━━━━━━━━━
     start_time = time.time()
     render_user_message(console, user_message)
+    verbose_tools = _verbose_tools_enabled(user_message, cli_state)
 
     max_turns = 12
     final_text = ""
+    total_tool_failures = 0
+    hit_max_turns = False
     retry_state = RetryState()
     total_prompt_tokens = 0
     total_completion_tokens = 0
@@ -572,11 +687,13 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
                 tool_calls=tool_calls,
             ))
 
-            # Log tool calls
+            # Log tool calls. Default CLI rendering is compact to avoid long
+            # bash call waterfalls; --verbose-tools restores per-call detail.
             for tc in tool_calls:
-                console.print(
-                    f"  [dim]{Icons.CIRCUIT} Calling:[/dim] [bold cyan]{tc.name}[/bold cyan]"
-                )
+                if verbose_tools:
+                    console.print(
+                        f"  [dim]{Icons.CIRCUIT} Calling:[/dim] [bold cyan]{tc.name}[/bold cyan]"
+                    )
                 trajectory.log_tool_call(
                     session_id=cli_state.session_id,
                     tool_name=tc.name,
@@ -588,13 +705,19 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
                 tool_calls, registry, cli_state, guardrails, console
             )
 
+            if not verbose_tools:
+                ToolCallCompactRenderer(console).render(tool_calls, results)
+
             # Map results back to tool call IDs for proper ordering
             result_map = {r[0]: r for r in results}
             for tc in tool_calls:
                 tc_id, result_content, status_icon = result_map.get(
                     tc.id, (tc.id, "Tool not executed", "[red]ERR[/red]")
                 )
-                console.print(f"  [dim]  └─ {status_icon} ({len(result_content)} chars)[/dim]")
+                if _tool_failed(status_icon):
+                    total_tool_failures += 1
+                if verbose_tools:
+                    console.print(f"  [dim]  └─ {status_icon} ({len(result_content)} chars)[/dim]")
 
                 chat_messages.append(ChatMessage(
                     role=MessageRole.TOOL,
@@ -614,6 +737,8 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
             # No tool calls — this is the final response
             final_text = text_buffer
             break
+    else:
+        hit_max_turns = True
 
     elapsed = time.time() - start_time
 
@@ -663,7 +788,21 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
         console.print(f"[yellow]Failed to store messages: {e}[/yellow]")
 
     # ━━━━━━━━━━ 5. Completion summary ━━━━━━━━━━
-    title = f"Completed with {current_provider_name}"
+    outcome = "completed"
+    detail = ""
+    if total_tool_failures:
+        outcome = "failed"
+        detail = f"{total_tool_failures} tool call(s) failed or were blocked."
+    elif hit_max_turns or not final_text.strip():
+        outcome = "incomplete"
+        detail = "The model did not produce a final answer before the turn ended."
+
+    title_prefix = {
+        "completed": "Completed",
+        "failed": "Failed",
+        "incomplete": "Incomplete",
+    }[outcome]
+    title = f"{title_prefix} with {current_provider_name}"
     if retry_state.failovers:
         title += f" (failover from {retry_state.failovers[0]})"
 
@@ -671,6 +810,8 @@ async def process_chat_v3(user_message: str, cli_state) -> None:
         console,
         timing_dict={"total": elapsed},
         title=title,
+        status=outcome,
+        detail=detail,
     )
 
 

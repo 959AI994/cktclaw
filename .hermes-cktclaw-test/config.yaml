@@ -1,0 +1,19 @@
+model: deepseek-v4-flash
+plugins:
+  enabled:
+    - cktclaw-chip-design
+platform_toolsets:
+  cli:
+    - coding
+    - skills
+    - terminal
+    - file
+    - cktclaw_chip_design
+agent:
+  max_turns: 80
+  tool_use_enforcement: true
+  verify_on_stop: true
+terminal:
+  backend: local
+  cwd: /home/wjx/pythonproject/cktclaw
+  timeout: 300

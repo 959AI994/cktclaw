@@ -1,0 +1,66 @@
+routes:
+  - id: chip-mission
+    intent_type: chip_mission
+    description: End-to-end chip design or multi-step EDA mission.
+    use_when:
+      - User asks to design, build, implement, verify, debug, synthesize, deploy, or optimize a chip/IP/module.
+      - Task needs multiple stages such as specification, architecture, RTL, testbench, simulation, synthesis, QoR, or repair.
+      - Unknown chip/IP is paired with an action verb or explicit deliverable.
+    not_when:
+      - User only asks conceptual explanation or comparison.
+      - User asks a single bounded EDA operation on existing artifacts.
+      - User asks a non-chip programming or general chat question.
+
+  - id: chip-single-task
+    intent_type: chip_single_task
+    description: One bounded chip/EDA operation.
+    subroutes:
+      - simulation
+      - synthesis
+      - formal
+      - testbench
+      - sta
+      - hls
+      - physical_design
+    use_when:
+      - User asks to run or create one EDA step for an existing design.
+      - User asks timing, simulation, synthesis, formal, testbench, HLS, or PD only.
+    not_when:
+      - User asks to create a complete design flow from natural language.
+
+  - id: chip-qa
+    intent_type: chip_qa
+    description: Conceptual explanation or advice about chip design without execution.
+    use_when:
+      - User asks what something is, how two architectures differ, or asks for advice.
+      - No code generation, tool execution, or artifact delivery is requested.
+    not_when:
+      - User asks to implement, run, verify, synthesize, or deploy.
+
+  - id: chip-artifact-query
+    intent_type: chip_artifact_query
+    description: Read-only request to display artifacts from the latest chip mission.
+    use_when:
+      - User asks to show generated RTL/code, simulation logs/results, reports, or previous mission files.
+      - User says "刚才生成的代码", "展示仿真结果", "show generated RTL", or "open simulation.log".
+    not_when:
+      - User asks to run simulation, generate a new testbench, or verify an existing DUT.
+
+  - id: normal-chat
+    intent_type: normal_chat
+    description: Non-chip conversation or ordinary software help.
+    use_when:
+      - No chip, EDA, RTL, hardware, or semiconductor intent is present.
+
+  - id: clarification
+    intent_type: clarification
+    description: Chip-related but too ambiguous to route safely.
+    use_when:
+      - User mentions a chip object or EDA action but does not specify goal, artifact, or operation.
+
+  - id: unsafe-or-unsupported
+    intent_type: unsafe_or_unsupported
+    description: Unsupported, unavailable, destructive, or policy-sensitive request.
+    use_when:
+      - Requested tool or flow is unavailable.
+      - Request appears destructive or requires explicit confirmation.

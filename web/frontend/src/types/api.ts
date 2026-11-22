@@ -58,6 +58,8 @@ export interface OrchestratorRun {
   skill: string
   task: string
   session_id?: string
+  intent?: Record<string, unknown> | null
+  route_rationale?: string
   status: string
   current_stage?: string | null
   stage_index?: number
@@ -65,8 +67,42 @@ export interface OrchestratorRun {
   snapshot?: { output?: string } | null
   error?: string | null
   logs?: string[]
+  progress_events?: ChipProgressEvent[]
+  agent_plan?: AgentPlanStep[]
+  artifact_index?: string[]
+  qor_summary?: Record<string, unknown>
+  coverage_summary?: Record<string, unknown>
+  fix_requests?: Record<string, unknown>[]
   started_at?: string
   finished_at?: string | null
+}
+
+export interface ChipProgressEvent {
+  run_id: string
+  event_type: string
+  mission_id?: string
+  phase?: string
+  agent?: string
+  skill?: string
+  tool?: string
+  status?: string
+  index?: number
+  total?: number
+  message?: string
+  artifacts?: string[]
+  qor?: Record<string, unknown>
+  coverage?: Record<string, unknown>
+  fix_request?: Record<string, unknown> | null
+  metadata?: Record<string, unknown>
+  timestamp?: string
+}
+
+export interface AgentPlanStep {
+  phase?: string
+  role_id?: string
+  action?: string
+  skills?: string[]
+  handoff_to?: string[]
 }
 
 export type AgentsSubTab = 'worker' | 'specialist'
@@ -238,6 +274,12 @@ export interface ActiveOrchestratorRun {
   stage_index?: number
   stage_total?: number
   logs: string[]
+  progress_events?: ChipProgressEvent[]
+  agent_plan?: AgentPlanStep[]
+  artifact_index?: string[]
+  qor_summary?: Record<string, unknown>
+  coverage_summary?: Record<string, unknown>
+  fix_requests?: Record<string, unknown>[]
   error?: string
   summary?: string
 }

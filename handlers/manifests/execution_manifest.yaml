@@ -1,0 +1,164 @@
+routes:
+  chip-mission:
+    agents:
+      - name: PMAgent
+        reason: Produce mission spec, acceptance gates, and agent handoff.
+      - name: ArchitectAgent
+        reason: Define architecture, interface, protocol, and PPA constraints.
+      - name: EDAAgent
+        reason: Execute RTL/IP autodesign, verification, synthesis, and repair loop.
+      - name: OptimizerAgent
+        reason: Interpret QoR, coverage gaps, and decide iteration targets.
+    skills:
+      - name: chip-mission
+        reason: PM-led multi-agent chip task orchestration.
+      - name: chip-autodesign
+        reason: RTL/IP generation, testbench, simulation, synthesis, QoR, and signoff flow.
+      - name: chip-verification
+        reason: Verification-only phases inside mission execution.
+      - name: chip-synthesis
+        reason: Synthesis and QoR phases inside mission execution.
+    tools:
+      - name: iverilog
+        reason: Simulate generated or existing Verilog/SystemVerilog testbenches.
+      - name: vvp
+        reason: Run Icarus Verilog simulation output.
+      - name: yosys
+        reason: Synthesize RTL and produce generic QoR.
+      - name: abc
+        reason: Optional logic optimization during synthesis.
+
+  chip-autodesign:
+    agents:
+      - name: EDAAgent
+        reason: Execute validated RTL/IP autodesign with simulation, synthesis, and repair loop.
+    skills:
+      - name: chip-autodesign
+        reason: RTL/IP generation, testbench, simulation, synthesis, QoR, and signoff flow.
+      - name: erie-verilog-generator
+        reason: Validated RTL workflow facade for custom/unknown IP designs.
+    tools:
+      - name: iverilog
+        reason: Simulate generated or existing Verilog/SystemVerilog testbenches.
+      - name: vvp
+        reason: Run Icarus Verilog simulation output.
+      - name: yosys
+        reason: Synthesize RTL and produce generic QoR.
+
+  validated-rtl-generation:
+    agents:
+      - name: EDAAgent
+        reason: Execute validated RTL generation with hard gate closure.
+    skills:
+      - name: erie-verilog-generator
+        reason: route_verilog_request + run_verilog_workflow + validate_verilog_artifacts facade.
+    tools:
+      - name: iverilog
+        reason: Local simulation when available.
+      - name: vvp
+        reason: Local simulation runner when available.
+      - name: yosys
+        reason: Local synthesis when available.
+
+  chip-single-task:simulation:
+    agents:
+      - name: EDAAgent
+        reason: Run a bounded simulation task.
+    skills:
+      - name: chip-verification
+        reason: Compile and run testbench/regression tasks.
+    tools:
+      - name: iverilog
+        reason: Compile simulation sources.
+      - name: vvp
+        reason: Run compiled simulation.
+
+  chip-single-task:testbench:
+    agents:
+      - name: EDAAgent
+        reason: Generate or run a bounded testbench task.
+    skills:
+      - name: testbench-generator
+        reason: Generate a self-checking testbench for existing RTL.
+      - name: chip-verification
+        reason: Validate testbench compilation and execution.
+    tools:
+      - name: iverilog
+        reason: Compile generated testbench.
+      - name: vvp
+        reason: Run generated testbench.
+
+  chip-single-task:synthesis:
+    agents:
+      - name: EDAAgent
+        reason: Run bounded synthesis task.
+      - name: PPAOptimizerAgent
+        reason: Review synthesis/QoR issues when needed.
+    skills:
+      - name: chip-synthesis
+        reason: Run Yosys synthesis and QoR parsing.
+    tools:
+      - name: yosys
+        reason: Synthesize RTL and emit netlist/QoR.
+      - name: abc
+        reason: Optional technology-independent optimization.
+
+  chip-single-task:formal:
+    agents:
+      - name: FormalAgent
+        reason: Run property/formal verification task.
+    skills:
+      - name: chip-formal
+        reason: Formal verification workflow.
+    tools:
+      - name: sby
+        reason: Run SymbiYosys when available.
+      - name: yosys
+        reason: Prepare formal model and checks.
+
+  chip-single-task:sta:
+    agents:
+      - name: PPAOptimizerAgent
+        reason: Review timing/STA results and next actions.
+    skills:
+      - name: chip-sta
+        reason: Static timing analysis workflow.
+    tools:
+      - name: opensta
+        reason: Run static timing analysis when available.
+
+  chip-single-task:hls:
+    agents:
+      - name: HLSAgent
+        reason: Convert algorithmic intent into HLS-ready artifacts.
+    skills:
+      - name: chip-hls
+        reason: HLS workflow.
+    tools:
+      - name: vitis_hls
+        reason: Run HLS when available.
+
+  chip-single-task:physical_design:
+    agents:
+      - name: DeployAgent
+        reason: Check PD toolchain and prepare handoff/runbook.
+    skills:
+      - name: chip-pd
+        reason: Physical design handoff or available-tool execution.
+    tools:
+      - name: openroad
+        reason: Run open-source placement/routing when available.
+      - name: innovus
+        reason: Commercial placement/routing if installed and authorized.
+
+  chip-qa:
+    agents:
+      - name: PMAgent
+        reason: Answer conceptual chip-design questions without execution.
+    skills: []
+    tools: []
+
+  chip-artifact-query:
+    agents: []
+    skills: []
+    tools: []

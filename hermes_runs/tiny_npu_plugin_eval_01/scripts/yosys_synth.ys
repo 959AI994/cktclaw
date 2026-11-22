@@ -1,0 +1,21 @@
+#============================================================================
+# yosys_synth.ys — Yosys synthesis script for tiny_npu_tile_16x16
+# Target: generic (no PDK), produce Verilog netlist + QoR report
+#============================================================================
+
+# Read RTL sources
+read_verilog -sv rtl/tiny_npu_tile_16x16.sv
+
+# Elaborate top module
+hierarchy -top tiny_npu_tile_16x16
+
+# Generic synthesis (no PDK; use generic cells)
+synth -top tiny_npu_tile_16x16
+clean
+
+# Report generic synthesized cell counts and object widths.
+tee -o outputs/tiny_npu_qor.rpt stat -width
+
+# Write synthesized netlist and JSON for downstream inspection
+write_verilog -noattr outputs/tiny_npu_synth.v
+write_json outputs/tiny_npu_synth.json

@@ -361,6 +361,8 @@ class CLIState:
                 "/chip-design-skills": "🔷 芯片设计子终端（提示符 [chip-design-skills]；.. 回主界面）",
                 "/loop": "🔄 跨域闭环系统 (EDA + Chip + AI Infra)",
                 "/chip-system": "🔗 七 Agent 全栈流水线 (PM→Arch→EDA→Deploy→Opt)",
+                "/chip-mission": "PM 总控多智能体芯片任务：诊断→派工→执行→验收",
+                "/chip-autodesign": "通用 RTL IP 自动设计：spec→RTL→仿真→综合→QoR→交付",
                 "/sessions": "📚 查看历史会话列表",
                 "/about": "ℹ️ 查看 CktClaw 平台简介与能力矩阵",
                 "/model": "🔀 切换当前分析引擎 (LogicRT / DeepSeek / Claude / OpenAI)",
@@ -446,6 +448,13 @@ def parse_input(user_input: str) -> tuple[str, str]:
             "loop": "system-loop",
             "system-loop": "system-loop",
             "closed-loop": "system-loop",
+            "chip-system": "chip-system",
+            "chip-mission": "chip-mission",
+            "mission": "chip-mission",
+            "auto-chip": "chip-mission",
+            "chip-autodesign": "chip-autodesign",
+            "autodesign": "chip-autodesign",
+            "chip-auto": "chip-autodesign",
             # Chip design domain skills（仅全称 /chip-*）
             "chip-architecture": "chip-architecture",
             "chip-rtl": "chip-rtl",
@@ -536,6 +545,8 @@ class LogicRTCLI:
                 register_verilog_generator_skill,
                 register_hls_generator_skill,
                 register_external_skills,
+                register_chip_mission_skill,
+                register_chip_autodesign_skill,
             )
             # Register innovation skills
             from .skills.rltf_skill import register_rltf_skill
@@ -558,6 +569,8 @@ class LogicRTCLI:
                 asyncio.run(register_rtl_repair_skill())
                 asyncio.run(register_system_loop_skill())
                 asyncio.run(register_chip_system_skill())
+                asyncio.run(register_chip_mission_skill())
+                asyncio.run(register_chip_autodesign_skill())
                 asyncio.run(register_rtl_claw_skills())
                 asyncio.run(register_fpga_agent_skills())
                 asyncio.run(register_verilog_generator_skill())
@@ -580,6 +593,8 @@ class LogicRTCLI:
                     future11 = executor.submit(asyncio.run, register_rtl_repair_skill())
                     future12 = executor.submit(asyncio.run, register_system_loop_skill())
                     future12b = executor.submit(asyncio.run, register_chip_system_skill())
+                    future12c = executor.submit(asyncio.run, register_chip_mission_skill())
+                    future12d = executor.submit(asyncio.run, register_chip_autodesign_skill())
                     future13 = executor.submit(asyncio.run, register_rtl_claw_skills())
                     future14 = executor.submit(asyncio.run, register_fpga_agent_skills())
                     future15 = executor.submit(asyncio.run, register_verilog_generator_skill())
@@ -600,6 +615,8 @@ class LogicRTCLI:
                     future11.result()
                     future12.result()
                     future12b.result()
+                    future12c.result()
+                    future12d.result()
                     future13.result()
                     future14.result()
                     future15.result()
@@ -838,10 +855,7 @@ class LogicRTCLI:
             self._run_async_handler(process_reverse(args, self.state))
 
         elif cmd_type == "chat":
-            # Use V3 streaming handler when cloud providers are configured,
-            # fall back to V2 for local models
-            from .handlers.chat_handler_v3 import process_chat_v3
-            self._run_async_handler(process_chat_v3(user_input, self.state), kind="chat")
+            self._run_async_handler(self._handle_chat_async(user_input), kind="chat")
 
         elif cmd_type == "model":
             from .handlers.model_handler import select_model_interactive
@@ -886,7 +900,8 @@ class LogicRTCLI:
             "vivado-tcl", "vivado-synth", "vivado-sim", "vivado-impl",
             "vivado-analysis", "vivado-constraints", "vivado-debug",
             "vitis-hls-synthesis", "erie-verilog-generator",
-            "verilog-lint", "verilog-tb-gen",
+            "verilog-lint", "verilog-tb-gen", "chip-system", "chip-mission",
+            "chip-autodesign",
         ):
             from .handlers.workflow_skill_handler import process_workflow_skill
             self._run_async_handler(
@@ -940,11 +955,97 @@ class LogicRTCLI:
             self.shutdown()
 
         elif cmd_type == "unknown":
-            render_error(
-                console,
-                f"Unknown command: {user_input}. Type /help for available commands.",
-                error_type="error",
+                render_error(
+                    console,
+                    f"Unknown command: {user_input}. Type /help for available commands.",
+                    error_type="error",
+                )
+
+    async def _handle_chat_async(self, user_input: str):
+        from .handlers.intent_router import (
+            build_chip_router_context,
+            execution_skill_for_intent,
+            resolve_chip_intent_async,
+        )
+
+        console = self.state.console
+        router_context = build_chip_router_context(cli_state=self.state)
+        provider_label = router_context.get("provider_name") or "none"
+        chip_intent = await resolve_chip_intent_async(user_input, router_context)
+        detected_skill = execution_skill_for_intent(chip_intent)
+        route_meta = (
+            f"provider={provider_label}, source={chip_intent.router_source}, "
+            f"route={chip_intent.route}, confidence={chip_intent.confidence:.2f}"
+        )
+        if chip_intent.router_source == "rules_fallback":
+            route_meta += f", fallback_reason={chip_intent.fallback_reason or 'none'}"
+        if chip_intent.intent_type == "chip_artifact_query":
+            console.print(f"[dim]→ Chip route decision: {route_meta}; {chip_intent.rationale}[/dim]")
+            from .handlers.chip_artifact_resolver import (
+                render_artifact_query_for_cli,
+                resolve_chip_artifact_query,
             )
+            query = resolve_chip_artifact_query(
+                chip_intent.artifact_query,
+                context=router_context,
+                cli_state=self.state,
+            )
+            chip_intent.artifact_query = query
+            console.print(render_artifact_query_for_cli(query))
+            return
+        can_execute = (
+            chip_intent.is_execution_route
+            and detected_skill
+            and chip_intent.confidence >= 0.80
+            and not chip_intent.needs_clarification
+            and not chip_intent.requires_confirmation
+        )
+        if can_execute:
+            console.print(
+                f"[dim]→ Auto-routed by {chip_intent.router_source} "
+                f"(provider={provider_label}"
+                f"{', fallback_reason=' + str(chip_intent.fallback_reason) if chip_intent.router_source == 'rules_fallback' else ''}) "
+                f"to {detected_skill}: "
+                f"{chip_intent.intent_type}, confidence={chip_intent.confidence:.2f}; "
+                f"{chip_intent.rationale}[/dim]"
+            )
+            if chip_intent.fallback_reason == "schema_validation_error":
+                detail = chip_intent.rationale
+                if "schema_error:" in detail:
+                    detail = detail.split("schema_error:", 1)[1].strip().rstrip(")")
+                console.print(f"[yellow]schema_error: {detail}[/yellow]")
+            if chip_intent.permission_gates or chip_intent.unsupported_tools:
+                console.print(
+                    f"[dim]   gates={chip_intent.permission_gates} "
+                    f"unsupported={chip_intent.unsupported_tools}[/dim]"
+                )
+            chip_domain_skills = {
+                "chip-architecture", "chip-rtl", "chip-verification", "chip-formal",
+                "chip-synthesis", "chip-dft", "chip-sta", "chip-hls", "chip-pd",
+                "chip-soc", "chip-compiler", "chip-firmware", "chip-fpga",
+                "chip-infrastructure", "chip-pipeline",
+            }
+            if detected_skill in chip_domain_skills:
+                from .handlers.chip_design_handler import handle_chip_design
+                await handle_chip_design(detected_skill, user_input, self.state)
+            else:
+                from .handlers.workflow_skill_handler import process_workflow_skill
+                await process_workflow_skill(detected_skill, user_input, self.state)
+            return
+
+        if chip_intent.intent_type in {"chip_qa", "clarification"}:
+            console.print(
+                f"[dim]→ Chip intent by {chip_intent.router_source} "
+                f"(provider={provider_label}"
+                f"{', fallback_reason=' + str(chip_intent.fallback_reason) if chip_intent.router_source == 'rules_fallback' else ''}): "
+                f"{chip_intent.intent_type}, confidence={chip_intent.confidence:.2f}; "
+                f"{chip_intent.rationale}[/dim]"
+            )
+            if chip_intent.missing_info:
+                console.print(f"[dim]   missing_info={chip_intent.missing_info}[/dim]")
+
+        from .handlers.chat_handler_v3 import process_chat_v3
+        await process_chat_v3(user_input, self.state)
 
     def _run_async_handler(self, coro, kind: str = "run"):
         """

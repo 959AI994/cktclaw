@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   AgentInfo,
   AgentsSubTab,
+  ChipProgressEvent,
   MemoryEntry,
   MemorySearchResult,
   OrchestratorRun,
@@ -32,6 +33,29 @@ const TAB_TITLES: Record<TabId, string> = {
   memory: 'Semantic Memory',
   settings: 'Settings',
   config: 'Raw Config',
+}
+
+function mergeProgressEvents(
+  local?: ChipProgressEvent[],
+  incoming?: ChipProgressEvent[],
+): ChipProgressEvent[] {
+  const merged = [...(local || []), ...(incoming || [])]
+  const seen = new Set<string>()
+  const result: ChipProgressEvent[] = []
+  for (const evt of merged) {
+    const key = [
+      evt.timestamp || '',
+      evt.event_type || '',
+      evt.phase || '',
+      evt.skill || '',
+      evt.status || '',
+      evt.message || '',
+    ].join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(evt)
+  }
+  return result.slice(-300)
 }
 
 interface AppState {
@@ -501,6 +525,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             stage_index: apiRun.stage_index || local.stage_index,
             stage_total: apiRun.stage_total || local.stage_total,
             status: apiRun.status || local.status,
+            intent: apiRun.intent || local.intent,
+            route_rationale: apiRun.route_rationale || local.route_rationale,
+            progress_events: mergeProgressEvents(local.progress_events, apiRun.progress_events),
+            agent_plan: apiRun.agent_plan?.length ? apiRun.agent_plan : local.agent_plan,
+            artifact_index: apiRun.artifact_index?.length ? apiRun.artifact_index : local.artifact_index,
+            qor_summary: Object.keys(apiRun.qor_summary || {}).length ? apiRun.qor_summary : local.qor_summary,
+            coverage_summary: Object.keys(apiRun.coverage_summary || {}).length
+              ? apiRun.coverage_summary
+              : local.coverage_summary,
+            fix_requests: apiRun.fix_requests?.length ? apiRun.fix_requests : local.fix_requests,
           }
         })
         for (const local of s.orchestratorRuns) {
@@ -558,7 +592,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   handleOrchestratorWsEvent: (eventType, data) => {
-    const payload = (data || {}) as Partial<OrchestratorRun> & { run_id?: string; stage?: string; index?: number; total?: number; message?: string; error?: string }
+    const payload = (data || {}) as Partial<OrchestratorRun> & ChipProgressEvent & { run_id?: string; stage?: string; index?: number; total?: number; message?: string; error?: string }
     const runId = payload.run_id
     if (!runId) return
 
@@ -576,7 +610,30 @@ export const useAppStore = create<AppState>((set, get) => ({
         idx = 0
       }
       const run = { ...runs[idx] }
-      if (eventType === 'orchestrator:started') {
+      if (eventType.startsWith('chip_progress:')) {
+        const progress = payload as ChipProgressEvent
+        run.progress_events = mergeProgressEvents(run.progress_events, [progress])
+        run.current_stage = progress.phase || progress.skill || run.current_stage
+        run.stage_index = progress.index ?? run.stage_index
+        run.stage_total = progress.total ?? run.stage_total
+        if (progress.event_type === 'run_completed') run.status = 'completed'
+        else if (progress.event_type === 'run_failed') run.status = 'failed'
+        else if (progress.event_type?.includes('started') || progress.event_type?.includes('running')) {
+          run.status = 'running'
+        }
+        const agentPlan = progress.metadata?.agent_plan
+        if (Array.isArray(agentPlan)) run.agent_plan = agentPlan
+        if (progress.artifacts?.length) {
+          run.artifact_index = Array.from(new Set([...(run.artifact_index || []), ...progress.artifacts])).slice(-100)
+        }
+        if (progress.qor && Object.keys(progress.qor).length) run.qor_summary = progress.qor
+        if (progress.coverage && Object.keys(progress.coverage).length) run.coverage_summary = progress.coverage
+        if (progress.fix_request) run.fix_requests = [...(run.fix_requests || []), progress.fix_request].slice(-50)
+        if (progress.message) {
+          const label = progress.phase || progress.skill || progress.event_type
+          run.logs = [...(run.logs || []), `[${label}] ${progress.message}`].slice(-50)
+        }
+      } else if (eventType === 'orchestrator:started') {
         run.status = 'running'
       } else if (eventType === 'orchestrator:stage_start') {
         run.current_stage = payload.stage

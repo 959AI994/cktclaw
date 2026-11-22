@@ -168,6 +168,7 @@ async def _handle_chat_send(websocket, msg: dict):
     disable_tools = msg.get("disable_tools", False)
     use_tools = msg.get("use_tools", True) and not disable_tools
     skip_orchestrator_confirm = msg.get("skip_orchestrator_confirm", False)
+    user_mode = msg.get("user_mode", "manual")
     provider_name = msg.get("provider", None)
     attachment_ids = msg.get("attachment_ids") or []
 
@@ -187,6 +188,7 @@ async def _handle_chat_send(websocket, msg: dict):
                 use_tools=use_tools,
                 disable_tools=disable_tools,
                 skip_orchestrator_confirm=skip_orchestrator_confirm,
+                user_mode=user_mode,
                 provider_name=provider_name,
                 attachment_ids=attachment_ids,
             ):

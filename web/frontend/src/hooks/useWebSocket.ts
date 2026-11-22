@@ -194,6 +194,19 @@ export function useWebSocket() {
       'orchestrator:log',
       'orchestrator:done',
       'orchestrator:failed',
+      'chip_progress:run_started',
+      'chip_progress:agent_dag',
+      'chip_progress:phase_started',
+      'chip_progress:phase_completed',
+      'chip_progress:phase_failed',
+      'chip_progress:skill_started',
+      'chip_progress:skill_completed',
+      'chip_progress:skill_failed',
+      'chip_progress:fix_requested',
+      'chip_progress:specialist_dispatched',
+      'chip_progress:handoff',
+      'chip_progress:run_completed',
+      'chip_progress:run_failed',
     ]) {
       ws.on(evt, onOrchEvent)
     }
@@ -209,12 +222,25 @@ export function useWebSocket() {
       for (const evt of [
         'orchestrator:started',
         'orchestrator:stage_start',
-        'orchestrator:log',
-        'orchestrator:done',
-        'orchestrator:failed',
-      ]) {
-        ws.off(evt, onOrchEvent)
-      }
+      'orchestrator:log',
+      'orchestrator:done',
+      'orchestrator:failed',
+      'chip_progress:run_started',
+      'chip_progress:agent_dag',
+      'chip_progress:phase_started',
+      'chip_progress:phase_completed',
+      'chip_progress:phase_failed',
+      'chip_progress:skill_started',
+      'chip_progress:skill_completed',
+      'chip_progress:skill_failed',
+      'chip_progress:fix_requested',
+      'chip_progress:specialist_dispatched',
+      'chip_progress:handoff',
+      'chip_progress:run_completed',
+      'chip_progress:run_failed',
+    ]) {
+      ws.off(evt, onOrchEvent)
+    }
       clearInterval(pingInterval)
     }
   }, [setConnected, addEvent, fetchAgents, fetchOverview, handleOrchestratorWsEvent])

@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/appStore'
 import { agentId } from '../../lib/utils'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
 import { Modal } from '../ui/Modal'
 import { AttachmentUploader } from '../upload/AttachmentUploader'
 import { Table, TableRow, TableCell } from '../ui/Table'
@@ -314,23 +315,175 @@ function SpecialistTab() {
         )}
       </Table>
 
-      {selectedRun ? (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-3">
-          <div className="text-xs text-[var(--color-text-secondary)] mb-2">
-            Logs — {selectedRun.run_id}
-            {selectedRun.error ? ` · Error: ${selectedRun.error}` : ''}
-          </div>
-          <pre className="text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto text-[var(--color-text-secondary)]">
-            {(selectedRun.logs || []).length
-              ? (selectedRun.logs || []).join('\n\n')
-              : selectedRun.status === 'running' || selectedRun.status === 'pending'
-                ? 'Running — waiting for output...'
-                : '(no logs)'}
-          </pre>
-        </div>
-      ) : null}
+      {selectedRun ? <ChipAutomationRunDetail run={selectedRun} /> : null}
     </>
   )
+}
+
+function ChipAutomationRunDetail({ run }: { run: ReturnType<typeof useAppStore.getState>['orchestratorRuns'][number] }) {
+  const events = run.progress_events || []
+  const latest = events[events.length - 1]
+  const progressPct = run.stage_total
+    ? Math.min(100, Math.round(((run.stage_index || 0) / run.stage_total) * 100))
+    : events.length
+      ? 100
+      : 0
+
+  return (
+    <div className="space-y-3">
+      <Card
+        header={
+          <div className="flex items-center justify-between gap-3">
+            <span>Chip Automation Command Center</span>
+            <Badge variant={statusBadge(run.status)}>{run.status}</Badge>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 text-sm">
+            <Metric label="Run" value={run.run_id} mono />
+            <Metric label="Skill" value={run.skill} />
+            <Metric label="Current" value={run.current_stage || latest?.phase || '—'} />
+            <Metric label="Progress" value={`${progressPct}%`} mono />
+          </div>
+          {(run.intent || run.route_rationale) && (
+            <div className="rounded-md border border-[var(--color-border-muted)] bg-[var(--color-bg-root)] p-2 text-xs">
+              <div className="text-[var(--color-text-secondary)] mb-1">Route Decision</div>
+              {run.route_rationale && (
+                <div className="text-[var(--color-text)] mb-1">{run.route_rationale}</div>
+              )}
+              {run.intent && (
+                <pre className="m-0 max-h-28 overflow-y-auto text-[var(--color-text-dim)]">
+                  {JSON.stringify(run.intent, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
+          <div className="h-2 rounded-full bg-[var(--color-bg-root)] overflow-hidden border border-[var(--color-border-muted)]">
+            <div
+              className="h-full bg-[var(--color-accent)] transition-all"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          {run.error && (
+            <div className="text-xs text-[var(--color-danger)] border border-[var(--color-danger)]/30 rounded-md p-2">
+              {run.error}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {(run.agent_plan || []).length > 0 && (
+        <Card header="Agent DAG">
+          <div className="flex flex-wrap items-center gap-2">
+            {(run.agent_plan || []).map((step, idx) => (
+              <div key={`${step.role_id}-${step.phase}-${idx}`} className="flex items-center gap-2">
+                <div className="px-2 py-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-root)] text-xs">
+                  <div className="font-medium text-[var(--color-text)]">{step.role_id || '?'}</div>
+                  <div className="text-[var(--color-text-dim)]">{step.phase || 'phase'}</div>
+                </div>
+                {idx < (run.agent_plan || []).length - 1 && (
+                  <span className="text-[var(--color-text-dim)]">→</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-3">
+        <Card header="Live Timeline">
+          <div className="max-h-80 overflow-y-auto space-y-2">
+            {events.length ? (
+              events.slice(-80).map((evt, idx) => (
+                <div key={`${evt.timestamp}-${idx}`} className="grid grid-cols-[92px_1fr] gap-3 text-xs">
+                  <div className="text-[var(--color-text-dim)] font-mono">{formatTime(evt.timestamp)}</div>
+                  <div className="border-l border-[var(--color-border)] pl-3 pb-2">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge variant={eventBadge(evt.status || evt.event_type)}>{evt.status || evt.event_type}</Badge>
+                      <span className="font-medium">{evt.agent || evt.skill || 'chip'}</span>
+                      <span className="text-[var(--color-text-dim)]">{evt.phase || evt.skill || evt.event_type}</span>
+                    </div>
+                    {evt.message && <div className="text-[var(--color-text-secondary)] mt-1">{evt.message}</div>}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-[var(--color-text-dim)]">Waiting for structured chip progress…</div>
+            )}
+          </div>
+        </Card>
+
+        <Card header="Evidence">
+          <div className="space-y-3 text-xs">
+            <EvidenceBlock title="QoR" data={run.qor_summary} />
+            <EvidenceBlock title="Coverage" data={run.coverage_summary} />
+            <EvidenceBlock title="Fix Requests" data={run.fix_requests} />
+            <div>
+              <div className="text-[var(--color-text-secondary)] mb-1">Artifacts</div>
+              <div className="max-h-28 overflow-y-auto space-y-1 font-mono">
+                {(run.artifact_index || []).length ? (
+                  (run.artifact_index || []).slice(-20).map((a) => (
+                    <div key={a} className="truncate text-[var(--color-text-dim)]">{a}</div>
+                  ))
+                ) : (
+                  <div className="text-[var(--color-text-dim)]">—</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card header={`Logs — ${run.run_id}`}>
+        <pre className="text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto text-[var(--color-text-secondary)] m-0">
+          {(run.logs || []).length
+            ? (run.logs || []).join('\n\n')
+            : run.status === 'running' || run.status === 'pending'
+              ? 'Running — waiting for output...'
+              : '(no logs)'}
+        </pre>
+      </Card>
+    </div>
+  )
+}
+
+function Metric({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-xs text-[var(--color-text-dim)]">{label}</div>
+      <div className={`truncate text-[var(--color-text)] ${mono ? 'font-mono text-xs' : ''}`}>{value}</div>
+    </div>
+  )
+}
+
+function EvidenceBlock({ title, data }: { title: string; data?: unknown }) {
+  const empty =
+    data == null ||
+    (Array.isArray(data) && data.length === 0) ||
+    (!Array.isArray(data) && typeof data === 'object' && Object.keys(data as Record<string, unknown>).length === 0)
+  return (
+    <div>
+      <div className="text-[var(--color-text-secondary)] mb-1">{title}</div>
+      <pre className="max-h-28 overflow-y-auto rounded-md bg-[var(--color-bg-root)] border border-[var(--color-border-muted)] p-2 m-0 text-[var(--color-text-dim)]">
+        {empty ? '—' : JSON.stringify(data, null, 2)}
+      </pre>
+    </div>
+  )
+}
+
+function eventBadge(status?: string) {
+  if (status === 'PASS' || status === 'completed' || status === 'run_completed') return 'success'
+  if (status === 'FAIL' || status === 'failed' || status === 'run_failed') return 'danger'
+  if (status === 'running') return 'warning'
+  return 'muted'
+}
+
+function formatTime(ts?: string) {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ts.slice(11, 19)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function statusBadge(status?: string) {

@@ -2,7 +2,7 @@
 role_id: rtl_repair_agent
 display_name: RTLRepairAgent
 description: RTL compile, lint, simulation, and formal failure repair specialist.
-execution_mode: worker
+execution_mode: orchestrator_direct
 model_tier: specialist
 mapped_skills: rtl-repair, erie-verilog-generator, rtl-spec-analyzer, testbench-generator
 allowed_tools: Read, Write, Grep, Glob, Bash, verible, slang, verilator, yosys, sby

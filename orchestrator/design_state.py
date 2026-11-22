@@ -235,6 +235,13 @@ class DesignStateStore:
                 "artifacts_index": {},
                 "optimization_round": 0,
             },
+            "mission": {
+                "status": None,
+                "mission_spec": {},
+                "agent_plan": [],
+                "phases": [],
+                "artifacts_index": {},
+            },
         }
 
     def update_multi_agent_phase(
@@ -272,6 +279,45 @@ class DesignStateStore:
     def set_arch(self, arch_md: str) -> None:
         data = self.load()
         data["arch"] = {"markdown": arch_md, "updated_at": _utc_now()}
+        self._data = data
+
+    def set_mission(
+        self,
+        *,
+        mission_spec: Dict[str, Any],
+        agent_plan: list,
+        status: str,
+        artifacts: Optional[Dict[str, str]] = None,
+        phases: Optional[list] = None,
+    ) -> None:
+        data = self.load()
+        mission = data.setdefault("mission", {})
+        mission["status"] = status
+        mission["mission_spec"] = mission_spec
+        mission["agent_plan"] = agent_plan
+        if phases:
+            mission["phases"] = phases
+        if artifacts:
+            idx = mission.setdefault("artifacts_index", {})
+            idx.update(artifacts)
+            if artifacts.get("last_chip_mission_id"):
+                mission["last_chip_mission_id"] = artifacts["last_chip_mission_id"]
+            if artifacts.get("last_project_dir"):
+                mission["last_project_dir"] = artifacts["last_project_dir"]
+        data["design_name"] = mission_spec.get("mission_id") or data.get("design_name")
+        hist = data.setdefault("history", [])
+        hist.append({
+            "timestamp": _utc_now(),
+            "agent": "chip_mission_control",
+            "stage": "mission",
+            "decision": status,
+            "confidence": "high",
+            "failure_class": "none",
+            "retry_strategy": "mission_agent_plan",
+            "suggested_next_step": "execute_or_review_agent_plan",
+            "reason": f"Mission classified as {mission_spec.get('mission_type')}",
+            "constraint_ref": None,
+        })
         self._data = data
 
     def add_fix_request(

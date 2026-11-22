@@ -1,0 +1,19 @@
+VCD info: dumpfile wave/tiny_npu_tile.vcd opened for output.
+============================================================
+ TINY NPU — Handwritten Digit Recognition Test
+ 16x16 int8 MAC tile with template-matching classifier
+============================================================
+[TEST] Digit 6 recognition...
+PASS: digit 6 classified correctly with score 16
+PASS: digit 0 classified correctly with score 16
+PASS: digit 1 classified correctly with score 16
+PASS: digit 2 classified correctly with score 16
+PASS: digit 3 classified correctly with score 16
+PASS: digit 4 classified correctly with score 16
+PASS: digit 5 classified correctly with score 16
+PASS: digit 7 classified correctly with score 16
+PASS: digit 8 classified correctly with score 16
+PASS: digit 9 classified correctly with score 16
+============================================================
+ALL TESTS PASSED
+tb/tb_tiny_npu_tile.sv:311: $finish called at 301000 (1ps)

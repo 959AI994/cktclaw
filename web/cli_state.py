@@ -52,6 +52,19 @@ class WebConsole:
                 "total": total,
             },
         )
+        try:
+            from ..runtime.chip_progress import publish_chip_progress
+            publish_chip_progress(
+                event_type="phase_started",
+                cli_state=self,
+                phase=stage,
+                status="running",
+                index=index,
+                total=total,
+                message=f"Stage: {stage} ({index}/{total})",
+            )
+        except Exception:
+            pass
 
     def print(self, *args, **kwargs) -> None:
         with self._console.capture() as capture:

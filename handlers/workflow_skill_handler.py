@@ -17,6 +17,31 @@ from ..harness import get_skill_registry
 from ..harness.skills.skill_registry import SkillNotFoundError
 
 
+def _print_rtl_llm_summary(console, result: Any, skill_name: str) -> None:
+    from pathlib import Path
+
+    from ..workflows.validated_rtl.observability import format_rtl_llm_cli_summary
+
+    project_dir = None
+    overall_status = ""
+    if isinstance(result, list):
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            payload = item.get("result") if item.get("type") in {
+                "chip_mission_result",
+                "chip_autodesign_result",
+            } else None
+            if isinstance(payload, dict):
+                overall_status = str(payload.get("status") or overall_status)
+                project_dir = payload.get("project_dir") or project_dir
+                if item.get("type") == "chip_mission_result" and payload.get("report_path"):
+                    project_dir = str(Path(str(payload["report_path"])).parent)
+    summary = format_rtl_llm_cli_summary(project_dir, overall_status=overall_status)
+    if summary:
+        console.print(f"[dim]{summary}[/dim]")
+
+
 async def _prompt_aig_path_if_missing(console, bracket_label: str) -> Optional[str]:
     """
     无参时提示用户选择 .aig 路径（PathCompleter）。
@@ -110,16 +135,41 @@ async def process_workflow_skill(skill_name: str, args: str, cli_state) -> None:
     if isinstance(result, list):
         lines: List[str] = []
         for item in result:
+            if isinstance(item, dict) and item.get("type") == "skill_doc":
+                if "--show-skill-doc" not in effective_args:
+                    console.print(
+                        "[red]Refusing to print skill documentation during execution. "
+                        "Use --show-skill-doc if you explicitly want the SKILL.md content.[/red]"
+                    )
+                    return
             if isinstance(item, dict) and "text" in item:
                 text = str(item["text"])
+                if (
+                    "--show-skill-doc" not in effective_args
+                    and skill.name == "erie-verilog-generator"
+                    and text.startswith("# erie-verilog-generator")
+                    and "Base directory for this skill" in text
+                ):
+                    console.print(
+                        "[red]Misrouted erie-verilog-generator output detected (SKILL.md dump). "
+                        "Execution handler should run ValidatedRTLController instead.[/red]"
+                    )
+                    return
                 lines.append(text)
                 rendered_text_parts.append(text)
+            elif isinstance(item, dict) and item.get("type") in {
+                "chip_mission_result",
+                "chip_autodesign_result",
+            }:
+                continue
             elif isinstance(item, dict):
                 text = str(item)
                 lines.append(text)
                 rendered_text_parts.append(text)
         if lines:
             console.print("\n\n".join(lines))
+        if skill.name in {"chip-mission", "chip-autodesign"}:
+            _print_rtl_llm_summary(console, result, skill.name)
     else:
         text = str(result)
         rendered_text_parts.append(text)

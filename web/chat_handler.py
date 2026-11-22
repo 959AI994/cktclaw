@@ -100,6 +100,7 @@ async def stream_chat(
     use_tools: bool = True,
     disable_tools: bool = False,
     skip_orchestrator_confirm: bool = False,
+    user_mode: str = "manual",
     force_agent: bool = False,
     provider_name: Optional[str] = None,
     attachment_ids: Optional[List[str]] = None,
@@ -141,20 +142,83 @@ async def stream_chat(
     low_confidence_route: Optional[dict] = None
     if not force_agent:
         try:
+            from ..handlers.chip_artifact_resolver import (
+                render_artifact_query_for_cli,
+                resolve_chip_artifact_query,
+            )
+            from ..handlers.intent_router import (
+                build_chip_router_context,
+                intent_to_route_dict,
+                resolve_chip_intent_async,
+            )
             from ..capability_registry import get_capability_registry
+            router_context = build_chip_router_context(
+                provider_name=provider_name,
+                session_id=session_id,
+                cwd=os.getcwd(),
+                extra={"user_mode": user_mode},
+            )
+            chip_intent = await resolve_chip_intent_async(enriched_message, router_context)
+            if chip_intent.intent_type == "chip_artifact_query":
+                query = resolve_chip_artifact_query(chip_intent.artifact_query, context=router_context)
+                chip_intent.artifact_query = query
+                yield {
+                    "type": "chat:content_replace",
+                    "session_id": session_id,
+                    "content": render_artifact_query_for_cli(query),
+                }
+                yield {
+                    "type": "chat:done",
+                    "session_id": session_id,
+                    "usage": {"artifact_query": True},
+                    "intent": chip_intent.to_dict(),
+                }
+                return
             cap_reg = get_capability_registry()
-            route = await cap_reg.resolve_intent(enriched_message)
-            if route and route.get("needs_orchestrator"):
+            route = intent_to_route_dict(chip_intent, enriched_message) or await cap_reg.resolve_intent(enriched_message, router_context)
+            workflow_chip_skills = {"chip-mission", "chip-autodesign", "chip-system"}
+            if route and (route.get("needs_orchestrator") or route.get("skill_id") in workflow_chip_skills):
                 confidence = float(route.get("confidence") or 0)
                 if confidence >= ORCHESTRATOR_CONFIDENCE_THRESHOLD:
                     skill_id = route.get("skill_id", "")
-                    if skip_orchestrator_confirm:
+                    if skill_id == "chip-verification":
+                        import re
+                        has_target = bool(
+                            re.search(r"(--dut-path|--project-dir|dut_path|project_dir)\s+\S+", enriched_message)
+                            or re.search(r"\S+\.(sv|v|svh|vh)\b", enriched_message, re.IGNORECASE)
+                        )
+                        if not has_target:
+                            from ..handlers.chip_artifact_resolver import latest_resolved_rtl
+                            resolved = latest_resolved_rtl(context=router_context)
+                            if resolved:
+                                route["task"] = f"{route.get('task') or enriched_message}\n\n[resolved_last_rtl: {resolved}]"
+                            else:
+                                yield {
+                                    "type": "chat:content_replace",
+                                    "session_id": session_id,
+                                    "content": "请提供 DUT RTL 路径，或选择上一轮 mission 的 RTL artifact。",
+                                }
+                                yield {
+                                    "type": "chat:done",
+                                    "session_id": session_id,
+                                    "usage": {"clarification": True},
+                                }
+                                return
+                    auto_start_allowed = (
+                        (skip_orchestrator_confirm or user_mode == "auto")
+                        and not route.get("requires_confirmation")
+                        and not route.get("permission_gates")
+                        and not route.get("unsupported_tools")
+                    )
+                    if auto_start_allowed:
                         from .routers.orchestrator import launch_orchestrator_from_chat
                         run_info = await launch_orchestrator_from_chat(
                             skill=skill_id,
                             task=route.get("task") or enriched_message,
                             session_id=session_id,
                             attachment_ids=attachment_ids,
+                            intent=route.get("intent"),
+                            route_rationale=route.get("route_rationale") or route.get("rationale", ""),
                         )
                         yield {
                             "type": "chat:orchestrator_started",
@@ -183,6 +247,13 @@ async def stream_chat(
                             if skill_id == "chip-system"
                             else None
                         ),
+                        "route_rationale": route.get("route_rationale") or route.get("rationale", ""),
+                        "intent": route.get("intent"),
+                        "permission_gates": route.get("permission_gates", []),
+                        "unsupported_tools": route.get("unsupported_tools", []),
+                        "requires_confirmation": route.get("requires_confirmation", False),
+                        "fallback_reason": route.get("fallback_reason"),
+                        "router_source": route.get("router_source"),
                     }
                     return
                 elif confidence > 0:

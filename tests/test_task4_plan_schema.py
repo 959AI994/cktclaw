@@ -60,3 +60,36 @@ def test_fail_status_preserved():
            "issues": [{"severity": "FAIL", "description": "assertion fails"}]}
     result = validate_stage_result(raw, "chip-formal")
     assert result["status"] == "FAIL"
+
+
+def test_ok_status_normalizes_to_pass_with_issue():
+    from cktclaw.orchestrator.plan_schema import validate_stage_result
+    raw = {"stage": "chip-rtl", "status": "OK", "qor": {}, "issues": []}
+    result = validate_stage_result(raw, "chip-rtl")
+    assert result["status"] == "PASS"
+    assert any("OK normalized to PASS" in issue["description"] for issue in result["issues"])
+
+
+def test_non_terminal_status_normalizes_to_warn_with_issue():
+    from cktclaw.orchestrator.plan_schema import validate_stage_result
+    for status in ["RUNNING", "PENDING", "IN_PROGRESS"]:
+        result = validate_stage_result({"stage": "chip-rtl", "status": status, "qor": {}}, "chip-rtl")
+        assert result["status"] == "WARN"
+        assert any("Non-terminal status" in issue["description"] for issue in result["issues"])
+
+
+def test_failed_status_normalizes_to_fail():
+    from cktclaw.orchestrator.plan_schema import validate_stage_result
+    result = validate_stage_result({"stage": "chip-rtl", "status": "FAILED", "qor": {}}, "chip-rtl")
+    assert result["status"] == "FAIL"
+
+
+def test_warn_stage_is_not_counted_as_passed():
+    from cktclaw.orchestrator.parser import OrchestratorSpec
+    from cktclaw.orchestrator.state_machine import OrchestratorStateMachine
+
+    sm = OrchestratorStateMachine(OrchestratorSpec(name="x", stages=["a", "b"]))
+    assert sm.start() == "a"
+    transition = sm.complete_stage("a", "WARN")
+    assert transition.action == "proceed"
+    assert sm.stages["a"].status == "skipped"

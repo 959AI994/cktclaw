@@ -167,6 +167,8 @@ def render_completion_summary(
     console: Console,
     timing_dict: Dict[str, float],
     title: str = "Completion Summary",
+    status: str = "completed",
+    detail: str = "",
 ) -> None:
     """
     Render completion summary with timing information.
@@ -176,7 +178,23 @@ def render_completion_summary(
         timing_dict: Dictionary of {operation: elapsed_seconds}
         title: Panel title
     """
-    lines = [f"[bold green]{Icons.SUCCESS}[/bold green] Operation completed\n"]
+    status_norm = (status or "completed").lower()
+    if status_norm == "failed":
+        icon = Icons.ERROR
+        style = "red"
+        label = "Operation failed"
+    elif status_norm == "incomplete":
+        icon = Icons.WARNING
+        style = "yellow"
+        label = "Operation incomplete"
+    else:
+        icon = Icons.SUCCESS
+        style = "green"
+        label = "Operation completed"
+
+    lines = [f"[bold {style}]{icon} {label}[/bold {style}]\n"]
+    if detail:
+        lines.append(f"{detail}\n")
 
     if timing_dict:
         lines.append("[bold]Timing breakdown:[/bold]")
@@ -190,7 +208,7 @@ def render_completion_summary(
     panel = Panel(
         "\n".join(lines),
         title=title,
-        border_style="green",
+        border_style=style,
         box=ROUNDED,
         padding=(1, 2),
     )

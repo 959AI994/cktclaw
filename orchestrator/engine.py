@@ -274,6 +274,20 @@ class OrchestratorEngine:
             )
             if hasattr(console, "emit_stage"):
                 console.emit_stage(stage, stage_idx, stage_total)
+            else:
+                try:
+                    from ..runtime.chip_progress import publish_chip_progress
+                    publish_chip_progress(
+                        event_type="phase_started",
+                        cli_state=getattr(self, "cli_state", None),
+                        phase=stage,
+                        status="running",
+                        index=stage_idx,
+                        total=stage_total,
+                        message=f"Stage: {stage} ({stage_idx}/{stage_total})",
+                    )
+                except Exception:
+                    pass
 
             stage_result = await self._execute_stage(stage, user_task)
 

@@ -30,6 +30,7 @@ from ..ui import (
 from ..harness import (
     QueryConfig,
     QueryStateEnum,
+    TerminalReason,
     get_skill_registry,
 )
 
@@ -80,6 +81,50 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
         cli_state: Global CLI state (CLIState instance)
     """
     console = cli_state.console
+    from .intent_router import build_chip_router_context, execution_skill_for_intent, resolve_chip_intent_async
+    router_context = build_chip_router_context(cli_state=cli_state)
+    provider_label = router_context.get("provider_name") or "none"
+    chip_intent = await resolve_chip_intent_async(user_message, router_context)
+    detected_skill = execution_skill_for_intent(chip_intent)
+    if chip_intent.intent_type == "chip_artifact_query":
+        console.print(
+            f"[dim]→ Chip route decision: provider={provider_label}, source={chip_intent.router_source}, "
+            f"route={chip_intent.route}, confidence={chip_intent.confidence:.2f}"
+            f"{', fallback_reason=' + str(chip_intent.fallback_reason) if chip_intent.router_source == 'rules_fallback' else ''}; "
+            f"{chip_intent.rationale}[/dim]"
+        )
+        from .chip_artifact_resolver import render_artifact_query_for_cli, resolve_chip_artifact_query
+        query = resolve_chip_artifact_query(chip_intent.artifact_query, context=router_context, cli_state=cli_state)
+        console.print(render_artifact_query_for_cli(query))
+        return
+    if (
+        chip_intent.is_execution_route
+        and detected_skill
+        and chip_intent.confidence >= 0.80
+        and not chip_intent.needs_clarification
+        and not chip_intent.requires_confirmation
+    ):
+        console.print(
+            f"[dim]→ Auto-routed by {chip_intent.router_source} "
+            f"(provider={provider_label}"
+            f"{', fallback_reason=' + str(chip_intent.fallback_reason) if chip_intent.router_source == 'rules_fallback' else ''}) "
+            f"to {detected_skill}: "
+            f"{chip_intent.intent_type}, confidence={chip_intent.confidence:.2f}; "
+            f"{chip_intent.rationale}[/dim]"
+        )
+        chip_domain_skills = {
+            "chip-architecture", "chip-rtl", "chip-verification", "chip-formal",
+            "chip-synthesis", "chip-dft", "chip-sta", "chip-hls", "chip-pd",
+            "chip-soc", "chip-compiler", "chip-firmware", "chip-fpga",
+            "chip-infrastructure", "chip-pipeline",
+        }
+        if detected_skill in chip_domain_skills:
+            from .chip_design_handler import handle_chip_design
+            await handle_chip_design(detected_skill, user_message, cli_state)
+        else:
+            from .workflow_skill_handler import process_workflow_skill
+            await process_workflow_skill(detected_skill, user_message, cli_state)
+        return
 
     # ━━━━━━━━━━ 1. Assemble context (using cktmem) ━━━━━━━━━━
     try:
@@ -338,14 +383,17 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
         try:
             # Run QueryLoop
             result = None
+            printed_tool_names = set()
             async for partial_result in query_loop.run(messages_dict):
                 result = partial_result
 
                 # Show progress
                 if result.state == QueryStateEnum.TOOL_EXECUTING:
-                    console.print(
-                        f"[dim]🔧 Executing tool: {result.current_tool_name}[/dim]"
-                    )
+                    if result.current_tool_name not in printed_tool_names:
+                        printed_tool_names.add(result.current_tool_name)
+                        console.print(
+                            f"[dim]🔧 Executing tool: {result.current_tool_name}[/dim]"
+                        )
                 elif result.state == QueryStateEnum.SELF_HEALING:
                     console.print(
                         f"[dim]🔄 Self-healing: {result.error_message}[/dim]"
@@ -408,11 +456,50 @@ async def process_chat_v2(user_message: str, cli_state) -> None:
     # ━━━━━━━━━━ 6. Render response ━━━━━━━━━━
     render_user_message(console, user_message)
     render_assistant_message(console, response)
+    tool_failures = _count_failed_tool_outputs(getattr(result, "messages", []) if result else [])
+    outcome = "completed"
+    detail = ""
+    if tool_failures:
+        outcome = "failed"
+        detail = f"{tool_failures} tool result(s) reported failure."
+    elif result and result.terminal_reason == TerminalReason.MAX_TURNS:
+        outcome = "incomplete"
+        detail = "Query loop reached max turns before a clean final answer."
+    elif not response or response.strip() in {"抱歉，未能生成有效响应。", "无响应"}:
+        outcome = "incomplete"
+        detail = "The model did not produce a valid final answer."
+    title_prefix = {
+        "completed": "Completed",
+        "failed": "Failed",
+        "incomplete": "Incomplete",
+    }[outcome]
     render_completion_summary(
         console,
         timing_dict={"total": elapsed},
-        title=f"Completed with {cli_state.current_engine}",
+        title=f"{title_prefix} with {cli_state.current_engine}",
+        status=outcome,
+        detail=detail,
     )
+
+
+def _count_failed_tool_outputs(messages: List[Dict[str, Any]]) -> int:
+    failure_markers = (
+        "error:",
+        "execution error",
+        "unknown tool",
+        "blocked",
+        "failed",
+        "status: fail",
+        '"status": "fail"',
+    )
+    count = 0
+    for msg in messages:
+        if msg.get("role") != "tool":
+            continue
+        content = str(msg.get("content", "")).lower()
+        if any(marker in content for marker in failure_markers):
+            count += 1
+    return count
 
 
 def _extract_skill_name(command: str) -> Optional[str]:

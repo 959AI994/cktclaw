@@ -34,10 +34,37 @@ async def rtl_repair_executor(args: str, context: Dict[str, Any]) -> List[Dict[s
         else f"RTLFixer root not installed at {root}; use native CktClaw repair workflow."
     )
     task = args.strip() or "No repair task provided."
+
+    deterministic_note = ""
+    eda_project_dir = context.get("eda_project_dir") or context.get("project_dir")
+    module_name = str(context.get("module_name") or "crc8_stream_accel")
+    sim_log = str(context.get("simulation_log") or "").strip()
+    if eda_project_dir and not context.get("deterministic_tb_patch"):
+        try:
+            from cktclaw.workflows.validated_rtl.repair_helpers import (
+                apply_deterministic_iverilog_tb_repair,
+                is_compile_log,
+            )
+
+            eda_path = Path(str(eda_project_dir))
+            if "eda_validated_rtl" not in str(eda_path):
+                eda_path = eda_path / "eda_validated_rtl"
+            log_path = Path(sim_log) if sim_log else eda_path / "reports" / "simulation.log"
+            if log_path.is_file() and is_compile_log(log_path.read_text(encoding="utf-8", errors="replace")):
+                if apply_deterministic_iverilog_tb_repair(eda_path, module_name):
+                    deterministic_note = (
+                        "\n\nDeterministic repair: wrote iverilog-compatible CRC-8 known-vector TB "
+                        f"to `{eda_path / 'tb' / (module_name + '_tb.v')}`.\n"
+                    )
+        except Exception:
+            pass
+    elif context.get("deterministic_tb_patch"):
+        deterministic_note = "\n\nDeterministic TB patch was already applied by Mission control.\n"
+
     text = f"""# RTL Repair Workflow
 
 {root_note}
-
+{deterministic_note}
 ## User Task
 
 {task}

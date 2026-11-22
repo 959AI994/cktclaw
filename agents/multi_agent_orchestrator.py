@@ -92,6 +92,21 @@ class MultiAgentOrchestrator:
         label = f"{role_id} ({phase})"
         if hasattr(console, "emit_stage"):
             console.emit_stage(label, self._phase_index, self._phase_total)
+        try:
+            from ..runtime.chip_progress import publish_chip_progress
+            publish_chip_progress(
+                event_type="phase_started",
+                cli_state=self.cli_state,
+                phase=phase,
+                agent=role_id,
+                skill="chip-system",
+                status="running",
+                index=self._phase_index,
+                total=self._phase_total,
+                message=label,
+            )
+        except Exception:
+            pass
         if hasattr(console, "print"):
             console.print(f"[chip-system] Phase {self._phase_index}/{self._phase_total}: {label}")
 

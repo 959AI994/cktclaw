@@ -92,8 +92,18 @@ class OrchestratorStateMachine:
         ss = self._stages[stage]
         ss.qor = qor or {}
 
-        if status.upper() in ("PASS", "WARN"):
+        normalized = status.upper()
+        if normalized == "PASS":
             ss.status = "passed"
+            loop_target = self._parse_loop_back_target(recommendation)
+            if loop_target:
+                return self._jump_to_stage(
+                    loop_target,
+                    reason=f"LLM recommendation: {recommendation}",
+                )
+            return self._advance()
+        if normalized == "WARN":
+            ss.status = "skipped"
             loop_target = self._parse_loop_back_target(recommendation)
             if loop_target:
                 return self._jump_to_stage(
