@@ -279,7 +279,7 @@ CktClaw 集成了完整的芯片设计全流程，每个领域都有独立的多
 
 CktClaw 是一个具备跨域闭环能力的**多层自治 Agent 系统**。当前全栈芯片架构包含四个协作平面：用户侧编排、多 Agent 名册、Skill/工作流桥接层，以及可执行的 EDA 工具链。
 
-<img src="figure/cktclaw_overview.png" alt="CktClaw 全栈 Agent 架构总览" width="100%" />
+<img src="figure/cktclaw_overview2.png" alt="CktClaw 全栈 Agent 架构总览" width="100%" />
 
 ---
 
