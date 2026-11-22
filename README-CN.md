@@ -32,9 +32,11 @@ CktClaw 是一个面向芯片设计的**多智能体 AI 终端**。你只需用�
 - **多引擎支持** — 本地 LogicRT、本地 Qwen2.5-3B-Instruct、云端 DeepSeek 三引擎，运行时 `/model` 一键切换
 ---
 
-<img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
+<img src="figure/cktclaw_overview2.png" alt="CktClaw 全栈 Agent 架构总览" width="100%" />
 
 ## 🚀 一键部署
+
+<img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
 
 ### 方式一：pip 安装（推荐）
 
@@ -278,8 +280,6 @@ CktClaw 集成了完整的芯片设计全流程，每个领域都有独立的多
 ## 🏗️ Agent 架构
 
 CktClaw 是一个具备跨域闭环能力的**多层自治 Agent 系统**。当前全栈芯片架构包含四个协作平面：用户侧编排、多 Agent 名册、Skill/工作流桥接层，以及可执行的 EDA 工具链。
-
-<img src="figure/cktclaw_overview2.png" alt="CktClaw 全栈 Agent 架构总览" width="100%" />
 
 ---
 

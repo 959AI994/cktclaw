@@ -36,9 +36,11 @@ CktClaw is a **multi-agent AI terminal for chip design**. Describe your task in 
 - **Multi-provider LLM** — Cloud DeepSeek / Anthropic Claude / OpenAI (and any OpenAI-compatible local endpoint such as vLLM / Ollama), plus local LogicRT & Qwen2.5-3B — switch **and configure API keys** at runtime with `/model`
 ---
 
-<img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
+<img src="figure/cktclaw_overview2.png" alt="CktClaw full-chip agent architecture overview" width="100%" />
 
 ## 🚀 Quick Start
+
+<img src="figure/cktclaw_view.png" alt="CktClaw cli" width="100%" />
 
 ### Option 1: pip install (recommended)
 
@@ -310,8 +312,6 @@ Each stage is LLM-driven. On failure, the orchestrator auto-loops back per confi
 ## 🏗️ Agent Architecture
 
 CktClaw is a **multi-layered autonomous agent system** with cross-domain closed-loop capabilities. The current full-chip architecture has four cooperating planes: user-facing orchestration, the multi-agent roster, skill/workflow bridges, and executable EDA toolchains.
-
-<img src="figure/cktclaw_overview2.png" alt="CktClaw full-chip agent architecture overview" width="100%" />
 
 ### Data Flow Summary
 
