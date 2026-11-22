@@ -6,11 +6,13 @@
 
 **An Open-Source Multi-Agent Framework for Chip Design and EDA Automation**
 
-[AlexWang](https://github.com/959AI994) · PhD Student · Shanghai Jiao Tong University · ACE Lab
+[AlexWang](https://github.com/959AI994) · PhD Student · Shanghai Jiao Tong University
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-372%20passing-brightgreen.svg)](tests/)
+
+Email: jingxin.wang@sjtu.edu.cn
 
 [中文文档](README-CN.md) | **English**
 
